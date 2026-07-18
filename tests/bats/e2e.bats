@@ -69,6 +69,34 @@ teardown() {
   [[ "$output" == *"DRY-RUN"* ]]
 }
 
+@test "profile: defaults to cms-ars" {
+  run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Profile:"* ]]
+  [[ "$output" == *"cms-ars"* ]]
+}
+
+@test "profile: baseline selected via AI_REVIEW_PROFILE" {
+  AI_REVIEW_PROFILE=baseline run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Profile:"*"baseline"* ]]
+}
+
+@test "profile: unknown name is a config error (exit 2)" {
+  AI_REVIEW_PROFILE=nope run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"not a known profile"* ]]
+}
+
+@test "profile: bring-your-own directory path resolves" {
+  local byo="${WORK}/myprofile"
+  mkdir -p "${byo}"
+  echo "# custom compliance rubric" > "${byo}/iac-compliance.md"
+  AI_REVIEW_PROFILE="${byo}" run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"${byo}"* ]]
+}
+
 @test "--post-comments records a review payload via gh" {
   local posted="${WORK}/posted.ndjson"
   STUB_RESPONSE_FILE="${FIX}/response-comment.txt" STUB_GH_POSTED="${posted}" GITHUB_TOKEN=t \

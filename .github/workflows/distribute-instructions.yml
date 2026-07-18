@@ -15,7 +15,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "copilot-instructions/instructions/**"
+      - "copilot-instructions/profiles/**"
       - "copilot-instructions/subscribers.yml"
       - ".github/workflows/distribute-instructions.yml"
   workflow_dispatch:
@@ -33,7 +33,8 @@ jobs:
         id: subs
         run: |
           set -euo pipefail
-          # Emit the subscriber repos as a JSON array for the matrix.
+          # Emit the subscribers as a JSON array of {repo, profile} objects.
+          # A bare "owner/repo" string uses the default cms-ars profile.
           python3 - <<'PY' >> "${GITHUB_OUTPUT}"
           import json, sys
           try:
@@ -41,8 +42,15 @@ jobs:
           except ImportError:
               print("repos=[]"); sys.exit(0)
           data = yaml.safe_load(open("copilot-instructions/subscribers.yml")) or {}
-          repos = [r for r in (data.get("subscribers") or []) if r]
-          print("repos=" + json.dumps(repos))
+          out = []
+          for r in (data.get("subscribers") or []):
+              if not r:
+                  continue
+              if isinstance(r, str):
+                  out.append({"repo": r, "profile": "cms-ars"})
+              elif isinstance(r, dict) and r.get("repo"):
+                  out.append({"repo": r["repo"], "profile": r.get("profile") or "cms-ars"})
+          print("repos=" + json.dumps(out))
           PY
 
       - name: Report empty subscriber list
@@ -62,12 +70,17 @@ jobs:
           fi
 
           branch="ai-review/instructions-update"
-          src="copilot-instructions/instructions"
 
-          echo "${REPOS}" | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin)]' \
-          | while IFS= read -r repo; do
+          echo "${REPOS}" \
+          | python3 -c 'import json,sys; [print(r["repo"]+"\t"+r["profile"]) for r in json.load(sys.stdin)]' \
+          | while IFS=$'\t' read -r repo profile; do
               [[ -z "${repo}" ]] && continue
-              echo "── ${repo} ──"
+              echo "── ${repo} (profile: ${profile}) ──"
+              src="copilot-instructions/profiles/${profile}/instructions"
+              if [[ ! -d "${GITHUB_WORKSPACE}/${src}" ]]; then
+                echo "::warning::profile '${profile}' for ${repo} has no instructions at ${src}; skipping."
+                continue
+              fi
               work="$(mktemp -d)"
               if ! gh repo clone "${repo}" "${work}" -- --depth 1 2>/dev/null; then
                 echo "::warning::could not clone ${repo}; skipping."

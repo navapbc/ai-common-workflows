@@ -48,6 +48,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 |---|---|---|
 | `AI_REVIEW_TOOL` | yes | `claude` \| `codex` \| `copilot` |
 | `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` \| `vertex` (claude only) \| `azure` (codex only) |
+| `AI_REVIEW_PROFILE` | no | Compliance profile: `cms-ars` (default) \| `baseline` \| a `profiles/` name or a directory path |
 | `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock) or Azure deployment name (azure) |
 | `ANTHROPIC_API_KEY` | claude+api | Public Anthropic API key |
 | `OPENAI_API_KEY` | codex | Public OpenAI API key |
@@ -91,5 +92,6 @@ lib/fold_review_json.py     merges per-batch findings JSON (fan-out)
 lib/scm/github.sh           PR discovery + review posting via gh (SCM seam)
 lib/scm/github_payload.py   review JSON → GitHub API payload (idempotency, 422 guards)
 lib/sandbox/                EXPERIMENTAL Docker sandbox — not shipped (see lib/sandbox/README.md)
-skills/*.md                 review rubrics, inlined into prompts at dispatch time
+skills/*.md                 framework-neutral review rubric base, inlined at dispatch time
+profiles/<name>/*.md        per-compliance-framework rubric overrides (AI_REVIEW_PROFILE)
 ```
