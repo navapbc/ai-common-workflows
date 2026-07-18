@@ -51,8 +51,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y bats
       - name: core + e2e
         run: bats tests/bats/core.bats tests/bats/e2e.bats
-      - name: sandbox (live Docker)
-        run: bats tests/bats/sandbox.bats
 
   action-self-test:
     name: Action self-test (dry-run, no keys)
@@ -64,13 +62,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # Direct + dry-run exercises the composite wiring and env mapping without
-      # an AI CLI, keys, or Docker. On push (no PR context) the action skips
-      # cleanly; on a PR it runs the dry-run plan.
+      # Dry-run exercises the composite wiring and env mapping without an AI
+      # CLI or keys. On push (no PR context) the action skips cleanly; on a PR
+      # it runs the dry-run plan.
       - uses: ./
         with:
           ai-tool: claude
-          sandbox: false
           dry-run: true
           post-comments: false
           install-cli: false

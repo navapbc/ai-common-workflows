@@ -50,9 +50,9 @@ public class StepExecutionSmokeTest {
             """;
 
     /**
-     * Pipeline that materializes the stub engine into the workspace (as both
-     * the direct and sandbox entrypoints) and runs the step with the given
-     * extra env entries and step parameters.
+     * Pipeline that materializes the stub engine into the workspace as the
+     * engine entrypoint and runs the step with the given extra env entries and
+     * step parameters.
      */
     private String pipeline(Path log, String extraEnv, String stepParams) {
         String envList = "'STUB_ENGINE_LOG=" + log.toString().replace("\\", "/") + "', "
@@ -62,8 +62,7 @@ public class StepExecutionSmokeTest {
         return ""
                 + "node {\n"
                 + "  writeFile file: 'engine/bin/ai-pr-review', text: " + stub + "\n"
-                + "  writeFile file: 'engine/lib/sandbox/sandbox.sh', text: " + stub + "\n"
-                + "  sh 'chmod +x engine/bin/ai-pr-review engine/lib/sandbox/sandbox.sh'\n"
+                + "  sh 'chmod +x engine/bin/ai-pr-review'\n"
                 + "  withEnv([" + envList + "]) {\n"
                 + "    aiPrReview(engineOverridePath: 'engine', fetchBase: false, postComments: false, " + stepParams + ")\n"
                 + "  }\n"
@@ -81,7 +80,7 @@ public class StepExecutionSmokeTest {
         Path log = tmp.newFile("direct.log").toPath();
         WorkflowJob job = r.createProject(WorkflowJob.class, "direct");
         job.setDefinition(new CpsFlowDefinition(
-                pipeline(log, "", "sandbox: false, tool: 'claude', anthropicApiKeyCredentialsId: 'anthropic'"),
+                pipeline(log, "", "tool: 'claude', anthropicApiKeyCredentialsId: 'anthropic'"),
                 true));
 
         var run = r.buildAndAssertSuccess(job);
@@ -98,7 +97,7 @@ public class StepExecutionSmokeTest {
         Path log = tmp.newFile("failure.log").toPath();
         WorkflowJob job = r.createProject(WorkflowJob.class, "gate-failure");
         job.setDefinition(new CpsFlowDefinition(
-                pipeline(log, "'STUB_ENGINE_EXIT=1'", "sandbox: false, tool: 'claude', gate: 'failure'"),
+                pipeline(log, "'STUB_ENGINE_EXIT=1'", "tool: 'claude', gate: 'failure'"),
                 true));
         r.buildAndAssertStatus(Result.FAILURE, job);
     }
@@ -108,7 +107,7 @@ public class StepExecutionSmokeTest {
         Path log = tmp.newFile("unstable.log").toPath();
         WorkflowJob job = r.createProject(WorkflowJob.class, "gate-unstable");
         job.setDefinition(new CpsFlowDefinition(
-                pipeline(log, "'STUB_ENGINE_EXIT=1'", "sandbox: false, tool: 'claude', gate: 'unstable'"),
+                pipeline(log, "'STUB_ENGINE_EXIT=1'", "tool: 'claude', gate: 'unstable'"),
                 true));
         r.buildAndAssertStatus(Result.UNSTABLE, job);
     }
@@ -118,7 +117,7 @@ public class StepExecutionSmokeTest {
         Path log = tmp.newFile("none.log").toPath();
         WorkflowJob job = r.createProject(WorkflowJob.class, "gate-none");
         job.setDefinition(new CpsFlowDefinition(
-                pipeline(log, "", "sandbox: false, tool: 'claude', gate: 'none'"),
+                pipeline(log, "", "tool: 'claude', gate: 'none'"),
                 true));
         r.buildAndAssertSuccess(job);
         assertFalse("no --gate passed when gate=none", Files.readString(log).contains("--gate"));

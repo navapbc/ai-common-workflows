@@ -10,9 +10,9 @@ One engine, two front ends, plus a set of Copilot instruction files.
    Jenkins plugin ──────▶│  lib/core.sh              │
    (bundles engine zip)  │  lib/endpoints.sh         │──▶ SCM (gh api) — post phase only
                          │  lib/scm/github.sh        │
-                         │  lib/sandbox/sandbox.sh   │
                          │  skills/*.md              │
                           └───────────────────────────┘
+   (lib/sandbox/ is experimental and not wired into either front end)
 ```
 
 ## The engine is the single source of truth
@@ -20,28 +20,31 @@ One engine, two front ends, plus a set of Copilot instruction files.
 All review logic lives in [`engine/`](../engine/README.md). The composite
 action references it in place; the Jenkins plugin zips it into the `.hpi` at
 build time and unpacks it onto the agent. Neither front end reaches into engine
-internals — they call `bin/ai-pr-review` (or `lib/sandbox/sandbox.sh`) with
-flags and environment, per the contract in the engine README. Changing review
-behavior means changing the engine, once.
+internals — they call `bin/ai-pr-review` with flags and environment, per the
+contract in the engine README. Changing review behavior means changing the
+engine, once.
 
 The engine is **relocatable**: it resolves its own paths from `ENGINE_HOME`
 (its own location), never from the working directory, so it runs identically
-whether checked out, extracted from a plugin, or baked into the container image.
+whether checked out or extracted from a plugin.
 
 ## Phases and the trust boundary
 
-A review is three phases, and the split is deliberately a process boundary so
-the untrusted middle phase can be sandboxed:
+A review is three phases, split as a process boundary so the untrusted middle
+phase can be isolated:
 
 1. **Collect** (trusted): PR context from CI env; diff from local git.
 2. **Review** (untrusted input): the AI reads the diff and emits findings JSON.
-   Sandboxed — egress limited to the LLM endpoint, checkout read-only, no SCM
-   token.
 3. **Post** (trusted, deterministic): `lib/scm/github.sh` turns findings JSON
-   into a GitHub review via `gh api`. No AI; the only phase with an SCM token.
+   into a GitHub review via `gh api`. No AI.
 
-The `--json-out` / `--post-only` flags are what let the sandbox wrapper run
-phase 2 and phase 3 in separate containers.
+The `--json-out` / `--post-only` flags express this split at the engine level,
+so the AI phase and the posting phase *can* run as separate processes. Today
+both front ends run the whole engine in one native invocation — so the SCM
+token is present during the AI phase — but the seam is deliberately preserved:
+a future egress sandbox, or a token-stripped AI phase, will use it to isolate
+phase 2 from phase 3. The experimental sandbox lives in `engine/lib/sandbox/`
+(see its README) and is not shipped.
 
 ## The SCM seam
 

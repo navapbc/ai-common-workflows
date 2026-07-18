@@ -20,15 +20,12 @@ public class AiPrReviewGlobalConfiguration extends GlobalConfiguration {
     private String tool;
     private String endpoint;
     private String model;
-    private String reviewImage;
-    private boolean sandbox = true;
     private String gate;
     private String awsRegion;
     private String vertexProjectId;
     private String vertexRegion;
     private String anthropicBaseUrl;
     private String openaiBaseUrl;
-    private String extraAllowedHosts;
     private String githubServerUrl;
     private String anthropicApiKeyCredentialsId;
     private String openaiApiKeyCredentialsId;
@@ -74,25 +71,6 @@ public class AiPrReviewGlobalConfiguration extends GlobalConfiguration {
         save();
     }
 
-    public String getReviewImage() {
-        return reviewImage;
-    }
-
-    @DataBoundSetter
-    public void setReviewImage(String reviewImage) {
-        this.reviewImage = reviewImage;
-        save();
-    }
-
-    public boolean isSandbox() {
-        return sandbox;
-    }
-
-    @DataBoundSetter
-    public void setSandbox(boolean sandbox) {
-        this.sandbox = sandbox;
-        save();
-    }
 
     public String getGate() {
         return gate;
@@ -151,16 +129,6 @@ public class AiPrReviewGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setOpenaiBaseUrl(String openaiBaseUrl) {
         this.openaiBaseUrl = openaiBaseUrl;
-        save();
-    }
-
-    public String getExtraAllowedHosts() {
-        return extraAllowedHosts;
-    }
-
-    @DataBoundSetter
-    public void setExtraAllowedHosts(String extraAllowedHosts) {
-        this.extraAllowedHosts = extraAllowedHosts;
         save();
     }
 

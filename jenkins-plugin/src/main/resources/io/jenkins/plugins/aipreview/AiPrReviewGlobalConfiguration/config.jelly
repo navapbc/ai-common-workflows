@@ -8,10 +8,6 @@
       <f:textbox default="direct" placeholder="direct | bedrock | vertex | custom"/>
     </f:entry>
     <f:entry title="Default model" field="model"><f:textbox/></f:entry>
-    <f:entry title="Sandbox by default" field="sandbox"><f:checkbox default="true"/></f:entry>
-    <f:entry title="Default review image" field="reviewImage">
-      <f:textbox placeholder="ghcr.io/…/ai-pr-review@sha256:…"/>
-    </f:entry>
     <f:entry title="Default gate" field="gate">
       <f:textbox default="none" placeholder="none | unstable | failure"/>
     </f:entry>
@@ -20,7 +16,6 @@
     <f:entry title="Vertex region" field="vertexRegion"><f:textbox/></f:entry>
     <f:entry title="Anthropic base URL" field="anthropicBaseUrl"><f:textbox/></f:entry>
     <f:entry title="OpenAI base URL" field="openaiBaseUrl"><f:textbox/></f:entry>
-    <f:entry title="Extra allowed hosts" field="extraAllowedHosts"><f:textbox/></f:entry>
     <f:entry title="GitHub server URL (GHE)" field="githubServerUrl"><f:textbox/></f:entry>
     <f:entry title="Anthropic API key credential id" field="anthropicApiKeyCredentialsId"><f:textbox/></f:entry>
     <f:entry title="OpenAI API key credential id" field="openaiApiKeyCredentialsId"><f:textbox/></f:entry>

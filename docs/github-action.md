@@ -13,9 +13,15 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
   ```
   The action runs `git fetch` for the base ref itself; `fetch-depth: 0` is a
   belt-and-suspenders option for very large PRs.
-- `permissions: { contents: read, pull-requests: write }`.
-- Sandbox mode (default) needs Docker on the runner — present on GitHub-hosted
-  `ubuntu-latest`. Direct mode (`sandbox: false`) needs Node.js (for the CLI).
+- Least-privilege permissions — `contents: read` (never write) plus
+  `pull-requests: write` **only** if posting comments:
+  ```yaml
+  permissions: { contents: read, pull-requests: write }
+  ```
+  For a fully read-only run, set `post-comments: false` and gate on the
+  `result` output; then `contents: read` alone suffices. See
+  [security.md](security.md).
+- Node.js on the runner (for the AI CLI) — present on GitHub-hosted runners.
 
 ## Inputs
 
@@ -36,16 +42,13 @@ All inputs are active. Endpoint inputs beyond `api` apply to `claude` only.
 | `aws-region` | — | Region for provider=bedrock |
 | `vertex-project-id` / `vertex-region` | — | provider=vertex |
 | `anthropic-base-url` / `openai-base-url` | — | Custom gateway endpoint |
-| `sandbox` | `true` | Run in the Docker egress sandbox |
-| `review-image` | release default | Sandbox image (pin by digest) |
-| `extra-allowed-hosts` | — | Extra egress hosts to allow in the sandbox |
 | `adjudication` | `self` | `self` \| `independent` \| `off` |
 | `adjudication-model` | — | Model for the independent pass only |
 | `jobs` | `4` | Fan-out concurrency for large diffs |
 | `batch-by` | `dir` | `dir` \| `file` fan-out batching |
 | `batch-min-files` | `10` | Minimum changed files before fanning out |
 | `context-budget` | `15` | Context files loaded per AI call |
-| `install-cli` / `cli-version` | `true` / `latest` | Direct mode: npm-install the CLI |
+| `install-cli` / `cli-version` | `true` / `latest` | npm-install the AI CLI on the runner |
 
 ## Outputs
 
@@ -60,6 +63,14 @@ By default the review is **advisory**: findings post as comments and the job
 stays green. Set `gate: true` to fail the job on any non-APPROVE result — then
 the job can be a required check. See
 [`examples/workflows/ai-pr-review-gating.yml`](../examples/workflows/ai-pr-review-gating.yml).
+
+## Read-only mode (no repository writes)
+
+To run with **no write permission at all**, set `post-comments: false` and act
+on the `result` output (e.g. combine with `gate: true` to fail the check
+without commenting). The token then needs only `contents: read`, and the
+action never calls the PR-write API. Useful where posting bot comments is
+disallowed or the token can't be granted `pull-requests: write`.
 
 ## Adjudication and fan-out
 

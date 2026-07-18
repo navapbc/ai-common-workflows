@@ -22,8 +22,8 @@ import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
 /**
  * Runs the bundled review engine on the build node: resolve effective config,
  * extract the engine, inject credentials as environment (never argv), launch
- * the engine (sandboxed by default), and map its exit code onto the build
- * result. Non-blocking so it does not tie up an executor while the AI runs.
+ * the engine, and map its exit code onto the build result. Non-blocking so it
+ * does not tie up an executor while the AI runs.
  */
 class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> {
 
@@ -58,14 +58,8 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         String tool = orGlobal(step.getTool(), cfg == null ? null : cfg.getTool(), "claude");
         String endpointRaw = orGlobal(step.getEndpoint(), cfg == null ? null : cfg.getEndpoint(), "direct");
         EndpointMode endpoint = parseEndpoint(endpointRaw);
-        Boolean sandboxParam = step.getSandbox();
-        boolean sandbox = sandboxParam != null ? sandboxParam : (cfg == null || cfg.isSandbox());
         String gate = orGlobal(step.getGate(), cfg == null ? null : cfg.getGate(), "none");
         String model = orGlobal(step.getModel(), cfg == null ? null : cfg.getModel(), null);
-        String reviewImage = orGlobal(
-                step.getReviewImage(),
-                cfg == null ? null : cfg.getReviewImage(),
-                "ghcr.io/navapbc/ai-reusable-workflows/ai-pr-review:latest");
 
         // ── Resolve PR context ────────────────────────────────────────────────
         String prNumber = step.getPr();
@@ -143,8 +137,6 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
                 step.getBatchMinFiles() == null ? null : String.valueOf(step.getBatchMinFiles()));
         putIfSet(runEnv, "AI_REVIEW_CONTEXT_BUDGET",
                 step.getContextBudget() == null ? null : String.valueOf(step.getContextBudget()));
-        putIfSet(runEnv, "AI_REVIEW_SANDBOX_IMAGE", reviewImage);
-        putIfSet(runEnv, "AI_REVIEW_EXTRA_ALLOWED_HOSTS", step.getExtraAllowedHosts());
 
         // ── Locate the engine (bundled, or a workspace override for dev/test) ──
         FilePath engineHome;
@@ -175,17 +167,14 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
             }
 
             // ── Build the engine command ───────────────────────────────────────
+            FilePath findings = tmpRoot.child("findings.json");
             List<String> cmd = new ArrayList<>();
-            String entry;
-            if (sandbox) {
-                entry = engineHome.child("lib/sandbox/sandbox.sh").getRemote();
-            } else {
-                entry = engineHome.child("bin/ai-pr-review").getRemote();
-            }
             cmd.add("bash");
-            cmd.add(entry);
+            cmd.add(engineHome.child("bin/ai-pr-review").getRemote());
             cmd.add("--against");
             cmd.add(baseRef);
+            cmd.add("--json-out");
+            cmd.add(findings.getRemote());
             if (prNumber != null && !prNumber.isEmpty()) {
                 cmd.add("--pr");
                 cmd.add(prNumber);
@@ -202,16 +191,8 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
             if (!"none".equalsIgnoreCase(gate)) {
                 cmd.add("--gate");
             }
-            // The engine writes findings JSON here; the sandbox wrapper copies it out.
-            FilePath findings = workspace.child(".ai-pr-review@tmp/findings.json");
-            if (sandbox) {
-                runEnv.put("AI_REVIEW_HOST_JSON_OUT", findings.getRemote());
-            } else {
-                cmd.add("--json-out");
-                cmd.add(findings.getRemote());
-            }
 
-            log.println("[aiPrReview] Running " + (sandbox ? "sandboxed" : "direct") + " review "
+            log.println("[aiPrReview] Running review "
                     + "(tool=" + tool + ", endpoint=" + endpoint.provider() + ", gate=" + gate + ")");
 
             int rc = launcher.launch()

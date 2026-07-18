@@ -1,5 +1,9 @@
 # Review image for the AI PR review sandbox.
 #
+# EXPERIMENTAL — supports the not-yet-shipped egress sandbox
+# (engine/lib/sandbox/). The released GitHub Action and Jenkins plugin do NOT
+# use this image; they run the engine natively. See engine/lib/sandbox/README.md.
+#
 # One image, three roles, selected by the command:
 #   review phase   bash /opt/engine/bin/ai-pr-review --against ... --json-out ...
 #   post phase     bash /opt/engine/bin/ai-pr-review --post-only ...

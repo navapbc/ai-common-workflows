@@ -17,7 +17,7 @@ import org.kohsuke.stapler.DataBoundSetter;
 
 /**
  * The {@code aiPrReview} pipeline step: runs the shared AI PR-review engine on
- * the current build's checkout, sandboxed by default. Every parameter is
+ * the current build's checkout. Every parameter is
  * optional; unset parameters fall back to the global configuration, then to
  * the engine's own defaults. The common case is a bare {@code aiPrReview()} on
  * a multibranch PR build with defaults configured globally.
@@ -27,8 +27,6 @@ public class AiPrReviewStep extends Step {
     private String tool;
     private String endpoint;
     private String model;
-    private Boolean sandbox;
-    private String reviewImage;
     private String gate;
     private boolean postComments = true;
     private boolean dryRun;
@@ -43,7 +41,6 @@ public class AiPrReviewStep extends Step {
     private String vertexRegion;
     private String anthropicBaseUrl;
     private String openaiBaseUrl;
-    private String extraAllowedHosts;
     private String githubServerUrl;
     private String adjudication;
     private String adjudicationModel;
@@ -88,25 +85,6 @@ public class AiPrReviewStep extends Step {
     @DataBoundSetter
     public void setModel(String model) {
         this.model = model;
-    }
-
-    @CheckForNull
-    public Boolean getSandbox() {
-        return sandbox;
-    }
-
-    @DataBoundSetter
-    public void setSandbox(Boolean sandbox) {
-        this.sandbox = sandbox;
-    }
-
-    public String getReviewImage() {
-        return reviewImage;
-    }
-
-    @DataBoundSetter
-    public void setReviewImage(String reviewImage) {
-        this.reviewImage = reviewImage;
     }
 
     public String getGate() {
@@ -233,15 +211,6 @@ public class AiPrReviewStep extends Step {
     @DataBoundSetter
     public void setOpenaiBaseUrl(String openaiBaseUrl) {
         this.openaiBaseUrl = openaiBaseUrl;
-    }
-
-    public String getExtraAllowedHosts() {
-        return extraAllowedHosts;
-    }
-
-    @DataBoundSetter
-    public void setExtraAllowedHosts(String extraAllowedHosts) {
-        this.extraAllowedHosts = extraAllowedHosts;
     }
 
     public String getGithubServerUrl() {

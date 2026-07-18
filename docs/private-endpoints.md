@@ -45,10 +45,14 @@ jobs:
           model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
 ```
 
-The sandbox allowlist for Bedrock is derived automatically:
-`bedrock-runtime.<region>.amazonaws.com` plus regional STS. On self-hosted
-runners without instance-role credentials, provide them via OIDC
-(`configure-aws-credentials`) or the standard AWS env vars.
+**Least privilege (imperative):** the IAM role should allow only
+`bedrock:InvokeModel` (+ `bedrock:InvokeModelWithResponseStream`) on the
+specific model ARN(s) — never `bedrock:*`. Assume it via OIDC (no long-lived
+keys) with a trust policy that pins your repo/ref. Full policy example in
+[security.md](security.md#the-llm-credential-bedrock--vertex).
+
+On self-hosted runners without instance-role credentials, provide them via
+OIDC (`configure-aws-credentials`) or the standard AWS env vars.
 
 **Jenkins:** ambient agent credentials (instance profile / IRSA) are used
 directly, or wrap the step:
@@ -75,9 +79,10 @@ withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
           model: claude-sonnet-4-5@20250929
 ```
 
-Allowlist: `aiplatform.googleapis.com`, the regional Vertex host, and
-`oauth2.googleapis.com`. Auth uses ambient Google Application Default
-Credentials.
+Auth uses ambient Google Application Default Credentials. Grant the
+workload-identity service account only the **Vertex AI User** role (or a
+custom role with just `aiplatform.endpoints.predict`), scoped to the project —
+not Editor/Owner.
 
 ## Custom gateway / proxy (claude or codex)
 
@@ -89,19 +94,8 @@ For a LiteLLM / gateway deployment that speaks the Anthropic or OpenAI API:
           ai-tool: claude
           anthropic-base-url: https://llm-gw.internal/v1
           anthropic-api-key: ${{ secrets.GATEWAY_TOKEN }}
-          extra-allowed-hosts: llm-gw.internal
 ```
 
-`extra-allowed-hosts` adds your gateway to the sandbox egress allowlist (the
-base URL's host is added automatically; list it explicitly if it differs, e.g.
-a separate auth host). For `codex`, use `openai-base-url` and `openai-api-key`.
-
-## Mirroring the review image
-
-In restricted networks that can't reach `ghcr.io`, mirror the review image into
-your registry and pin `review-image` to the mirrored digest:
-
-```bash
-crane copy ghcr.io/navapbc/ai-reusable-workflows/ai-pr-review@sha256:… \
-           registry.internal/ai-pr-review@sha256:…
-```
+For `codex`, use `openai-base-url` and `openai-api-key`. Make sure the
+runner's egress policy permits your gateway host (see
+[security.md](security.md)).

@@ -1,7 +1,6 @@
 package io.jenkins.plugins.aipreview;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -19,7 +18,6 @@ public class GlobalConfigurationTest {
         cfg.setTool("codex");
         cfg.setEndpoint("bedrock");
         cfg.setAwsRegion("us-west-2");
-        cfg.setSandbox(false);
         cfg.setGithubTokenCredentialsId("gh-default");
 
         r.configRoundtrip();
@@ -28,7 +26,6 @@ public class GlobalConfigurationTest {
         assertEquals("codex", reloaded.getTool());
         assertEquals("bedrock", reloaded.getEndpoint());
         assertEquals("us-west-2", reloaded.getAwsRegion());
-        assertFalse(reloaded.isSandbox());
         assertEquals("gh-default", reloaded.getGithubTokenCredentialsId());
     }
 }

@@ -10,19 +10,24 @@ follow [Semantic Versioning](https://semver.org/).
 
 - **Composite GitHub Action** (`action.yml`) for AI-assisted security &
   compliance PR review: all engine parameters, first-class Bedrock / Vertex /
-  custom-gateway endpoints, sandboxed execution by default, and
-  `result` / `review-json` outputs.
+  custom-gateway endpoints, and `result` / `review-json` outputs.
 - **Jenkins plugin** (`jenkins-plugin/`) providing the `aiPrReview` pipeline
   step, org-wide defaults (JCasC-ready), and the same engine bundled as a
   resource. Distributed as a `.hpi` on GitHub Releases with a SHA-256 checksum.
 - **Shared review engine** (`engine/`): relocatable bash engine with parallel
-  fan-out, self / independent adjudication, an SCM seam, and a Docker sandbox
-  (internal network + allowlist proxy) enforcing default-deny egress.
+  fan-out, self / independent adjudication, and an SCM seam.
 - **Copilot instruction files** (`copilot-instructions/`): four prefixed,
   `applyTo`-scoped files plus a subscription workflow that opens update PRs to
   subscriber repos.
 - Documentation set, test suites (bats, pytest, JenkinsRule), and CI
-  (static checks, engine tests, live sandbox e2e, plugin build/release,
-  review-image build + scan).
+  (static checks, engine tests, plugin build/release).
+
+### Notes
+
+- Egress control is the consumer's infrastructure responsibility; a built-in
+  Docker egress sandbox exists under `engine/lib/sandbox/` but is
+  **experimental and not wired into the shipped Action/plugin** (see its
+  README). Least-privilege credentials and SHA/checksum pinning are documented
+  as imperative in `docs/security.md`.
 
 [Unreleased]: https://github.com/navapbc/ai-reusable-workflows/commits/main

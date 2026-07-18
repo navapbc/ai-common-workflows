@@ -1,8 +1,8 @@
 name: "AI PR Review"
 description: >-
-  AI-assisted security and compliance review of a pull request. Runs sandboxed
-  by default with default-deny egress; supports Claude, Codex, and Copilot, on
-  the public API or a private endpoint (Bedrock, Vertex, or a custom gateway).
+  AI-assisted security and compliance review of a pull request. Supports
+  Claude, Codex, and Copilot, on the public API or a private endpoint
+  (Bedrock, Vertex, or a custom gateway).
 author: "Nava PBC"
 
 branding:
@@ -76,24 +76,6 @@ inputs:
     required: false
     default: ""
 
-  # ── Sandbox ────────────────────────────────────────────────────────────────
-  sandbox:
-    description: >-
-      Run the review in a Docker sandbox with default-deny egress (recommended).
-      Set to 'false' to run the CLI directly on the runner (no egress boundary).
-    required: false
-    default: "true"
-  review-image:
-    description: >-
-      Review container image (sandbox mode). Pin by digest. Defaults to the
-      image published alongside this action's release.
-    required: false
-    default: "ghcr.io/navapbc/ai-reusable-workflows/ai-pr-review:latest"
-  extra-allowed-hosts:
-    description: "Extra egress hosts to allow in the sandbox (space/comma separated)."
-    required: false
-    default: ""
-
   # ── Adjudication and fan-out ────────────────────────────────────────────────
   adjudication:
     description: "False-positive reduction: self (default) | independent | off."
@@ -120,13 +102,13 @@ inputs:
     required: false
     default: "15"
 
-  # ── Direct mode (sandbox=false) ─────────────────────────────────────────────
+  # ── AI CLI installation ─────────────────────────────────────────────────────
   install-cli:
-    description: "In direct mode, npm-install the chosen AI CLI (default true)."
+    description: "npm-install the chosen AI CLI on the runner (default true; set false if pre-baked)."
     required: false
     default: "true"
   cli-version:
-    description: "In direct mode, the npm version of the AI CLI to install."
+    description: "npm version of the AI CLI to install."
     required: false
     default: "latest"
 
@@ -197,8 +179,8 @@ runs:
         # locally for `git diff`. Consumers who set fetch-depth: 0 already have it.
         git fetch --no-tags --depth=200 origin "${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null || true
 
-    - name: Install AI CLI (direct mode only)
-      if: steps.ctx.outputs.skip == 'false' && inputs.sandbox != 'true' && inputs.install-cli == 'true'
+    - name: Install AI CLI
+      if: steps.ctx.outputs.skip == 'false' && inputs.install-cli == 'true'
       shell: bash
       env:
         AI_TOOL: ${{ inputs.ai-tool }}
@@ -217,9 +199,6 @@ runs:
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        SANDBOX: ${{ inputs.sandbox }}
-        REVIEW_IMAGE: ${{ inputs.review-image }}
-        EXTRA_ALLOWED_HOSTS: ${{ inputs.extra-allowed-hosts }}
         PR_NUMBER: ${{ steps.ctx.outputs.pr }}
         BASE: ${{ steps.ctx.outputs.base }}
         POST_COMMENTS: ${{ inputs.post-comments }}
@@ -242,8 +221,6 @@ runs:
         AI_REVIEW_BATCH_BY: ${{ inputs.batch-by }}
         AI_REVIEW_BATCH_MIN_FILES: ${{ inputs.batch-min-files }}
         AI_REVIEW_CONTEXT_BUDGET: ${{ inputs.context-budget }}
-        AI_REVIEW_SANDBOX_IMAGE: ${{ inputs.review-image }}
-        AI_REVIEW_EXTRA_ALLOWED_HOSTS: ${{ inputs.extra-allowed-hosts }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
         CI: "true"
@@ -251,19 +228,12 @@ runs:
         set -euo pipefail
         review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
 
-        args=(--against "origin/${BASE}" --pr "${PR_NUMBER}")
+        args=(--against "origin/${BASE}" --pr "${PR_NUMBER}" --json-out "${review_json}")
         [[ "${POST_COMMENTS}" == "true" ]] && args+=(--post-comments)
         [[ "${GATE}" == "true" ]] && args+=(--gate)
         [[ "${DRY_RUN}" == "true" ]] && args+=(--dry-run)
 
-        if [[ "${SANDBOX}" == "true" ]]; then
-          # The engine's --json-out path lives inside the container; the wrapper
-          # copies the findings to this host path via AI_REVIEW_HOST_JSON_OUT.
-          AI_REVIEW_HOST_JSON_OUT="${review_json}" \
-            bash "${ACTION_PATH}/engine/lib/sandbox/sandbox.sh" "${args[@]}"
-        else
-          bash "${ACTION_PATH}/engine/bin/ai-pr-review" --json-out "${review_json}" "${args[@]}"
-        fi
+        bash "${ACTION_PATH}/engine/bin/ai-pr-review" "${args[@]}"
 
         # Publish outputs (best-effort; the JSON may be absent on dry-run).
         if [[ -f "${review_json}" ]]; then

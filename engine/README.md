@@ -1,9 +1,11 @@
 # Review engine — embedding contract
 
 This directory is the single source of truth for the AI PR review. The
-composite GitHub Action references it in place; the Jenkins plugin bundles a
-zip of it at build time; the container image copies it in. All three consume
-it through the contract on this page and nothing else.
+composite GitHub Action references it in place, and the Jenkins plugin bundles
+a zip of it at build time and extracts it onto the agent. Both consume it
+through the contract on this page and nothing else. (The experimental sandbox
+image under `lib/sandbox/` also copies it in, but is not shipped — see
+`lib/sandbox/README.md`.)
 
 ## Relocatability guarantee
 
@@ -35,9 +37,10 @@ bash <engine>/bin/ai-pr-review [flags]      # run from the reviewed repo's root
 | `--jobs <n>` | Fan-out concurrency (default 4) |
 | `--list-batches` | Print the batch plan; no AI call |
 
-The `--json-out` / `--post-only` pair splits a run into a sandboxable AI
-phase (no SCM access, no SCM token) and a trusted post phase (no AI) — see
-`lib/sandbox/`.
+The `--json-out` / `--post-only` pair can split a run into a separable AI
+phase (no SCM access, no SCM token) and a trusted post phase (no AI). The
+shipped front ends run a single invocation; this seam is used by the
+experimental sandbox and reserved for a future token-stripped AI phase.
 
 ## Environment
 
@@ -85,6 +88,6 @@ lib/endpoints.sh            provider → CLI env mapping + validation + audit li
 lib/fold_review_json.py     merges per-batch findings JSON (fan-out)
 lib/scm/github.sh           PR discovery + review posting via gh (SCM seam)
 lib/scm/github_payload.py   review JSON → GitHub API payload (idempotency, 422 guards)
-lib/sandbox/                Docker sandbox orchestration (see docs/security.md)
+lib/sandbox/                EXPERIMENTAL Docker sandbox — not shipped (see lib/sandbox/README.md)
 skills/*.md                 review rubrics, inlined into prompts at dispatch time
 ```

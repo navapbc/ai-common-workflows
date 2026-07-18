@@ -34,8 +34,8 @@ python3 -m pytest tests/python/ -q || fail=1
 echo "==> bats: core + e2e"
 bats tests/bats/core.bats tests/bats/e2e.bats || fail=1
 
-echo "==> bats: sandbox (skips without Docker)"
-bats tests/bats/sandbox.bats || fail=1
+# tests/bats/sandbox.bats covers the experimental (unshipped) sandbox and is
+# not part of the default suite; run it manually with Docker if working on it.
 
 if (( fail )); then
   echo "SUITE FAILED" >&2

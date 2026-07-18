@@ -2,9 +2,8 @@
 
 Adds a single `aiPrReview` pipeline step that runs the same AI security &
 compliance review engine as the [GitHub Action](../docs/github-action.md), on
-your Jenkins agents. Sandboxed by default (default-deny egress); supports
-Claude, Codex, and Copilot on the public API or a private endpoint (Bedrock,
-Vertex, or a custom gateway).
+your Jenkins agents. Supports Claude, Codex, and Copilot on the public API or a
+private endpoint (Bedrock, Vertex, or a custom gateway).
 
 The plugin is a thin wrapper: it bundles the shared `engine/` (a snapshot,
 zipped at build time), extracts it onto the agent at runtime, and runs it.
@@ -25,35 +24,43 @@ between releases as you would any third-party CI dependency (see
 
 ## Agent prerequisites
 
-The step runs on a Linux/Unix agent.
+The step runs the engine natively on a **Linux/Unix agent**, which needs
+`bash`, `git`, `gh`, `python3`, Node.js, and the chosen AI CLI on `PATH`, plus
+network access to your LLM and SCM endpoints. A sample agent image:
 
-- **Sandbox mode (default, recommended):** Docker, and network access from the
-  agent to the review image registry and your LLM/SCM endpoints. Nothing else —
-  the AI CLIs live in the image.
-- **Direct mode (`sandbox: false`):** `bash`, `git`, `gh`, `python3`, Node.js,
-  and the chosen AI CLI installed on the agent. This mode forfeits the egress
-  boundary; prefer sandbox mode. A sample agent image:
+```dockerfile
+FROM node:22-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git python3 gh ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @anthropic-ai/claude-code
+```
 
-  ```dockerfile
-  FROM node:22-slim
-  RUN apt-get update && apt-get install -y --no-install-recommends \
-        git python3 gh ca-certificates && rm -rf /var/lib/apt/lists/*
-  RUN npm install -g @anthropic-ai/claude-code
-  ```
+There is no built-in network sandbox in this release, so **egress control is
+your infrastructure's responsibility** — run the agent in a network that
+restricts egress to your LLM endpoint, SCM, and the controller. See
+[docs/security.md](../docs/security.md).
 
-## Credentials
+## Credentials — least privilege is imperative
 
-Create **Secret text** credentials (Manage Jenkins → Credentials) for whichever
-you use, and reference them by ID:
+Create **Secret text** credentials (Manage Jenkins → Credentials) and reference
+them by ID:
 
 | Credential | Used for |
 |---|---|
 | Anthropic API key | `tool=claude`, endpoint `direct`/`custom` |
 | OpenAI API key | `tool=codex` |
-| GitHub token (`pull-requests: write`) | posting the review; Copilot model auth |
+| GitHub token | posting the review; Copilot model auth |
 
-For **Bedrock**, do not create a plugin credential — the engine uses ambient
-AWS credentials on the agent (instance profile / IRSA), or wrap the step:
+**The GitHub token must be least-privilege.** Jenkins has no ambient workflow
+token, so use a **fine-grained PAT scoped to only the target repositories**
+with **Pull requests: Read and write** and **Contents: Read** — nothing else.
+Do **not** use a classic PAT (its `repo` scope is far broader than needed). A
+**GitHub App** installation token (short-lived, per-repo) is stronger still.
+
+For **Bedrock**, don't create a plugin credential — the engine uses ambient AWS
+credentials on the agent (instance profile / IRSA), scoped by an IAM policy
+that allows only `bedrock:InvokeModel` on your model ARN(s) (see
+[docs/security.md](../docs/security.md)). Or wrap the step:
 
 ```groovy
 withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
@@ -64,9 +71,9 @@ withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
 ## Global configuration
 
 Manage Jenkins → System → **AI PR Review** sets org-wide defaults (tool,
-endpoint, model, region, review image, gate, credential IDs). Any default set
-here is used whenever the matching step parameter is omitted, so the common
-Jenkinsfile case is a bare `aiPrReview()`. The section is JCasC-compatible:
+endpoint, model, region, gate, credential IDs). Any default set here is used
+whenever the matching step parameter is omitted, so the common Jenkinsfile case
+is a bare `aiPrReview()`. The section is JCasC-compatible:
 
 ```yaml
 unclassified:
@@ -75,7 +82,6 @@ unclassified:
     endpoint: bedrock
     awsRegion: us-east-1
     model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
-    reviewImage: "ghcr.io/navapbc/ai-reusable-workflows/ai-pr-review@sha256:…"
     gate: unstable
     githubTokenCredentialsId: gh-pr-review
 ```
@@ -109,12 +115,11 @@ aiPrReview tool: 'claude', endpoint: 'bedrock',
            githubTokenCredentialsId: 'gh-pr-review'
 ```
 
-Custom gateway (LiteLLM/proxy) with an extra allowlisted host:
+Custom gateway (LiteLLM/proxy):
 
 ```groovy
 aiPrReview tool: 'claude', endpoint: 'custom',
            anthropicBaseUrl: 'https://llm-gw.internal/v1',
-           extraAllowedHosts: 'llm-gw.internal',
            githubTokenCredentialsId: 'gh-pr-review'
 ```
 
@@ -148,7 +153,7 @@ builds). Override with the `pr` and `against` parameters for other setups.
 
 ```bash
 cd jenkins-plugin
-mvn hpi:run          # sandbox Jenkins at http://localhost:8080/jenkins
+mvn hpi:run          # scratch Jenkins at http://localhost:8080/jenkins
 mvn verify           # compile + tests (JenkinsRule)
 ```
 
@@ -162,5 +167,5 @@ of the bundled zip while iterating on engine logic.
   set `pr` and `against` explicitly.
 - **No such credential** — the `*CredentialsId` must reference an existing
   Secret-text credential in a scope the job can see.
-- **Sandbox can't pull the image** — ensure the agent can reach the registry,
-  or mirror the image internally and set `reviewImage` to the mirror digest.
+- **AI CLI not found** — install it on the agent (`npm install -g …`) or bake
+  it into the agent image; the plugin does not install it for you.
