@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Static checks (shell, actions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -x -P SCRIPTDIR \
+            engine/bin/ai-pr-review \
+            engine/lib/core.sh engine/lib/endpoints.sh \
+            engine/lib/scm/github.sh engine/lib/sandbox/sandbox.sh \
+            tests/stubs/* tests/run.sh
+      - name: shfmt
+        run: |
+          curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
+          shfmt -d -i 2 -ci engine/bin engine/lib
+      - name: actionlint
+        uses: reviewdog/action-actionlint@v1
+        with:
+          fail_on_error: true
+
+  python:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: python -m pytest tests/python/ -q
+
+  bats:
+    name: bats (engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y bats
+      - name: core + e2e
+        run: bats tests/bats/core.bats tests/bats/e2e.bats
+      - name: sandbox (live Docker)
+        run: bats tests/bats/sandbox.bats
+
+  action-self-test:
+    name: Action self-test (dry-run, no keys)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Direct + dry-run exercises the composite wiring and env mapping without
+      # an AI CLI, keys, or Docker. On push (no PR context) the action skips
+      # cleanly; on a PR it runs the dry-run plan.
+      - uses: ./
+        with:
+          ai-tool: claude
+          sandbox: false
+          dry-run: true
+          post-comments: false
+          install-cli: false

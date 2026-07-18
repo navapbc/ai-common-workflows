@@ -1,0 +1,73 @@
+name: Jenkins plugin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "jenkins-plugin/**"
+      - "engine/**"
+      - ".github/workflows/jenkins-plugin.yml"
+    tags:
+      - "jenkins-plugin-v*"
+  pull_request:
+    paths:
+      - "jenkins-plugin/**"
+      - "engine/**"
+      - ".github/workflows/jenkins-plugin.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: mvn verify
+        working-directory: jenkins-plugin
+        run: mvn -B -ntp verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-pr-review-hpi
+          path: jenkins-plugin/target/ai-pr-review.hpi
+
+  release:
+    name: Attach .hpi to the release
+    if: startsWith(github.ref, 'refs/tags/jenkins-plugin-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Build release .hpi
+        working-directory: jenkins-plugin
+        run: |
+          version="${GITHUB_REF_NAME#jenkins-plugin-v}"
+          mvn -B -ntp -Drevision="${version}" -Dchangelist= -DskipTests=false package
+      - name: Checksum
+        working-directory: jenkins-plugin/target
+        run: sha256sum ai-pr-review.hpi | tee ai-pr-review.hpi.sha256
+      - name: Create / update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            jenkins-plugin/target/ai-pr-review.hpi \
+            jenkins-plugin/target/ai-pr-review.hpi.sha256 \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "AI PR Review Jenkins plugin ${GITHUB_REF_NAME#jenkins-plugin-v}. Verify the .hpi against ai-pr-review.hpi.sha256 before installing." \
+            || gh release upload "${GITHUB_REF_NAME}" \
+                 jenkins-plugin/target/ai-pr-review.hpi \
+                 jenkins-plugin/target/ai-pr-review.hpi.sha256 --clobber
