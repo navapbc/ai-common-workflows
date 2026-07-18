@@ -32,11 +32,26 @@ change is a reviewable PR. It is idempotent: no diff → no PR.
 
 ### Auth
 
-None to configure here. The sync workflow runs entirely inside the consumer's
-repo using that repo's built-in `GITHUB_TOKEN`, scoped to `contents: write` +
-`pull-requests: write` on **that repo only**. There is no distributor account,
-no cross-repo token, and nothing for a maintainer of `ai-common-workflows` to
-set up. A leaked token affects one repo, not many.
+Nothing to configure in `ai-common-workflows`. The sync workflow runs entirely
+inside the consumer's repo, scoped to `contents: write` + `pull-requests: write`
+on **that repo only**. There is no distributor account and no cross-repo token;
+a leaked credential affects one repo, not many.
+
+On the consumer side, how the PR gets opened is a choice (detailed in the
+workflow's header comment):
+
+- **Default (zero config):** the branch is pushed and, because GitHub's
+  "Allow GitHub Actions to create and approve pull requests" toggle is off by
+  default, PR creation is refused — the run still succeeds and prints a
+  compare URL for a human to open the PR. Create-only, human-in-the-loop.
+- **`COPILOT_SYNC_TOKEN` secret (recommended for full automation):** a
+  fine-grained PAT / GitHub App token scoped to that repo. PRs auto-create with
+  the create-and-approve toggle still **off** (it only governs the built-in
+  `GITHUB_TOKEN`), no workflow gains approve rights, and `pull_request` CI runs
+  normally on the sync PR.
+- **Enable the toggle:** works, but grants create *and* approve to every
+  workflow's `GITHUB_TOKEN` in that repo, and CI on `GITHUB_TOKEN`-created PRs
+  is still suppressed/held by GitHub.
 
 ### Maintainer responsibilities
 

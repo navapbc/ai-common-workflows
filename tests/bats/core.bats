@@ -184,6 +184,27 @@ report
   [[ "$output" != *"byoksecret"* ]]
 }
 
+@test "endpoint: copilot set-but-empty BYOK vars are unset (empty input hardening)" {
+  export AI_REVIEW_TOOL_RESOLVED=copilot AI_REVIEW_PROVIDER=api GH_TOKEN=t
+  export COPILOT_PROVIDER_BASE_URL="" COPILOT_PROVIDER_TYPE="" \
+    COPILOT_PROVIDER_API_KEY="" COPILOT_MODEL=""
+  ai_review::configure_endpoint >/dev/null 2>&1
+  [ -z "${COPILOT_PROVIDER_BASE_URL+x}" ]
+  [ -z "${COPILOT_PROVIDER_TYPE+x}" ]
+  [ -z "${COPILOT_PROVIDER_API_KEY+x}" ]
+  [ -z "${COPILOT_MODEL+x}" ]
+}
+
+@test "endpoint: copilot non-empty BYOK vars survive the hardening" {
+  export AI_REVIEW_TOOL_RESOLVED=copilot AI_REVIEW_PROVIDER=api GH_TOKEN=t
+  export COPILOT_PROVIDER_BASE_URL=https://llm-gw.internal/v1
+  export COPILOT_PROVIDER_TYPE=anthropic COPILOT_MODEL=claude-sonnet-4-5
+  ai_review::configure_endpoint >/dev/null 2>&1
+  [ "${COPILOT_PROVIDER_BASE_URL}" = "https://llm-gw.internal/v1" ]
+  [ "${COPILOT_PROVIDER_TYPE}" = "anthropic" ]
+  [ "${COPILOT_MODEL}" = "claude-sonnet-4-5" ]
+}
+
 @test "endpoint: vertex requires project id and region" {
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=vertex run ai_review::configure_endpoint
   [ "$status" -eq 2 ]

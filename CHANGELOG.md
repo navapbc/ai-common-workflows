@@ -6,6 +6,23 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Copilot-instructions sync: works without granting Actions approve rights.**
+  The sync workflow now degrades gracefully when GitHub's default-off "Allow
+  GitHub Actions to create and approve pull requests" toggle is disabled: the
+  branch is still pushed and a compare URL is printed for a human to open the
+  PR. An optional `COPILOT_SYNC_TOKEN` secret (fine-grained PAT / App token)
+  enables fully automatic PR creation — with the toggle still off and normal
+  `pull_request` CI on the sync PR. Both platform behaviors are documented in
+  the workflow header.
+- **copilot BYOK hardening:** set-but-empty `COPILOT_PROVIDER_*` /
+  `COPILOT_MODEL` env vars (as rendered by unset Action inputs) are unset by
+  the engine before the copilot CLI runs, so they can never read as "BYOK
+  enabled with an empty endpoint".
+- Documented the benign Codex "model metadata not found" warning for Bedrock
+  model IDs in [docs/private-endpoints.md](docs/private-endpoints.md).
+
 ### Added
 
 - **Bedrock for `codex`** (`ai-tool=codex` + `provider=bedrock`): selects the

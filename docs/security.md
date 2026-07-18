@@ -142,8 +142,12 @@ layer around the runner/agent:
 
 Copilot instruction files are distributed by a **pull** workflow that each
 consumer runs in its own repo ([`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)),
-using that repo's built-in `GITHUB_TOKEN` scoped to `contents: write` +
-`pull-requests: write` on **its own repo only**. There is no cross-repo
-credential and `ai-common-workflows` keeps no list of consumers. Pin `ACW_REF`
-to a commit SHA (or release tag) so upgrades are deliberate. See
+with credentials scoped to `contents: write` + `pull-requests: write` on
+**its own repo only**. There is no cross-repo credential and
+`ai-common-workflows` keeps no list of consumers. By default the built-in
+`GITHUB_TOKEN` pushes the branch and a human opens the PR (GitHub blocks PR
+creation by workflows unless a repo toggle is enabled); an optional
+`COPILOT_SYNC_TOKEN` (fine-grained PAT / App token) automates PR creation
+without granting any workflow approve rights. Pin `ACW_REF` to a commit SHA
+(or release tag) so upgrades are deliberate. See
 [copilot-instructions.md](copilot-instructions.md).

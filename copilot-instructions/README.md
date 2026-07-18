@@ -44,10 +44,17 @@ in **your** repo updating `.github/instructions/`. You review and merge it like
 any other PR.
 
 This is a **pull** model: it runs entirely in your repo with your own
-`GITHUB_TOKEN` (`contents: write` + `pull-requests: write` on your repo only).
+credentials (`contents: write` + `pull-requests: write` on your repo only).
 `ai-common-workflows` needs **no** knowledge of your repo, no subscriber list,
 and no cross-repo credentials. To change profiles or upgrade, edit `PROFILE` /
 `ACW_REF` in your copy of the workflow.
+
+**How the PR gets opened** (the workflow header documents all three): with zero
+config the branch is pushed and a compare URL is printed for a human to open
+the PR (GitHub blocks PR creation by the built-in `GITHUB_TOKEN` by default);
+add a `COPILOT_SYNC_TOKEN` secret (fine-grained PAT / App token) for fully
+automatic PRs with normal CI — without granting any workflow approve rights;
+or enable "Allow GitHub Actions to create and approve pull requests".
 
 ## Adopt manually (fallback)
 
