@@ -6,7 +6,31 @@
 # .github/instructions/. It uses only this repo's own GITHUB_TOKEN — no central
 # distributor, and ai-common-workflows needs no knowledge of your repo.
 #
-# Setup: set PROFILE and pin ACW_REF below, then merge. Nothing else required.
+# Setup: set PROFILE and pin ACW_REF below, then merge.
+#
+# How the PR gets opened — pick one (the workflow supports all three):
+#
+# a. Default (no settings changed, no secrets): the workflow pushes the update
+#    branch and TRIES `gh pr create`. GitHub's "Allow GitHub Actions to create
+#    and approve pull requests" toggle is DISABLED by default, so creation is
+#    typically refused — the workflow then succeeds anyway and prints a
+#    compare URL; a human opens the PR with one click. Create-only,
+#    human-in-the-loop, zero configuration.
+#
+# b. Recommended for full automation WITHOUT granting workflows approve
+#    rights: add a `COPILOT_SYNC_TOKEN` repo secret (fine-grained PAT or
+#    GitHub App token scoped to THIS repo, contents:write +
+#    pull-requests:write). The workflow uses it automatically. The
+#    create-and-approve toggle stays OFF, no other workflow gains any new
+#    capability, GitHub still forbids any identity approving its own PR — and
+#    `pull_request` CI runs normally on the sync PR (GitHub suppresses CI on
+#    PRs created with the built-in GITHUB_TOKEN, but not on PRs created with a
+#    PAT/App token).
+#
+# c. Or enable "Allow GitHub Actions to create and approve pull requests"
+#    (Settings → Actions → General → Workflow permissions). Note this single
+#    toggle grants BOTH create and approve to every workflow's GITHUB_TOKEN in
+#    the repo, and CI on the sync PR will still be suppressed/held (see b).
 name: Sync AI-review Copilot instructions
 
 on:
@@ -54,7 +78,9 @@ jobs:
 
       - name: Open or update the sync PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Prefers the optional COPILOT_SYNC_TOKEN secret (option b in the
+          # header); falls back to the built-in token (options a/c).
+          GH_TOKEN: ${{ secrets.COPILOT_SYNC_TOKEN || github.token }}
         run: |
           set -euo pipefail
           branch="ai-review/instructions-sync"
@@ -68,11 +94,18 @@ jobs:
           git checkout -B "${branch}"
           git add .github/instructions/ai-review-*.instructions.md
           git commit -q -m "Sync AI-review Copilot instructions (${PROFILE})"
+          # Pushing the branch is always permitted (contents: write); only PR
+          # creation is gated by the create-and-approve toggle.
           git push -f -q origin "${branch}"
           if gh pr view "${branch}" >/dev/null 2>&1; then
             echo "Existing sync PR updated."
-          else
-            gh pr create --head "${branch}" \
+          elif gh pr create --head "${branch}" \
               --title "Sync AI-review Copilot instructions (${PROFILE})" \
-              --body "Automated sync of \`.github/instructions/ai-review-*.instructions.md\` from ${ACW_REPO}@\`${ACW_REF}\` (profile: \`${PROFILE}\`). Review and merge as usual."
+              --body "Automated sync of \`.github/instructions/ai-review-*.instructions.md\` from ${ACW_REPO}@\`${ACW_REF}\` (profile: \`${PROFILE}\`). Review and merge as usual."; then
+            echo "Sync PR opened."
+          else
+            # Typically: "GitHub Actions is not permitted to create or approve
+            # pull requests" (the default-off repo toggle). The branch IS
+            # pushed — surface a one-click link instead of failing the run.
+            echo "::notice::Could not auto-create the PR (see log). The branch '${branch}' is pushed — open the PR here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${branch}?expand=1 (or add a COPILOT_SYNC_TOKEN secret / enable PR creation for Actions; see this workflow's header)."
           fi

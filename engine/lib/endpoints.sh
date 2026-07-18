@@ -190,6 +190,16 @@ ai_review::configure_endpoint() {
           fi
           ;;
         copilot)
+          # CI front ends may export BYOK vars as empty strings (an unset
+          # Action input renders as ""). The copilot CLI reads these directly,
+          # so make set-but-empty equivalent to unset before it runs.
+          local _byok_var
+          for _byok_var in COPILOT_PROVIDER_BASE_URL COPILOT_PROVIDER_TYPE \
+            COPILOT_PROVIDER_API_KEY COPILOT_MODEL; do
+            if [[ -z "${!_byok_var:-}" ]]; then
+              unset "${_byok_var}"
+            fi
+          done
           if [[ -n "${COPILOT_PROVIDER_BASE_URL:-}" ]]; then
             # BYOK: the copilot CLI talks directly to this endpoint. Model auth
             # is the provider key; a GitHub token may still be needed for CLI

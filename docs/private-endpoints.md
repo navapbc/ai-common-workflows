@@ -74,6 +74,11 @@ The IAM scope is identical to the claude case. (Codex's built-in Bedrock
 provider does not accept a custom `base_url`; VPC-interface-endpoint routing is
 handled by AWS networking, not Codex config.)
 
+Expect a benign startup warning — `Model metadata for '<model id>' not found.
+Defaulting to fallback metadata` — because Codex doesn't ship metadata (context
+window, etc.) for Bedrock model IDs. The review still runs; very large diffs
+may batch more conservatively than with a natively-known model.
+
 **Jenkins:** ambient agent credentials (instance profile / IRSA) are used
 directly, or wrap the step. Works the same for `claude` and `codex`:
 
