@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Stub `gh` CLI for engine tests. Handles exactly the calls the engine makes;
+# anything else is an error so contract drift shows up as a test failure.
+# Behavior knobs (env):
+#   STUB_GH_COMMENTS   NDJSON file for the existing-comments fetch (default: empty)
+#   STUB_GH_FILES      NDJSON file for the PR-files fetch (default: empty)
+#   STUB_GH_POSTED     file to append each posted review payload to
+#   STUB_GH_POST_EXIT  exit code for the review POST (default 0)
+#   STUB_GH_BASE       base branch for `gh pr view <n>` (default: main)
+set -euo pipefail
+
+case "$1" in
+  auth)
+    exit 0
+    ;;
+  repo)
+    # gh repo view --json nameWithOwner --jq .nameWithOwner
+    printf 'stub-org/stub-repo\n'
+    ;;
+  pr)
+    # gh pr view [<n>] --json ...
+    printf '{"number":41,"baseRefName":"%s"}\n' "${STUB_GH_BASE:-main}"
+    ;;
+  api)
+    endpoint=""
+    method="GET"
+    for arg in "$@"; do
+      case "${arg}" in
+        repos/*) endpoint="${arg}" ;;
+        POST)    method="POST" ;;
+      esac
+    done
+    case "${endpoint}" in
+      */comments)
+        [[ -n "${STUB_GH_COMMENTS:-}" ]] && cat "${STUB_GH_COMMENTS}"
+        ;;
+      */files)
+        [[ -n "${STUB_GH_FILES:-}" ]] && cat "${STUB_GH_FILES}"
+        ;;
+      */reviews)
+        if [[ "${method}" != "POST" ]]; then
+          echo "gh stub: unexpected non-POST to ${endpoint}" >&2
+          exit 64
+        fi
+        payload="$(cat)"
+        [[ -n "${STUB_GH_POSTED:-}" ]] && printf '%s\n' "${payload}" >> "${STUB_GH_POSTED}"
+        if [[ -n "${STUB_GH_POST_EXIT:-}" && "${STUB_GH_POST_EXIT}" != "0" ]]; then
+          echo '{"message":"Unprocessable Entity","status":"422"}'
+          exit "${STUB_GH_POST_EXIT}"
+        fi
+        ;;
+      *)
+        echo "gh stub: unexpected api endpoint: $*" >&2
+        exit 64
+        ;;
+    esac
+    ;;
+  *)
+    echo "gh stub: unexpected subcommand: $*" >&2
+    exit 64
+    ;;
+esac

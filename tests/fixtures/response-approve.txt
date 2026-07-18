@@ -1,0 +1,17 @@
+## PR Review Report
+**Scope:** Diff against origin/main (1 file)
+**Perspectives applied:** Security only — no IaC files
+**Files reviewed:** src/app.py
+**Context files loaded:** None
+
+No findings.
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{
+  "review_action": "APPROVE",
+  "summary": "Reviewed 1 file against the base ref. No findings.",
+  "comments": []
+}
+<!-- AI_REVIEW_JSON_END -->
+
+<<<AI_REVIEW_RESULT:APPROVE>>>

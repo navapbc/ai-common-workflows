@@ -1,0 +1,101 @@
+# Distribute Copilot instruction files to subscriber repositories as PRs.
+#
+# Runs when the instruction files change on main (or on manual dispatch, for
+# backfilling a newly added subscriber). For each repo in
+# copilot-instructions/subscribers.yml it copies the ai-review-*.instructions.md
+# files into that repo's .github/instructions/ and opens (or updates) a pull
+# request. It never pushes directly — every change lands as a reviewable PR.
+#
+# Auth: set the AI_REVIEW_DISTRIBUTOR_TOKEN secret to a GitHub App installation
+# token or a fine-grained PAT with contents:write + pull-requests:write on the
+# subscriber repos. See docs/copilot-instructions.md for the App setup.
+name: Distribute Copilot instructions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "copilot-instructions/instructions/**"
+      - "copilot-instructions/subscribers.yml"
+      - ".github/workflows/distribute-instructions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fan-out:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read subscriber list
+        id: subs
+        run: |
+          set -euo pipefail
+          # Emit the subscriber repos as a JSON array for the matrix.
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json, sys
+          try:
+              import yaml
+          except ImportError:
+              print("repos=[]"); sys.exit(0)
+          data = yaml.safe_load(open("copilot-instructions/subscribers.yml")) or {}
+          repos = [r for r in (data.get("subscribers") or []) if r]
+          print("repos=" + json.dumps(repos))
+          PY
+
+      - name: Report empty subscriber list
+        if: steps.subs.outputs.repos == '[]'
+        run: echo "::notice::No subscribers configured; nothing to distribute."
+
+      - name: Open update PRs
+        if: steps.subs.outputs.repos != '[]'
+        env:
+          GH_TOKEN: ${{ secrets.AI_REVIEW_DISTRIBUTOR_TOKEN }}
+          REPOS: ${{ steps.subs.outputs.repos }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::error::AI_REVIEW_DISTRIBUTOR_TOKEN is not set. See docs/copilot-instructions.md."
+            exit 1
+          fi
+
+          branch="ai-review/instructions-update"
+          src="copilot-instructions/instructions"
+
+          echo "${REPOS}" | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin)]' \
+          | while IFS= read -r repo; do
+              [[ -z "${repo}" ]] && continue
+              echo "── ${repo} ──"
+              work="$(mktemp -d)"
+              if ! gh repo clone "${repo}" "${work}" -- --depth 1 2>/dev/null; then
+                echo "::warning::could not clone ${repo}; skipping."
+                rm -rf "${work}"; continue
+              fi
+              (
+                cd "${work}"
+                default_branch="$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')"
+                git checkout -q -B "${branch}" "origin/${default_branch}"
+                mkdir -p .github/instructions
+                cp "${GITHUB_WORKSPACE}/${src}"/ai-review-*.instructions.md .github/instructions/
+                if git diff --quiet; then
+                  echo "  up to date; no PR needed."
+                  exit 0
+                fi
+                git add .github/instructions/ai-review-*.instructions.md
+                git -c user.name="ai-review-bot" \
+                    -c user.email="ai-review-bot@users.noreply.github.com" \
+                    commit -q -m "Update AI-review Copilot instructions"
+                git push -f -q origin "${branch}"
+                if gh pr view "${branch}" &>/dev/null; then
+                  echo "  existing PR updated."
+                else
+                  gh pr create --base "${default_branch}" --head "${branch}" \
+                    --title "Update AI-review Copilot instructions" \
+                    --body "Automated update of the shared AI-review Copilot instruction files (\`.github/instructions/ai-review-*.instructions.md\`). Review and merge as usual; this bot never pushes to your default branch." \
+                    && echo "  PR opened."
+                fi
+              )
+              rm -rf "${work}"
+            done

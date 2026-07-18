@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Stub `codex` CLI for engine tests. Mimics: codex exec [flags] "<prompt>"
+# (prompt is the final positional argument). Same knobs as the claude stub.
+# Additionally echoes the prompt back first — the real codex CLI streams the
+# agent transcript, which is exactly the echo hazard the engine's
+# last-marker/last-JSON-block parsing exists to survive.
+set -euo pipefail
+
+prompt=""
+for arg in "$@"; do prompt="${arg}"; done   # last positional wins
+
+[[ -n "${STUB_CALLS:-}" ]] && printf 'codex\n' >> "${STUB_CALLS}"
+if [[ -n "${STUB_PROMPT_LOG:-}" ]]; then
+  { printf '%s\n' "${prompt}"; printf -- '---PROMPT-END---\n'; } >> "${STUB_PROMPT_LOG}"
+fi
+[[ -n "${STUB_EXIT:-}" ]] && exit "${STUB_EXIT}"
+
+# Echo the instructions back (transcript replay), then the real response.
+printf '%s\n' "${prompt}"
+
+if [[ -n "${STUB_ADJ_RESPONSE_FILE:-}" ]] && grep -q 'ADJUDICATION INSTRUCTIONS' <<< "${prompt}"; then
+  cat "${STUB_ADJ_RESPONSE_FILE}"
+  exit 0
+fi
+cat "${STUB_RESPONSE_FILE:?STUB_RESPONSE_FILE must be set}"

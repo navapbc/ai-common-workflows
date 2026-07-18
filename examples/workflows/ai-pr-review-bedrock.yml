@@ -1,0 +1,36 @@
+# AI PR review against Amazon Bedrock — no code or diff leaves your AWS boundary.
+#
+# Because the LLM is in-boundary, the review compute should be too. GitHub-hosted
+# runners execute the checkout and diff on GitHub's shared infrastructure — if
+# that is outside your accreditation boundary, run this on a self-hosted runner
+# or an AWS CodeBuild-backed runner in your VPC instead (change `runs-on`), where
+# Bedrock is reachable over a VPC endpoint. See docs/private-endpoints.md.
+name: AI PR review (Bedrock)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write # for OIDC role assumption
+
+jobs:
+  review:
+    runs-on: ubuntu-latest # ← consider [self-hosted, linux, x64] inside your VPC
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
+          aws-region: us-east-1
+
+      - uses: navapbc/ai-common-workflows@REPLACE_WITH_COMMIT_SHA # v1.0.0
+        with:
+          ai-tool: claude
+          provider: bedrock
+          aws-region: us-east-1
+          model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
