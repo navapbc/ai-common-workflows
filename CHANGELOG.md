@@ -35,4 +35,4 @@ follow [Semantic Versioning](https://semver.org/).
   README). Least-privilege credentials and SHA/checksum pinning are documented
   as imperative in `docs/security.md`.
 
-[Unreleased]: https://github.com/navapbc/ai-reusable-workflows/commits/main
+[Unreleased]: https://github.com/navapbc/ai-common-workflows/commits/main

@@ -38,7 +38,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
           aws-region: us-east-1
-      - uses: navapbc/ai-reusable-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
         with:
           provider: bedrock
           aws-region: us-east-1
@@ -71,7 +71,7 @@ withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
         with:
           workload_identity_provider: projects/…/providers/…
           service_account: ai-pr-review@project.iam.gserviceaccount.com
-      - uses: navapbc/ai-reusable-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
         with:
           provider: vertex
           vertex-project-id: my-gcp-project
@@ -89,7 +89,7 @@ not Editor/Owner.
 For a LiteLLM / gateway deployment that speaks the Anthropic or OpenAI API:
 
 ```yaml
-      - uses: navapbc/ai-reusable-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
         with:
           ai-tool: claude
           anthropic-base-url: https://llm-gw.internal/v1

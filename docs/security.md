@@ -124,7 +124,7 @@ layer around the runner/agent:
    - **GitHub Action:** pin `uses:` to a full 40-character commit SHA, not a
      tag or branch:
      ```yaml
-     - uses: navapbc/ai-reusable-workflows@<40-char-sha> # v1.0.0
+     - uses: navapbc/ai-common-workflows@<40-char-sha> # v1.0.0
      ```
      The `# vX.Y.Z` comment records which release the SHA is.
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its

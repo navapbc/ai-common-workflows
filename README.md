@@ -1,4 +1,4 @@
-# ai-reusable-workflows
+# ai-common-workflows
 
 AI-assisted **security and compliance PR review**, packaged as reusable CI
 components. Point your pipeline at it and get inline review comments on every
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
-      - uses: navapbc/ai-reusable-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -49,7 +49,7 @@ Bedrock is three extra lines — and the diff never leaves your AWS boundary:
 ```yaml
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: arn:aws:iam::…:role/ai-pr-review, aws-region: us-east-1 }
-      - uses: navapbc/ai-reusable-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
         with:
           provider: bedrock
           model: us.anthropic.claude-sonnet-4-5-20250929-v1:0

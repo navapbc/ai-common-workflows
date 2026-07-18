@@ -1,6 +1,6 @@
 # Copilot instructions — distribution setup
 
-This page is for maintainers of `ai-reusable-workflows`. For how a consumer
+This page is for maintainers of `ai-common-workflows`. For how a consumer
 adopts the instruction files, see
 [`copilot-instructions/README.md`](../copilot-instructions/README.md).
 

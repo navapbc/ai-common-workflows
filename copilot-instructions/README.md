@@ -45,7 +45,7 @@ copy the files in once:
 
 ```bash
 mkdir -p .github/instructions
-base="https://raw.githubusercontent.com/navapbc/ai-reusable-workflows/v1.0.0/copilot-instructions/instructions"
+base="https://raw.githubusercontent.com/navapbc/ai-common-workflows/v1.0.0/copilot-instructions/instructions"
 for f in security iac auth scripts; do
   curl -fsSL "${base}/ai-review-${f}.instructions.md" \
     -o ".github/instructions/ai-review-${f}.instructions.md"

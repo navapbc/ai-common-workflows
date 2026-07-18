@@ -1,6 +1,6 @@
 # GitHub Action reference
 
-`uses: navapbc/ai-reusable-workflows@<commit-sha>` — a composite action that
+`uses: navapbc/ai-common-workflows@<commit-sha>` — a composite action that
 reviews a pull request and posts inline comments. Pin to a commit SHA
 ([why](security.md)).
 

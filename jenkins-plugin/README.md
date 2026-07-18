@@ -12,7 +12,7 @@ There is one source of truth for review logic across the Action and the plugin.
 ## Install
 
 1. Download `ai-pr-review.hpi` from the
-   [latest release](https://github.com/navapbc/ai-reusable-workflows/releases)
+   [latest release](https://github.com/navapbc/ai-common-workflows/releases)
    and **verify its SHA-256 against the checksum in the release notes**
    (`sha256sum ai-pr-review.hpi`).
 2. Manage Jenkins → Plugins → Advanced settings → Deploy Plugin → upload the
