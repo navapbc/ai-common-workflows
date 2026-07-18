@@ -1,19 +1,26 @@
 # Architecture
 
-One engine, two front ends, plus a set of Copilot instruction files.
+One shared engine, thin per-workflow front ends, plus a set of Copilot
+instruction files. The AI security & compliance review is the first workflow;
+the layout is built so more can be added (see
+[adding-workflows.md](adding-workflows.md)).
 
 ```
-                         ┌───────────────────────────┐
-   GitHub Action ───────▶│                           │
-   (action.yml)          │      engine/  (bash)      │──▶ AI CLI (claude/codex/copilot)
-                         │  bin/ai-pr-review         │      via api / bedrock / vertex / azure / gateway
-   Jenkins plugin ──────▶│  lib/core.sh              │
-   (bundles engine zip)  │  lib/endpoints.sh         │──▶ SCM (gh api) — post phase only
-                         │  lib/scm/github.sh        │
-                         │  skills/*.md              │
-                          └───────────────────────────┘
+   GitHub Action                        ┌───────────────────────────┐
+   workflows/security-compliance-review │      engine/  (bash)      │
+      /action.yml ─────────────────────▶│  bin/ai-pr-review         │──▶ AI CLI (claude/codex/copilot)
+      (sources workflows/_shared/lib)   │  lib/core.sh              │      via api / bedrock / vertex / azure / gateway
+                                        │  lib/endpoints.sh         │
+   Jenkins plugin ─────────────────────▶│  lib/scm/github.sh        │──▶ SCM (gh api) — post phase only
+   security-compliance-review (.hpi)    │  skills/*.md   (base)     │
+     depends on ai-common-core (.hpi)   │  profiles/<name>/  (rubric)│
+   (bundles engine zip)                  └───────────────────────────┘
    (lib/sandbox/ is experimental and not wired into either front end)
 ```
+
+The **compliance profile** (`AI_REVIEW_PROFILE`, default `cms-ars`) selects the
+rubric under `engine/profiles/`; rubric files resolve from the profile first,
+then fall back to the shared `skills/` base. See [profiles.md](profiles.md).
 
 ## The engine is the single source of truth
 

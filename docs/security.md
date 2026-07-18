@@ -119,15 +119,15 @@ layer around the runner/agent:
 1. **Review the code before adopting.** The engine is deliberately small and
    readable — [`engine/`](../engine/README.md) is a few hundred lines of bash
    plus `github_payload.py` and `fold_review_json.py`. Read it, the
-   [`action.yml`](../action.yml), and (for Jenkins) the plugin, the way you'd
-   review any dependency that runs in your pipeline. Re-review on upgrade by
-   diffing tags.
+   [action](../workflows/security-compliance-review/action.yml), and (for
+   Jenkins) the plugin, the way you'd review any dependency that runs in your
+   pipeline. Re-review on upgrade by diffing tags.
 
 2. **Pin to an immutable reference.**
    - **GitHub Action:** pin `uses:` to a full 40-character commit SHA, not a
      tag or branch:
      ```yaml
-     - uses: navapbc/ai-common-workflows@<40-char-sha> # v1.0.0
+     - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<40-char-sha> # v1.0.0
      ```
      The `# vX.Y.Z` comment records which release the SHA is.
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its

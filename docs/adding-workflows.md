@@ -1,52 +1,64 @@
 # Adding a workflow
 
 This repo is a **collection** of reusable, AI-assisted CI/CD workflows. The AI
-PR review is the first one; it is not meant to be the only one. This guide
-describes the conventions a new workflow should follow so the repo stays
-coherent as it grows, and so consumers can trust every workflow the same way.
+security & compliance review is the first one; it is not meant to be the only
+one. This guide describes the conventions a new workflow should follow so the
+repo stays coherent as it grows, and so consumers can trust every workflow the
+same way.
 
 Nothing here is load-bearing framework — there is no plugin system to register
-with. A "workflow" is just a self-contained unit (a composite action, a
-reusable workflow, or a plugin step) plus its engine, docs, and tests. Keep it
-independent: a team should be able to adopt your workflow without pulling in the
-PR-review engine, and vice versa.
+with. A "workflow" is a self-contained unit (a composite action, a reusable
+workflow, or a plugin step) plus its engine, docs, and tests. Keep it
+independent: a team should be able to adopt your workflow without pulling in an
+unrelated one.
 
 ## Repository layout
 
-Today the tree is organized around the PR-review workflow:
+The tree separates the shared cores from the thin per-workflow front ends:
 
 ```
-action.yml                 # PR review — the root composite GitHub Action
-engine/                    # PR review engine (bash + a little Python); front-end agnostic
-  bin/ai-pr-review         #   entrypoint
-  lib/                     #   endpoint config, SCM glue, helpers
-  skills/                  #   the review rubrics/prompts
-jenkins-plugin/            # second front end over the same engine
-copilot-instructions/      # Copilot-native variant of the same rubric
-docs/                      # per-topic docs
-tests/                     # bats (bash), pytest (python)
-examples/workflows/        # copy-paste consumer workflows
+engine/                              # the review engine (bash + a little Python)
+  bin/ai-pr-review                   #   entrypoint
+  lib/                               #   endpoint config, SCM glue, helpers
+  skills/                            #   framework-neutral rubric base
+  profiles/<name>/                   #   per-compliance-framework rubric overrides
+workflows/
+  _shared/lib/ci.sh                  # shared GH Actions plumbing, sourced by actions
+  security-compliance-review/action.yml   # the first workflow's composite action
+jenkins-plugin/                      # Maven reactor (Jenkins front ends)
+  core/                              #   ai-common-core: shared library plugin
+  security-compliance-review/        #   the workflow's thin plugin (depends on core)
+copilot-instructions/profiles/<name>/instructions/   # Copilot-native variant, per profile
+docs/  tests/  examples/workflows/
 ```
 
-A **second, unrelated workflow** should not bolt onto `engine/` or the root
-`action.yml`. Give it its own directory so it can be pinned, documented, and
-reasoned about on its own.
+A **second, unrelated workflow** gets its own `workflows/<name>/` (and, if it
+needs a Jenkins front end, its own reactor module) so it can be pinned,
+documented, and reasoned about on its own — it should not entangle an existing
+workflow's front end.
 
 ## Where a new workflow goes
 
 Pick the front end that fits how consumers will call it:
 
-- **Composite action** (most common) — put it under `workflows/<name>/action.yml`
-  and consumers reference it as
-  `uses: navapbc/ai-common-workflows/workflows/<name>@<sha>`.
-  Keep the action thin; put real logic in a sibling `workflows/<name>/engine/`
-  (or a shared library only if it is genuinely shared).
-- **Reusable workflow** — put a `.github/workflows/<name>.yml` with
-  `on: workflow_call` and consumers `uses:` it. Choose this when the workflow
-  owns the whole job (multiple steps, matrix, permissions) rather than a single
-  step.
-- **Plugin step / other CI** — mirror the `jenkins-plugin/` pattern: a thin
-  front end that shells out to a small, reviewable engine.
+- **Composite action** (most common) — `workflows/<name>/action.yml`, referenced
+  as `uses: navapbc/ai-common-workflows/workflows/<name>@<sha>`. Keep the action
+  thin: locate shared code via `${{ github.action_path }}` and delegate to the
+  engine.
+- **Reusable workflow** — `.github/workflows/<name>.yml` with `on: workflow_call`
+  when the workflow owns a whole job (matrix, permissions), not one step.
+- **Jenkins / other CI** — add a reactor module under `jenkins-plugin/<name>/`
+  that depends on the `ai-common-core` library plugin (engine extraction,
+  endpoint mapping, PR-context resolution live there — reuse them).
+
+**Sharing between composite actions — read this.** A composite action **cannot**
+`uses: ./workflows/_shared` to reach a sibling composite: GitHub resolves `./`
+against the *consumer's* checkout, not this repo, so it breaks cross-repo. Share
+plumbing as **bash** instead — put it in `workflows/_shared/lib/` and `source` it
+by an absolute path derived from `${{ github.action_path }}` (see
+`workflows/security-compliance-review/action.yml`). Keep security-critical
+token-gating in the `action.yml` step `env:` blocks, not in shared bash, so it
+stays auditable in one place.
 
 Whatever the front end, the engine underneath should be small enough to read in
 one sitting and runnable outside CI for local testing.
@@ -89,6 +101,14 @@ rather than inventing new environment variables:
 Matching these keeps a single mental model for operators configuring several
 workflows in the same org. See [private-endpoints.md](private-endpoints.md) for
 the per-provider setup.
+
+## Compliance profiles
+
+If your workflow judges code against a control framework, make the framework a
+**profile** rather than hardcoding it — the same pattern the review uses
+(`AI_REVIEW_PROFILE`, resolved from `engine/profiles/<name>/` with fallback to
+the shared base, or a bring-your-own directory path). This lets one workflow
+serve several agencies without forks. See [profiles.md](profiles.md).
 
 ## Checklist before you open the PR
 

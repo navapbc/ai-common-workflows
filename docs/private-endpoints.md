@@ -38,7 +38,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
           aws-region: us-east-1
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           provider: bedrock
           aws-region: us-east-1
@@ -59,7 +59,7 @@ directly, or wrap the step:
 
 ```groovy
 withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
-  aiPrReview(tool: 'claude', endpoint: 'bedrock', awsRegion: 'us-east-1',
+  aiSecurityComplianceReview(tool: 'claude', endpoint: 'bedrock', awsRegion: 'us-east-1',
              model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0')
 }
 ```
@@ -71,7 +71,7 @@ withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
         with:
           workload_identity_provider: projects/…/providers/…
           service_account: ai-pr-review@project.iam.gserviceaccount.com
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           provider: vertex
           vertex-project-id: my-gcp-project
@@ -91,7 +91,7 @@ Azure serves **OpenAI** models, not Claude, so `provider=azure` drives the
 resource endpoint, the deployment name (`model`), and the API version:
 
 ```yaml
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           ai-tool: codex
           provider: azure
@@ -116,7 +116,7 @@ resource is not publicly reachable.
 Azure deployment URL, and supply the key as an OpenAI Secret-text credential:
 
 ```groovy
-aiPrReview(tool: 'codex', endpoint: 'azure',
+aiSecurityComplianceReview(tool: 'codex', endpoint: 'azure',
            model: 'my-gpt-deployment',
            openaiBaseUrl: 'https://my-resource.openai.azure.com/openai/deployments/my-gpt-deployment?api-version=2024-10-21',
            openaiApiKeyCredentialsId: 'azure-openai-key')
@@ -127,7 +127,7 @@ aiPrReview(tool: 'codex', endpoint: 'azure',
 For a LiteLLM / gateway deployment that speaks the Anthropic or OpenAI API:
 
 ```yaml
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           ai-tool: claude
           anthropic-base-url: https://llm-gw.internal/v1

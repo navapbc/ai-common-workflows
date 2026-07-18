@@ -11,7 +11,7 @@ its own self-contained engine — so teams can adopt them one at a time.
 
 | Workflow | What it does | Docs |
 |---|---|---|
-| **AI PR review** | Security & compliance review of a pull request: inline comments for secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations against CMS ARS 5.1 / NIST SP 800-53 Rev 5. | [docs/github-action.md](docs/github-action.md) |
+| **AI security & compliance review** | Security & compliance review of a pull request: inline comments for secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations. The compliance framework is a selectable [profile](docs/profiles.md) — CMS ARS 5.1 / NIST SP 800-53 by default, a generic `baseline`, or bring your own. | [docs/github-action.md](docs/github-action.md) |
 
 More workflows will land here over time. Each one is meant to stand alone — you
 adopt only the ones you need. **Adding a workflow?** See the conventions in
@@ -19,12 +19,13 @@ adopt only the ones you need. **Adding a workflow?** See the conventions in
 
 ---
 
-# Workflow: AI PR review
+# Workflow: AI security & compliance review
 
 Point your pipeline at it and get inline review comments on every pull request.
 It works against the public API or a private LLM endpoint (Amazon Bedrock,
 Google Vertex, Azure OpenAI, or a custom gateway) so code and diffs can stay
-inside your boundary.
+inside your boundary. The compliance rubric is a selectable
+[profile](docs/profiles.md) (CMS ARS by default).
 
 ## Quickstart (GitHub Actions)
 
@@ -43,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -55,7 +56,7 @@ That's the whole setup. [Pin `@<commit-sha>`, not a tag](docs/security.md).
 | Component | What it is | Docs |
 |---|---|---|
 | **GitHub Action** | Composite action; `uses:` it in any workflow. | [docs/github-action.md](docs/github-action.md) |
-| **Jenkins plugin** | `.hpi` adding an `aiPrReview` pipeline step. | [jenkins-plugin/README.md](jenkins-plugin/README.md) |
+| **Jenkins plugin** | `.hpi` adding an `aiSecurityComplianceReview` pipeline step. | [jenkins-plugin/README.md](jenkins-plugin/README.md) |
 | **Copilot instructions** | Files that make Copilot's built-in review match. | [copilot-instructions/README.md](copilot-instructions/README.md) |
 
 The Action and the plugin run the **same review engine** ([`engine/`](engine/README.md)) —
@@ -68,7 +69,7 @@ Bedrock is three extra lines — and the diff never leaves your AWS boundary:
 ```yaml
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: arn:aws:iam::…:role/ai-pr-review, aws-region: us-east-1 }
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           provider: bedrock
           model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
@@ -93,6 +94,22 @@ in-boundary compute too — see [docs/private-endpoints.md](docs/private-endpoin
 The review runs natively on your runner; there is no built-in network sandbox
 yet, so egress control is your infrastructure's responsibility — see
 [docs/security.md](docs/security.md).
+
+## Compliance profiles
+
+The security perspective is universal; the **compliance** perspective is a
+selectable `profile`:
+
+```yaml
+        with:
+          profile: cms-ars   # default — CMS ARS 5.1 / NIST SP 800-53 Rev 5
+        # profile: baseline  # generic CIS / NIST CSF / OWASP, no agency controls
+        # profile: ./my-org-profile   # bring your own rubric directory
+```
+
+Same knob on the Jenkins step (`profile:`) and per-subscriber for the Copilot
+instructions. Add an agency/state variant under `engine/profiles/` — see
+[docs/profiles.md](docs/profiles.md).
 
 ## Support matrix
 

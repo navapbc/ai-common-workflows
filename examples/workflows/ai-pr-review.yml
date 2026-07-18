@@ -19,6 +19,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: navapbc/ai-common-workflows@REPLACE_WITH_COMMIT_SHA # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

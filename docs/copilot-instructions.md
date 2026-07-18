@@ -6,10 +6,12 @@ adopts the instruction files, see
 
 ## The model
 
-The four `ai-review-*.instructions.md` files under
-`copilot-instructions/instructions/` are the source of truth. Consumer repos
-receive them in `.github/instructions/`, where GitHub Copilot's code review
-reads any `*.instructions.md` that carries an `applyTo:` frontmatter glob.
+The `ai-review-*.instructions.md` files under
+`copilot-instructions/profiles/<profile>/instructions/` are the source of truth
+(one set per compliance profile; `cms-ars` is the default, `baseline` is the
+framework-neutral set). Consumer repos receive their chosen profile's files in
+`.github/instructions/`, where GitHub Copilot's code review reads any
+`*.instructions.md` that carries an `applyTo:` frontmatter glob.
 
 The `ai-review-` prefix keeps them collision-free with a consumer's own files
 and makes upgrades a whole-file replacement. Org-level Copilot instructions are
@@ -20,10 +22,12 @@ deliberately **not** used — programs don't control org settings.
 `.github/workflows/distribute-instructions.yml` opens (or updates) a pull
 request in every repo listed in `copilot-instructions/subscribers.yml` whenever
 the instruction files change on `main` (or on manual `workflow_dispatch`, to
-backfill a new subscriber). It clones each subscriber, copies the
-`ai-review-*.instructions.md` files into `.github/instructions/`, and opens a
-PR on the branch `ai-review/instructions-update`. It never pushes to a
-subscriber's default branch — every change is a reviewable PR.
+backfill a new subscriber). It clones each subscriber, copies **its profile's**
+`ai-review-*.instructions.md` files (from
+`copilot-instructions/profiles/<profile>/instructions/`) into
+`.github/instructions/`, and opens a PR on the branch
+`ai-review/instructions-update`. It never pushes to a subscriber's default
+branch — every change is a reviewable PR.
 
 Idempotent: if a subscriber is already up to date, no PR is opened; if a PR is
 already open, it's updated in place.
