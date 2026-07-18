@@ -31,16 +31,23 @@ public class StepExecutionSmokeTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
-    /** A tiny stand-in for the engine: append args + review env to STUB_ENGINE_LOG. */
+    /**
+     * A tiny stand-in for the engine: append args + review env to
+     * STUB_ENGINE_LOG, then exit with STUB_ENGINE_EXIT. Embedded verbatim into
+     * the pipeline inside a Groovy triple-single-quoted string, so the bash
+     * {@code ${...}} expansions are preserved (no Groovy interpolation).
+     */
     private static final String STUB_ENGINE =
-            "#!/usr/bin/env bash\\n"
-                    + "set -euo pipefail\\n"
-                    + "{ echo \\\"ARGS: $*\\\"; "
-                    + "echo \\\"AI_REVIEW_TOOL=${AI_REVIEW_TOOL:-}\\\"; "
-                    + "echo \\\"AI_REVIEW_PROVIDER=${AI_REVIEW_PROVIDER:-}\\\"; "
-                    + "echo \\\"ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}\\\"; "
-                    + "echo \\\"AWS_REGION=${AWS_REGION:-}\\\"; } >> \\\"${STUB_ENGINE_LOG}\\\"\\n"
-                    + "exit ${STUB_ENGINE_EXIT:-0}\\n";
+            """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            { echo "ARGS: $*"; \
+              echo "AI_REVIEW_TOOL=${AI_REVIEW_TOOL:-}"; \
+              echo "AI_REVIEW_PROVIDER=${AI_REVIEW_PROVIDER:-}"; \
+              echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}"; \
+              echo "AWS_REGION=${AWS_REGION:-}"; } >> "${STUB_ENGINE_LOG}"
+            exit ${STUB_ENGINE_EXIT:-0}
+            """;
 
     /**
      * Pipeline that materializes the stub engine into the workspace (as both
@@ -51,10 +58,11 @@ public class StepExecutionSmokeTest {
         String envList = "'STUB_ENGINE_LOG=" + log.toString().replace("\\", "/") + "', "
                 + "'CHANGE_ID=7', 'CHANGE_TARGET=main'"
                 + (extraEnv.isEmpty() ? "" : ", " + extraEnv);
+        String stub = "'''" + STUB_ENGINE + "'''";
         return ""
                 + "node {\n"
-                + "  writeFile file: 'engine/bin/ai-pr-review', text: \"" + STUB_ENGINE + "\"\n"
-                + "  writeFile file: 'engine/lib/sandbox/sandbox.sh', text: \"" + STUB_ENGINE + "\"\n"
+                + "  writeFile file: 'engine/bin/ai-pr-review', text: " + stub + "\n"
+                + "  writeFile file: 'engine/lib/sandbox/sandbox.sh', text: " + stub + "\n"
                 + "  sh 'chmod +x engine/bin/ai-pr-review engine/lib/sandbox/sandbox.sh'\n"
                 + "  withEnv([" + envList + "]) {\n"
                 + "    aiPrReview(engineOverridePath: 'engine', fetchBase: false, postComments: false, " + stepParams + ")\n"

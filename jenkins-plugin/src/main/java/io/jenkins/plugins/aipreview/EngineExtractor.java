@@ -34,6 +34,9 @@ final class EngineExtractor {
             }
             dest.unzipFrom(in);
         }
+        // Ant's zip task does not preserve Unix exec bits, so restore them.
+        // The entrypoint has no .sh extension, so chmod it explicitly alongside
+        // the library scripts.
         for (FilePath sh : dest.list("**/*.sh")) {
             sh.chmod(0755);
         }
@@ -41,6 +44,7 @@ final class EngineExtractor {
         if (!entry.exists()) {
             throw new IOException("extracted engine is missing bin/ai-pr-review");
         }
+        entry.chmod(0755);
         return entry;
     }
 

@@ -1,7 +1,6 @@
 package io.jenkins.plugins.aipreview;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.FilePath;
@@ -38,9 +37,6 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
     }
 
     @Override
-    @SuppressFBWarnings(
-            value = "COMMAND_INJECTION",
-            justification = "Engine args are plugin-controlled config, not attacker input; secrets go via env, not argv.")
     protected Void run() throws Exception {
         StepContext ctx = getContext();
         Run<?, ?> run = ctx.get(Run.class);
@@ -48,13 +44,13 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         Launcher launcher = ctx.get(Launcher.class);
         TaskListener listener = ctx.get(TaskListener.class);
         EnvVars env = ctx.get(EnvVars.class);
+        if (run == null || workspace == null || launcher == null || listener == null || env == null) {
+            throw new AbortException("aiPrReview requires a node { } context with a workspace.");
+        }
         PrintStream log = listener.getLogger();
 
         if (!launcher.isUnix()) {
             throw new AbortException("aiPrReview requires a Linux/Unix agent (the engine is bash-based).");
-        }
-        if (workspace == null) {
-            throw new AbortException("aiPrReview requires a workspace; wrap it in a node { } block.");
         }
 
         AiPrReviewGlobalConfiguration cfg = AiPrReviewGlobalConfiguration.get();
@@ -62,9 +58,8 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         String tool = orGlobal(step.getTool(), cfg == null ? null : cfg.getTool(), "claude");
         String endpointRaw = orGlobal(step.getEndpoint(), cfg == null ? null : cfg.getEndpoint(), "direct");
         EndpointMode endpoint = parseEndpoint(endpointRaw);
-        boolean sandbox = step.getSandbox() != null
-                ? step.getSandbox()
-                : (cfg == null || cfg.isSandbox());
+        Boolean sandboxParam = step.getSandbox();
+        boolean sandbox = sandboxParam != null ? sandboxParam : (cfg == null || cfg.isSandbox());
         String gate = orGlobal(step.getGate(), cfg == null ? null : cfg.getGate(), "none");
         String model = orGlobal(step.getModel(), cfg == null ? null : cfg.getModel(), null);
         String reviewImage = orGlobal(
@@ -153,12 +148,13 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
 
         // ── Locate the engine (bundled, or a workspace override for dev/test) ──
         FilePath engineHome;
+        FilePath tmpRoot = workspace.child(".ai-pr-review@tmp");
         boolean extracted = false;
         if (step.getEngineOverridePath() != null && !step.getEngineOverridePath().isEmpty()) {
             engineHome = workspace.child(step.getEngineOverridePath());
             log.println("[aiPrReview] Using engine override at " + engineHome.getRemote());
         } else {
-            engineHome = workspace.child(".ai-pr-review@tmp/engine");
+            engineHome = tmpRoot.child("engine");
             EngineExtractor.extract(engineHome);
             extracted = true;
             log.println("[aiPrReview] Extracted review engine " + EngineExtractor.version());
@@ -232,7 +228,7 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         } finally {
             if (extracted) {
                 try {
-                    engineHome.getParent().deleteRecursive();
+                    tmpRoot.deleteRecursive();
                 } catch (IOException | InterruptedException e) {
                     log.println("[aiPrReview] warning: could not clean up extracted engine: " + e.getMessage());
                 }

@@ -3,10 +3,10 @@ package io.jenkins.plugins.aipreview;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
+import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
-import org.jvnet.hudson.test.SnippetizerTester;
 
 /** The step's parameters survive a UI/snippetizer configuration round trip. */
 public class ConfigRoundTripTest {
@@ -27,7 +27,7 @@ public class ConfigRoundTripTest {
         step.setJobs(6);
         step.setGithubTokenCredentialsId("gh-token");
 
-        AiPrReviewStep out = new SnippetizerTester(r).configRoundTrip(step);
+        AiPrReviewStep out = new StepConfigTester(r).configRoundTrip(step);
 
         assertEquals("claude", out.getTool());
         assertEquals("bedrock", out.getEndpoint());
