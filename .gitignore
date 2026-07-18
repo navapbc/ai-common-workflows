@@ -1,0 +1,14 @@
+# Maven / Jenkins plugin build output
+jenkins-plugin/target/
+jenkins-plugin/work/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

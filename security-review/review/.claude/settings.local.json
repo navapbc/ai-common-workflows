@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(AI_REVIEW_TOOL=claude .skills/code-security/scripts/code-security-hook-dispatcher.sh --dry-run)",
+      "Bash(command -v pre-commit)",
+      "Bash(pre-commit --version)",
+      "Bash(zsh -c ' *)",
+      "Bash(python3 -c 'import json,sys; d=json.load\\(sys.stdin\\); c=d[\"commit\"]; print\\(\"sha:    \", d[\"sha\"][:12]\\); print\\(\"date:   \", c[\"committer\"][\"date\"]\\); print\\(\"author: \", c[\"author\"][\"name\"] if c.get\\(\"author\"\\) else \"?\"\\); print\\(\"message:\", c[\"message\"].splitlines\\(\\)[0]\\)')",
+      "Read(//private/tmp/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  }
+}
