@@ -56,11 +56,11 @@ fi
 # All status/progress output goes to stderr: stdout is reserved for the
 # review artifacts themselves (the human report and the findings JSON), so
 # `--json-only` output and shell pipelines stay clean.
-ai_review::log()  { printf '%s\n' "$*" >&2; }
+ai_review::log() { printf '%s\n' "$*" >&2; }
 ai_review::info() { printf '%s[%s]%s %s\n' "${AI_C_BOLD}" "${SKILL_NAME}" "${AI_C_RESET}" "$*" >&2; }
-ai_review::ok()   { printf '%s[%s] %s%s\n' "${AI_C_GREEN}" "${SKILL_NAME}" "$*" "${AI_C_RESET}" >&2; }
+ai_review::ok() { printf '%s[%s] %s%s\n' "${AI_C_GREEN}" "${SKILL_NAME}" "$*" "${AI_C_RESET}" >&2; }
 ai_review::warn() { printf '%s[%s] %s%s\n' "${AI_C_YELLOW}" "${SKILL_NAME}" "$*" "${AI_C_RESET}" >&2; }
-ai_review::err()  { printf '%s[%s] ERROR: %s%s\n' "${AI_C_RED}" "${SKILL_NAME}" "$*" "${AI_C_RESET}" >&2; }
+ai_review::err() { printf '%s[%s] ERROR: %s%s\n' "${AI_C_RED}" "${SKILL_NAME}" "$*" "${AI_C_RESET}" >&2; }
 
 # ── CLI flag parsing ────────────────────────────────────────────────────────
 # Sets:
@@ -84,7 +84,7 @@ ai_review::parse_args() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -n|--dry-run)
+      -n | --dry-run)
         AI_REVIEW_DRY_RUN=1
         shift
         ;;
@@ -120,7 +120,7 @@ ai_review::parse_args() {
         AI_REVIEW_LIST_BATCHES=1
         shift
         ;;
-      -h|--help)
+      -h | --help)
         ai_review::print_help
         exit 0
         ;;
@@ -137,7 +137,7 @@ ai_review::parse_args() {
   done
 
   # Validate JOBS now that flag/env are resolved.
-  if ! [[ "${AI_REVIEW_JOBS}" =~ ^[0-9]+$ ]] || (( AI_REVIEW_JOBS < 1 )); then
+  if ! [[ "${AI_REVIEW_JOBS}" =~ ^[0-9]+$ ]] || ((AI_REVIEW_JOBS < 1)); then
     ai_review::err "--jobs / AI_REVIEW_JOBS must be a positive integer (got '${AI_REVIEW_JOBS}')."
     exit 2
   fi
@@ -224,7 +224,7 @@ ai_review::resolve_tool() {
   lower="$(printf '%s' "${raw}" | tr '[:upper:]' '[:lower:]')"
 
   case "${lower}" in
-    claude|codex|copilot)
+    claude | codex | copilot)
       AI_REVIEW_TOOL_RESOLVED="${lower}"
       ;;
     *)
@@ -295,22 +295,22 @@ ai_review::diff_has_iac() {
   while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
     case "${f}" in
-      *.tf|*.tfvars|*.tf.json|*.bicep|*.bicepparam|*.hcl|\
-      *.template.json|*.template.yaml|*.template.yml|\
-      */Pulumi.yaml|Pulumi.yaml|*/Chart.yaml|Chart.yaml|\
-      */values.yaml|values.yaml|*/cdk.json|cdk.json|\
-      */kustomization.yaml|kustomization.yaml)
+      *.tf | *.tfvars | *.tf.json | *.bicep | *.bicepparam | *.hcl | \
+        *.template.json | *.template.yaml | *.template.yml | \
+        */Pulumi.yaml | Pulumi.yaml | */Chart.yaml | Chart.yaml | \
+        */values.yaml | values.yaml | */cdk.json | cdk.json | \
+        */kustomization.yaml | kustomization.yaml)
         return 0
         ;;
-      *.yaml|*.yml)
+      *.yaml | *.yml)
         # Kubernetes manifests: YAML with both apiVersion: and kind:.
-        if [[ -f "${f}" ]] && grep -lq '^apiVersion:' "${f}" 2>/dev/null \
-           && grep -lq '^kind:' "${f}" 2>/dev/null; then
+        if [[ -f "${f}" ]] && grep -lq '^apiVersion:' "${f}" 2>/dev/null &&
+          grep -lq '^kind:' "${f}" 2>/dev/null; then
           return 0
         fi
         ;;
     esac
-  done <<< "${files}"
+  done <<<"${files}"
   return 1
 }
 
@@ -382,13 +382,13 @@ ai_review::invoke_ai() {
 ai_review::parse_result() {
   local output="$1"
   local marker
-  marker="$(grep -oE '<<<AI_REVIEW_RESULT:(APPROVE|COMMENT|REQUEST_CHANGES)>>>' <<< "${output}" | tail -n 1)"
+  marker="$(grep -oE '<<<AI_REVIEW_RESULT:(APPROVE|COMMENT|REQUEST_CHANGES)>>>' <<<"${output}" | tail -n 1)"
 
   case "${marker}" in
     *REQUEST_CHANGES*) echo "REQUEST_CHANGES" ;;
-    *COMMENT*)         echo "COMMENT" ;;
-    *APPROVE*)         echo "APPROVE" ;;
-    *)                 echo "UNPARSEABLE" ;;
+    *COMMENT*) echo "COMMENT" ;;
+    *APPROVE*) echo "APPROVE" ;;
+    *) echo "UNPARSEABLE" ;;
   esac
 }
 
@@ -434,15 +434,16 @@ ai_review::extract_review_json() {
 # ai_review::adjudication_mode  → prints one of: self | independent | off
 ai_review::adjudication_mode() {
   if [[ "${AI_REVIEW_NO_ADJUDICATE:-0}" == "1" ]]; then
-    echo "off"; return 0
+    echo "off"
+    return 0
   fi
   local v
   v="$(printf '%s' "${AI_ADJUDICATION:-self}" | tr '[:upper:]' '[:lower:]')"
   case "${v}" in
-    self|inline)         echo "self" ;;
-    independent|fresh|1) echo "independent" ;;
-    off|0|no|none|false) echo "off" ;;
-    *)                   echo "self" ;;
+    self | inline) echo "self" ;;
+    independent | fresh | 1) echo "independent" ;;
+    off | 0 | no | none | false) echo "off" ;;
+    *) echo "self" ;;
   esac
 }
 
@@ -623,7 +624,7 @@ ai_review::pack_batches() {
 ai_review::should_batch() {
   local nfiles="$1" nbatches="$2"
   local min_files="${AI_REVIEW_BATCH_MIN_FILES:-10}"
-  (( AI_REVIEW_JOBS > 1 )) && (( nbatches > 1 )) && (( nfiles >= min_files ))
+  ((AI_REVIEW_JOBS > 1)) && ((nbatches > 1)) && ((nfiles >= min_files))
 }
 
 # ai_review::context_budget <files_in_batch>
@@ -632,9 +633,9 @@ ai_review::should_batch() {
 ai_review::context_budget() {
   local n="$1" b cap
   cap="${AI_REVIEW_CONTEXT_BUDGET:-15}"
-  b=$(( 3 * n ))
-  (( b < 4 ))      && b=4
-  (( b > cap ))    && b="${cap}"
+  b=$((3 * n))
+  ((b < 4)) && b=4
+  ((b > cap)) && b="${cap}"
   printf '%s' "${b}"
 }
 
@@ -686,17 +687,17 @@ ai_review::fan_out() {
   export AI_REVIEW_AGAINST
   export AI_REVIEW_BATCH_BY="${AI_REVIEW_BATCH_BY:-dir}"
   export AI_REVIEW_BATCH_DIR
-  [[ -n "${AI_REVIEW_MODEL:-}" ]]       && export AI_REVIEW_MODEL
+  [[ -n "${AI_REVIEW_MODEL:-}" ]] && export AI_REVIEW_MODEL
   [[ "${AI_REVIEW_NO_ADJUDICATE:-0}" == "1" ]] && export AI_REVIEW_NO_ADJUDICATE
-  [[ -n "${AI_ADJUDICATION:-}" ]]       && export AI_ADJUDICATION
+  [[ -n "${AI_ADJUDICATION:-}" ]] && export AI_ADJUDICATION
   [[ -n "${AI_ADJUDICATION_MODEL:-}" ]] && export AI_ADJUDICATION_MODEL
 
   ai_review::info "Fanning out ${expected} batch(es) across ${AI_REVIEW_JOBS} workers (batch-by=${AI_REVIEW_BATCH_BY})..."
 
   local sentinels fan_rc=0
   # NUL-delimited records so embedded tabs/spaces in paths survive.
-  sentinels="$(printf '%s\0' "${records[@]}" \
-    | xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" --__review-one)" || fan_rc=$?
+  sentinels="$(printf '%s\0' "${records[@]}" |
+    xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" --__review-one)" || fan_rc=$?
 
   local seen folded
   seen="$(printf '%s\n' "${sentinels}" | grep -c '^AI_REVIEW_BATCH_RESULT' || true)"
@@ -705,7 +706,7 @@ ai_review::fan_out() {
   # Fail-safe: a crashed worker (xargs returns 123) or a missing sentinel means
   # a batch was not reviewed — treat the run as unparseable rather than risk
   # reporting a partial review as complete.
-  if (( fan_rc != 0 )) || (( seen < expected )); then
+  if ((fan_rc != 0)) || ((seen < expected)); then
     ai_review::warn "Some batches did not return a result (xargs rc=${fan_rc}; ${seen}/${expected} reported). Failing safe."
     folded="UNPARSEABLE"
   fi

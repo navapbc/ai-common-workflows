@@ -41,7 +41,7 @@ ai_review::configure_endpoint() {
   provider="$(printf '%s' "${AI_REVIEW_PROVIDER:-api}" | tr '[:upper:]' '[:lower:]')"
 
   case "${provider}" in
-    api|bedrock|vertex) ;;
+    api | bedrock | vertex) ;;
     *)
       ai_review::err "AI_REVIEW_PROVIDER='${AI_REVIEW_PROVIDER}' is not a recognized value."
       ai_review::log "  Valid values: api | bedrock | vertex"
@@ -71,10 +71,10 @@ ai_review::configure_endpoint() {
       fi
       # Detect a usable credential source; warn (not fail) when none is
       # visible — an instance role may still satisfy the SDK at runtime.
-      if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -z "${AWS_PROFILE:-}" \
-            && -z "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" \
-            && -z "${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}" \
-            && -z "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}" ]]; then
+      if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -z "${AWS_PROFILE:-}" &&
+        -z "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" &&
+        -z "${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}" &&
+        -z "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}" ]]; then
         ai_review::warn "No AWS credential source detected in the environment (env keys, profile, web identity, or container credentials). Bedrock calls will fail unless the host provides an instance role."
       fi
       ;;
@@ -127,7 +127,7 @@ ai_review::configure_endpoint() {
   # (never the value's credentials, though a URL itself is not a secret).
   case "${AI_REVIEW_TOOL_RESOLVED}" in
     claude) [[ -n "${ANTHROPIC_BASE_URL:-}" ]] && base_url="${ANTHROPIC_BASE_URL}" ;;
-    codex)  [[ -n "${OPENAI_BASE_URL:-}"    ]] && base_url="${OPENAI_BASE_URL}" ;;
+    codex) [[ -n "${OPENAI_BASE_URL:-}" ]] && base_url="${OPENAI_BASE_URL}" ;;
   esac
 
   ai_review::info "Endpoint: tool=${AI_REVIEW_TOOL_RESOLVED} provider=${provider} region=${region} model=${AI_REVIEW_MODEL:-"(tool default)"} base_url=${base_url}"

@@ -38,8 +38,8 @@ set -euo pipefail
 SANDBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENGINE_HOME="$(cd "${SANDBOX_DIR}/../.." && pwd)"
 
-log()  { printf '[sandbox] %s\n' "$*" >&2; }
-err()  { printf '[sandbox] ERROR: %s\n' "$*" >&2; }
+log() { printf '[sandbox] %s\n' "$*" >&2; }
+err() { printf '[sandbox] ERROR: %s\n' "$*" >&2; }
 
 # ── Flag parsing ────────────────────────────────────────────────────────────
 PR_NUMBER=""
@@ -51,14 +51,38 @@ ENGINE_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --pr)            PR_NUMBER="${2:?--pr requires a value}"; shift 2 ;;
-    --pr=*)          PR_NUMBER="${1#*=}"; shift ;;
-    --against)       AGAINST="${2:?--against requires a value}"; shift 2 ;;
-    --against=*)     AGAINST="${1#*=}"; shift ;;
-    --post-comments) POST_COMMENTS=1; shift ;;
-    --gate)          GATE_MODE=1; shift ;;
-    --no-block)      NO_BLOCK=1; shift ;;
-    *)               ENGINE_ARGS+=("$1"); shift ;;
+    --pr)
+      PR_NUMBER="${2:?--pr requires a value}"
+      shift 2
+      ;;
+    --pr=*)
+      PR_NUMBER="${1#*=}"
+      shift
+      ;;
+    --against)
+      AGAINST="${2:?--against requires a value}"
+      shift 2
+      ;;
+    --against=*)
+      AGAINST="${1#*=}"
+      shift
+      ;;
+    --post-comments)
+      POST_COMMENTS=1
+      shift
+      ;;
+    --gate)
+      GATE_MODE=1
+      shift
+      ;;
+    --no-block)
+      NO_BLOCK=1
+      shift
+      ;;
+    *)
+      ENGINE_ARGS+=("$1")
+      shift
+      ;;
   esac
 done
 
@@ -66,7 +90,7 @@ if [[ -z "${AGAINST}" ]]; then
   err "--against <ref> is required in sandbox mode (PR discovery needs the SCM, which the sandbox cannot reach)."
   exit 2
 fi
-if (( POST_COMMENTS == 1 )) && [[ -z "${PR_NUMBER}" ]]; then
+if ((POST_COMMENTS == 1)) && [[ -z "${PR_NUMBER}" ]]; then
   err "--post-comments requires --pr <number> in sandbox mode."
   exit 2
 fi
@@ -84,7 +108,7 @@ fi
 # The review phase may reach exactly one thing: its model endpoint. Derived
 # from the same provider parameters the engine validates, so consumers never
 # maintain a separate list.
-url_host() {  # print host[:port] from a URL; empty on empty input
+url_host() { # print host[:port] from a URL; empty on empty input
   local url="${1:-}"
   [[ -z "${url}" ]] && return 0
   local host="${url#*://}"
@@ -207,7 +231,7 @@ REVIEW_ENV_ARGS=()
 while IFS= read -r line; do REVIEW_ENV_ARGS+=("${line}"); done < <(review_env_args)
 
 ENGINE_CMD=(bash /opt/engine/bin/ai-pr-review --against "${AGAINST}" --json-out /out/review.json)
-(( NO_BLOCK == 1 )) && ENGINE_CMD+=(--no-block)
+((NO_BLOCK == 1)) && ENGINE_CMD+=(--no-block)
 ENGINE_CMD+=("${ENGINE_ARGS[@]+"${ENGINE_ARGS[@]}"}")
 
 review_rc=0
@@ -228,16 +252,16 @@ docker run --rm --name "${RUN_ID}-review" \
   --env NO_PROXY="" \
   "${REVIEW_ENV_ARGS[@]}" \
   "${IMAGE}" \
-  "${ENGINE_CMD[@]}" \
-  || review_rc=$?
+  "${ENGINE_CMD[@]}" ||
+  review_rc=$?
 
-if (( review_rc != 0 )); then
+if ((review_rc != 0)); then
   err "review phase exited ${review_rc}."
   exit "${review_rc}"
 fi
 if [[ ! -s "${OUT_DIR}/review.json" ]]; then
   err "review phase produced no findings JSON."
-  (( NO_BLOCK == 1 )) && exit 0
+  ((NO_BLOCK == 1)) && exit 0
   exit 1
 fi
 
@@ -247,7 +271,7 @@ RESULT="$(sed -n 's/.*"review_action"[[:space:]]*:[[:space:]]*"\([A-Z_]*\)".*/\1
 log "Review result: ${RESULT:-UNKNOWN}"
 
 # ── Phase 2: trusted post (no AI, normal network, token present) ───────────
-if (( POST_COMMENTS == 1 )); then
+if ((POST_COMMENTS == 1)); then
   log "Posting review to PR #${PR_NUMBER} (trusted post phase)"
   POST_ENV_ARGS=()
   for v in GITHUB_TOKEN GH_TOKEN GH_HOST GH_ENTERPRISE_TOKEN CI NO_COLOR; do
@@ -268,8 +292,8 @@ if (( POST_COMMENTS == 1 )); then
 fi
 
 # ── Gate ────────────────────────────────────────────────────────────────────
-if (( GATE_MODE == 1 )) && [[ "${RESULT}" != "APPROVE" ]]; then
-  if (( NO_BLOCK == 1 )); then
+if ((GATE_MODE == 1)) && [[ "${RESULT}" != "APPROVE" ]]; then
+  if ((NO_BLOCK == 1)); then
     log "--no-block in effect: exiting 0 despite --gate and result ${RESULT}."
     exit 0
   fi

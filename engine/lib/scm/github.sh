@@ -153,9 +153,9 @@ scm::post_review() {
   ai_review::info "Posting review to ${repo_slug} PR #${pr_number} via gh api..."
   local resp rc=0
   resp="$(echo "${api_payload}" | gh api \
-        "repos/${repo_slug}/pulls/${pr_number}/reviews" \
-        --method POST --input - 2>&1)" || rc=$?
-  if (( rc == 0 )); then
+    "repos/${repo_slug}/pulls/${pr_number}/reviews" \
+    --method POST --input - 2>&1)" || rc=$?
+  if ((rc == 0)); then
     ai_review::info "Review posted."
     return 0
   fi
@@ -175,9 +175,9 @@ scm::post_review() {
     body_only="$(printf '%s' "${api_payload}" | python3 -c 'import json,sys; d=json.load(sys.stdin); d["comments"]=[]; print(json.dumps(d))')" || body_only=""
     if [[ -n "${body_only}" ]]; then
       resp2="$(echo "${body_only}" | gh api \
-            "repos/${repo_slug}/pulls/${pr_number}/reviews" \
-            --method POST --input - 2>&1)" || rc2=$?
-      if (( rc2 == 0 )); then
+        "repos/${repo_slug}/pulls/${pr_number}/reviews" \
+        --method POST --input - 2>&1)" || rc2=$?
+      if ((rc2 == 0)); then
         ai_review::info "Posted a summary-only review (inline comments dropped; findings are in the body)."
         return 0
       fi

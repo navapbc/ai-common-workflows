@@ -59,7 +59,8 @@ source "${ENGINE_HOME}/lib/scm/${AI_REVIEW_SCM}.sh"
 pr_review::build_prompt() {
   local scope_block=""
   if [[ -n "${AI_REVIEW_SCOPE_PATHS:-}" ]]; then
-    scope_block="$(cat <<SCOPE
+    scope_block="$(
+      cat <<SCOPE
 
 ──────────────────────── BATCH SCOPE ────────────────────────
 This run reviews ONE batch of a larger diff. Restrict your entire review to
@@ -67,27 +68,29 @@ these files (AI_REVIEW_SCOPE_PATHS); other workers cover the rest:
 
 ${AI_REVIEW_SCOPE_PATHS}
 SCOPE
-)"
+    )"
   fi
 
   local compliance_block=""
   if ai_review::diff_has_iac; then
-    compliance_block="$(cat <<COMPLIANCE
+    compliance_block="$(
+      cat <<COMPLIANCE
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
 $(cat "${ENGINE_HOME}/skills/iac-compliance.md")
 COMPLIANCE
-)"
+    )"
   fi
 
   local self_adjudication_block=""
   if [[ "${AI_REVIEW_ADJUDICATION_MODE:-self}" == "self" ]]; then
-    self_adjudication_block="$(cat <<SELFADJ
+    self_adjudication_block="$(
+      cat <<SELFADJ
 
 ──────────────────── SELF-ADJUDICATION ────────────────────
 $(ai_review::self_adjudication_instructions)
 SELFADJ
-)"
+    )"
   fi
 
   cat <<PROMPT
@@ -134,7 +137,7 @@ pr_review::require_json() {
 # The human report streams to stderr so it is never captured by the parent.
 pr_review::worker_main() {
   local record="$1"
-  ai_review::resolve_tool >/dev/null    # parent already announced the tool
+  ai_review::resolve_tool >/dev/null # parent already announced the tool
 
   local key="${record%%$'\t'*}"
   local files_pipe="${record#*$'\t'}"
@@ -156,14 +159,14 @@ pr_review::worker_main() {
 
   local output rc=0 marker="UNPARSEABLE" json_file="-"
   output="$(ai_review::invoke_ai)" || rc=$?
-  if (( rc != 0 )); then
+  if ((rc != 0)); then
     ai_review::err "[${key}] AI invocation failed (rc=${rc})." >&2
   else
     marker="$(ai_review::parse_result "${output}")"
     local json_block
     if json_block="$(pr_review::require_json "${output}" "${marker}")"; then
       json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX.json")"
-      printf '%s\n' "${json_block}" > "${json_file}"
+      printf '%s\n' "${json_block}" >"${json_file}"
     else
       # Findings claimed but no JSON to merge — this batch is unusable.
       ai_review::err "[${key}] AI response contained no parseable JSON block." >&2
@@ -269,7 +272,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Post-only mode (trusted post phase of the sandboxed flow) ───────────────
-if (( POST_ONLY == 1 )); then
+if ((POST_ONLY == 1)); then
   if [[ -z "${PR_NUMBER}" ]] || [[ -z "${JSON_IN}" ]]; then
     ai_review::err "--post-only requires both --pr <number> and --json-in <file>."
     exit 2
@@ -335,12 +338,12 @@ pr_review::run() {
   for _rec in "${_batch_records[@]+"${_batch_records[@]}"}"; do
     _fp="${_rec#*$'\t'}"
     _c="$(printf '%s' "${_fp}" | tr '|' '\n' | grep -cv '^$' || true)"
-    _nfiles=$(( _nfiles + _c ))
+    _nfiles=$((_nfiles + _c))
   done
 
   # Cap the batch count to the worker count so fan-out runs as a SINGLE
   # concurrent wave (see ai_review::pack_batches for why).
-  if ai_review::should_batch "${_nfiles}" "${_nbatches}" && (( _nbatches > AI_REVIEW_JOBS )); then
+  if ai_review::should_batch "${_nfiles}" "${_nbatches}" && ((_nbatches > AI_REVIEW_JOBS)); then
     local -a _packed=()
     while IFS= read -r _rec; do
       [[ -z "${_rec}" ]] && continue
@@ -351,7 +354,7 @@ pr_review::run() {
   fi
 
   # --list-batches: print the plan and the routing decision; no AI call.
-  if (( AI_REVIEW_LIST_BATCHES == 1 )); then
+  if ((AI_REVIEW_LIST_BATCHES == 1)); then
     ai_review::info "Batch plan (batch-by=${AI_REVIEW_BATCH_BY:-dir}): ${_nfiles} file(s) in ${_nbatches} batch(es)"
     for _rec in "${_batch_records[@]}"; do
       local _k="${_rec%%$'\t'*}" _n
@@ -378,21 +381,21 @@ pr_review::run() {
   SKILL_PROMPT="$(pr_review::build_prompt)"
 
   # Dry-run path: print plan, do not invoke AI.
-  if (( AI_REVIEW_DRY_RUN == 1 )); then
+  if ((AI_REVIEW_DRY_RUN == 1)); then
     ai_review::info "DRY-RUN — no AI invocation will be made."
-    ai_review::log  "  Skill:          ${SKILL_HUMAN_NAME} (${SKILL_NAME})"
-    ai_review::log  "  AI tool:        ${AI_REVIEW_TOOL_RESOLVED}"
-    ai_review::log  "  PR number:      ${PR_NUMBER:-(none — using --against directly)}"
-    ai_review::log  "  Diff source:    $(ai_review::diff_command_description)"
-    ai_review::log  "  Adjudication:   ${_adj_mode}"
-    ai_review::log  "  Post comments:  ${POST_COMMENTS}"
-    ai_review::log  "  Gate mode:      ${GATE_MODE}"
+    ai_review::log "  Skill:          ${SKILL_HUMAN_NAME} (${SKILL_NAME})"
+    ai_review::log "  AI tool:        ${AI_REVIEW_TOOL_RESOLVED}"
+    ai_review::log "  PR number:      ${PR_NUMBER:-(none — using --against directly)}"
+    ai_review::log "  Diff source:    $(ai_review::diff_command_description)"
+    ai_review::log "  Adjudication:   ${_adj_mode}"
+    ai_review::log "  Post comments:  ${POST_COMMENTS}"
+    ai_review::log "  Gate mode:      ${GATE_MODE}"
     if ai_review::should_batch "${_nfiles}" "${_nbatches}"; then
       ai_review::log "  Routing:        FAN OUT — ${_nfiles} file(s) across ${_nbatches} batch(es), jobs=${AI_REVIEW_JOBS}"
     else
       ai_review::log "  Routing:        SINGLE call — ${_nfiles} file(s), ${_nbatches} batch(es)"
     fi
-    ai_review::log  "  Changed files:"
+    ai_review::log "  Changed files:"
     ai_review::changed_files | sed 's/^/    /'
     exit 0
   fi
@@ -402,7 +405,7 @@ pr_review::run() {
   if ai_review::should_batch "${_nfiles}" "${_nbatches}"; then
     # ── Parallel fan-out path ────────────────────────────────────────────
     ai_review::info "Running ${SKILL_HUMAN_NAME} on $(ai_review::diff_command_description) via ${AI_REVIEW_TOOL_RESOLVED} — ${_nfiles} file(s) across ${_nbatches} batch(es)..."
-    ai_review::log  "────────────────────────────────────────────────────────────"
+    ai_review::log "────────────────────────────────────────────────────────────"
 
     AI_REVIEW_BATCH_DIR="$(mktemp -d)"
     AI_REVIEW_SELF="${BASH_SOURCE[0]}"
@@ -413,11 +416,11 @@ pr_review::run() {
     AI_REVIEW_BATCH_SENTINELS=""
     ai_review::fan_out "${_batch_records[@]}"
     result="${AI_REVIEW_FOLDED_RESULT}"
-    ai_review::log  "────────────────────────────────────────────────────────────"
+    ai_review::log "────────────────────────────────────────────────────────────"
 
     if [[ "${result}" == "UNPARSEABLE" ]]; then
       ai_review::err "Fan-out did not produce a complete result; failing safe."
-      if (( AI_REVIEW_NO_BLOCK == 1 )); then
+      if ((AI_REVIEW_NO_BLOCK == 1)); then
         ai_review::warn "--no-block in effect: exiting 0 despite the incomplete review."
         exit 0
       fi
@@ -431,11 +434,11 @@ pr_review::run() {
       [[ "${_line}" == AI_REVIEW_BATCH_RESULT* ]] || continue
       _jf="$(printf '%s' "${_line}" | cut -f4)"
       [[ -n "${_jf}" && "${_jf}" != "-" ]] && _json_files+=("${_jf}")
-    done <<< "${AI_REVIEW_BATCH_SENTINELS}"
+    done <<<"${AI_REVIEW_BATCH_SENTINELS}"
 
-    if (( ${#_json_files[@]} != _nbatches )); then
+    if ((${#_json_files[@]} != _nbatches)); then
       ai_review::err "Expected ${_nbatches} batch JSON file(s), got ${#_json_files[@]}; failing safe."
-      if (( AI_REVIEW_NO_BLOCK == 1 )); then exit 0; fi
+      if ((AI_REVIEW_NO_BLOCK == 1)); then exit 0; fi
       exit 1
     fi
 
@@ -446,19 +449,19 @@ pr_review::run() {
   else
     # ── Single-call path (full diff in one review) ───────────────────────
     ai_review::info "Running ${SKILL_HUMAN_NAME} on $(ai_review::diff_command_description) via ${AI_REVIEW_TOOL_RESOLVED}..."
-    ai_review::log  "────────────────────────────────────────────────────────────"
+    ai_review::log "────────────────────────────────────────────────────────────"
 
     local review_output invoke_rc=0
     review_output="$(ai_review::invoke_ai)" || invoke_rc=$?
 
-    if (( JSON_ONLY == 0 )); then
+    if ((JSON_ONLY == 0)); then
       printf '%s\n' "${review_output}"
       ai_review::log "────────────────────────────────────────────────────────────"
     fi
 
-    if (( invoke_rc != 0 )); then
+    if ((invoke_rc != 0)); then
       ai_review::err "AI CLI (${AI_REVIEW_TOOL_RESOLVED}) exited with code ${invoke_rc}."
-      if (( AI_REVIEW_NO_BLOCK == 1 )); then
+      if ((AI_REVIEW_NO_BLOCK == 1)); then
         ai_review::warn "--no-block in effect: exiting 0 despite the CLI failure."
         exit 0
       fi
@@ -472,7 +475,7 @@ pr_review::run() {
       ai_review::log "      <<<AI_REVIEW_RESULT:APPROVE>>>"
       ai_review::log "      <<<AI_REVIEW_RESULT:COMMENT>>>"
       ai_review::log "      <<<AI_REVIEW_RESULT:REQUEST_CHANGES>>>"
-      if (( AI_REVIEW_NO_BLOCK == 1 )); then
+      if ((AI_REVIEW_NO_BLOCK == 1)); then
         ai_review::warn "--no-block in effect: exiting 0 despite the unparseable result."
         exit 0
       fi
@@ -484,7 +487,7 @@ pr_review::run() {
       ai_review::log "  Expected fenced block bounded by:"
       ai_review::log "      <!-- AI_REVIEW_JSON_BEGIN -->"
       ai_review::log "      <!-- AI_REVIEW_JSON_END -->"
-      if (( AI_REVIEW_NO_BLOCK == 1 )); then
+      if ((AI_REVIEW_NO_BLOCK == 1)); then
         ai_review::warn "--no-block in effect: exiting 0 despite the missing JSON block."
         exit 0
       fi
@@ -503,18 +506,18 @@ pr_review::run() {
     local adj_output adj_rc=0
     adj_output="$(ai_review::adjudicate "${review_json}")" || adj_rc=$?
 
-    if (( adj_rc != 0 )); then
+    if ((adj_rc != 0)); then
       ai_review::warn "Adjudication pass failed (rc=${adj_rc}); keeping the first-pass result (${result})."
     else
-      if (( JSON_ONLY == 0 )); then
-        ai_review::log  "──────── Adjudication (independent second opinion) ────────"
+      if ((JSON_ONLY == 0)); then
+        ai_review::log "──────── Adjudication (independent second opinion) ────────"
         printf '%s\n' "${adj_output}"
-        ai_review::log  "────────────────────────────────────────────────────────────"
+        ai_review::log "────────────────────────────────────────────────────────────"
       fi
       local adj_result adj_json
       adj_result="$(ai_review::parse_result "${adj_output}")"
-      if [[ "${adj_result}" == "UNPARSEABLE" ]] \
-         || ! adj_json="$(pr_review::require_json "${adj_output}" "${adj_result}")"; then
+      if [[ "${adj_result}" == "UNPARSEABLE" ]] ||
+        ! adj_json="$(pr_review::require_json "${adj_output}" "${adj_result}")"; then
         ai_review::warn "Adjudication produced no parseable marker/JSON; keeping the first-pass result (${result})."
       else
         ai_review::info "Adjudicated result: ${result} → ${adj_result}."
@@ -526,15 +529,15 @@ pr_review::run() {
 
   # ── Emit the findings JSON where asked ────────────────────────────────────
   if [[ -n "${JSON_OUT}" ]]; then
-    printf '%s\n' "${review_json}" > "${JSON_OUT}"
+    printf '%s\n' "${review_json}" >"${JSON_OUT}"
     ai_review::info "Findings JSON written to ${JSON_OUT}"
   fi
-  if (( JSON_ONLY == 1 )); then
+  if ((JSON_ONLY == 1)); then
     printf '%s\n' "${review_json}"
   fi
 
   # ── Post inline comments if requested ─────────────────────────────────────
-  if (( POST_COMMENTS == 1 )); then
+  if ((POST_COMMENTS == 1)); then
     if [[ -z "${PR_NUMBER}" ]]; then
       ai_review::err "--post-comments requires a discoverable PR. Use --pr <number>."
       exit 1
@@ -543,8 +546,8 @@ pr_review::run() {
   fi
 
   # ── Gate ──────────────────────────────────────────────────────────────────
-  if (( GATE_MODE == 1 )) && [[ "${result}" != "APPROVE" ]]; then
-    if (( AI_REVIEW_NO_BLOCK == 1 )); then
+  if ((GATE_MODE == 1)) && [[ "${result}" != "APPROVE" ]]; then
+    if ((AI_REVIEW_NO_BLOCK == 1)); then
       ai_review::warn "--no-block in effect: exiting 0 despite --gate and result ${result}."
       exit 0
     fi
