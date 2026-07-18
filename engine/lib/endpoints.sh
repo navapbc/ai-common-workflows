@@ -10,9 +10,12 @@
 #   api      (default) The tool vendor's public API. Requires the matching
 #            API key (ANTHROPIC_API_KEY / OPENAI_API_KEY); copilot
 #            authenticates through its own GitHub token flow.
-#   bedrock  AWS Bedrock (claude only). Sets CLAUDE_CODE_USE_BEDROCK=1;
-#            requires AWS_REGION and an AWS credential source. AI_REVIEW_MODEL
-#            should be a Bedrock model ID or inference-profile ARN.
+#   bedrock  AWS Bedrock (claude or codex). Requires AWS_REGION and an AWS
+#            credential source. For claude: sets CLAUDE_CODE_USE_BEDROCK=1 and
+#            AI_REVIEW_MODEL should be a Bedrock model ID (optional; the CLI has
+#            a default). For codex: selects the codex CLI's built-in
+#            amazon-bedrock provider (AWS-cred auth, direct to Bedrock) and
+#            AI_REVIEW_MODEL (a Bedrock model ID) is required.
 #   vertex   Google Vertex AI (claude only). Sets CLAUDE_CODE_USE_VERTEX=1;
 #            requires ANTHROPIC_VERTEX_PROJECT_ID and CLOUD_ML_REGION; auth
 #            via ambient Google Application Default Credentials.
@@ -22,6 +25,13 @@
 #            AZURE_OPENAI_API_KEY supplies the key; AZURE_OPENAI_API_VERSION
 #            selects the REST API version. The engine derives OPENAI_BASE_URL /
 #            OPENAI_API_KEY from these unless they are already set.
+#
+# copilot BYOK: the copilot CLI reads COPILOT_PROVIDER_BASE_URL,
+# COPILOT_PROVIDER_TYPE (openai|azure|anthropic), COPILOT_PROVIDER_API_KEY, and
+# COPILOT_MODEL directly. The engine passes these through untouched (provider
+# stays api); point the base URL at an in-boundary endpoint to keep code in
+# your boundary. copilot has no native Bedrock type — front Bedrock with an
+# in-boundary Anthropic/OpenAI-compatible gateway.
 #
 # Independent of the provider, ANTHROPIC_BASE_URL and OPENAI_BASE_URL pass
 # through untouched — that is how gateway/proxy deployments (LiteLLM etc.)
@@ -55,14 +65,23 @@ ai_review::configure_endpoint() {
       ;;
   esac
 
-  # Provider/tool compatibility. Bedrock and Vertex host Claude; Azure serves
-  # OpenAI models via the codex CLI. Each rejects the wrong tool up front.
+  # Provider/tool compatibility. Bedrock hosts Claude (claude) and, via the
+  # codex CLI's built-in amazon-bedrock provider, OpenAI-compatible use (codex).
+  # Vertex is Claude-only; Azure OpenAI is codex-only. Each rejects the wrong
+  # tool up front.
   case "${provider}" in
-    bedrock | vertex)
+    bedrock)
+      if [[ "${AI_REVIEW_TOOL_RESOLVED}" != "claude" && "${AI_REVIEW_TOOL_RESOLVED}" != "codex" ]]; then
+        ai_review::err "AI_REVIEW_PROVIDER=bedrock is only supported with AI_REVIEW_TOOL=claude or codex."
+        ai_review::log "  The ${AI_REVIEW_TOOL_RESOLVED} CLI has no Bedrock backend."
+        ai_review::log "  For copilot, front Bedrock with an in-boundary gateway and use copilot BYOK (COPILOT_PROVIDER_BASE_URL)."
+        exit 2
+      fi
+      ;;
+    vertex)
       if [[ "${AI_REVIEW_TOOL_RESOLVED}" != "claude" ]]; then
-        ai_review::err "AI_REVIEW_PROVIDER=${provider} is only supported with AI_REVIEW_TOOL=claude."
-        ai_review::log "  The ${AI_REVIEW_TOOL_RESOLVED} CLI has no ${provider} backend."
-        ai_review::log "  For codex on Azure OpenAI, use AI_REVIEW_PROVIDER=azure, or point OPENAI_BASE_URL at a gateway."
+        ai_review::err "AI_REVIEW_PROVIDER=vertex is only supported with AI_REVIEW_TOOL=claude."
+        ai_review::log "  The ${AI_REVIEW_TOOL_RESOLVED} CLI has no Vertex backend."
         exit 2
       fi
       ;;
@@ -79,14 +98,25 @@ ai_review::configure_endpoint() {
 
   case "${provider}" in
     bedrock)
-      export CLAUDE_CODE_USE_BEDROCK=1
       if [[ -z "${AWS_REGION:-}" && -z "${AWS_DEFAULT_REGION:-}" ]]; then
         ai_review::err "provider=bedrock requires AWS_REGION (or AWS_DEFAULT_REGION) to be set."
         exit 2
       fi
       region="${AWS_REGION:-${AWS_DEFAULT_REGION}}"
-      if [[ -z "${AI_REVIEW_MODEL:-}" ]]; then
-        ai_review::warn "provider=bedrock with no AI_REVIEW_MODEL — the claude CLI's default Bedrock model will be used. Set the model input to a Bedrock model ID to pin it."
+      export AWS_REGION="${region}"
+      if [[ "${AI_REVIEW_TOOL_RESOLVED}" == "claude" ]]; then
+        export CLAUDE_CODE_USE_BEDROCK=1
+        if [[ -z "${AI_REVIEW_MODEL:-}" ]]; then
+          ai_review::warn "provider=bedrock with no AI_REVIEW_MODEL — the claude CLI's default Bedrock model will be used. Set the model input to a Bedrock model ID to pin it."
+        fi
+      else
+        # codex: select its built-in amazon-bedrock provider (AWS-cred auth,
+        # direct to Bedrock). core.sh reads this to add the codex -c overrides.
+        export AI_REVIEW_CODEX_MODEL_PROVIDER="amazon-bedrock"
+        if [[ -z "${AI_REVIEW_MODEL:-}" ]]; then
+          ai_review::err "provider=bedrock with AI_REVIEW_TOOL=codex requires AI_REVIEW_MODEL to be a Bedrock model ID."
+          exit 2
+        fi
       fi
       # Detect a usable credential source; warn (not fail) when none is
       # visible — an instance role may still satisfy the SDK at runtime.
@@ -160,6 +190,14 @@ ai_review::configure_endpoint() {
           fi
           ;;
         copilot)
+          if [[ -n "${COPILOT_PROVIDER_BASE_URL:-}" ]]; then
+            # BYOK: the copilot CLI talks directly to this endpoint. Model auth
+            # is the provider key; a GitHub token may still be needed for CLI
+            # entitlement, so leave that check as a soft note below.
+            if [[ -z "${COPILOT_PROVIDER_API_KEY:-}" ]]; then
+              ai_review::warn "copilot BYOK: COPILOT_PROVIDER_BASE_URL set with no COPILOT_PROVIDER_API_KEY — assuming the endpoint handles auth."
+            fi
+          fi
           if [[ -z "${GITHUB_TOKEN:-}" && -z "${GH_TOKEN:-}" && -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
             ai_review::warn "AI_REVIEW_TOOL=copilot with no GitHub token in the environment — the copilot CLI must already be authenticated on this host."
           fi
@@ -173,6 +211,7 @@ ai_review::configure_endpoint() {
   case "${AI_REVIEW_TOOL_RESOLVED}" in
     claude) [[ -n "${ANTHROPIC_BASE_URL:-}" ]] && base_url="${ANTHROPIC_BASE_URL}" ;;
     codex) [[ -n "${OPENAI_BASE_URL:-}" ]] && base_url="${OPENAI_BASE_URL}" ;;
+    copilot) [[ -n "${COPILOT_PROVIDER_BASE_URL:-}" ]] && base_url="${COPILOT_PROVIDER_BASE_URL}" ;;
   esac
 
   ai_review::info "Endpoint: tool=${AI_REVIEW_TOOL_RESOLVED} provider=${provider} region=${region} model=${AI_REVIEW_MODEL:-"(tool default)"} base_url=${base_url}"

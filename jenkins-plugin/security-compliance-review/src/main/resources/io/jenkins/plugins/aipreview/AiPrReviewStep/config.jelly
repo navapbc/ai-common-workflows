@@ -51,6 +51,18 @@
     <f:entry title="OpenAI base URL" field="openaiBaseUrl">
       <f:textbox placeholder="gateway URL; for endpoint=azure, the full Azure deployment URL incl. api-version"/>
     </f:entry>
+    <f:entry title="Copilot BYOK base URL" field="copilotProviderBaseUrl">
+      <f:textbox placeholder="tool=copilot: your model endpoint (COPILOT_PROVIDER_BASE_URL)"/>
+    </f:entry>
+    <f:entry title="Copilot BYOK provider type" field="copilotProviderType">
+      <f:textbox placeholder="openai | azure | anthropic"/>
+    </f:entry>
+    <f:entry title="Copilot BYOK API key credential" field="copilotProviderApiKeyCredentialsId">
+      <f:textbox placeholder="Secret text credential id"/>
+    </f:entry>
+    <f:entry title="Copilot BYOK model" field="copilotModel">
+      <f:textbox placeholder="model id (COPILOT_MODEL); else use Model above"/>
+    </f:entry>
     <f:entry title="GitHub server URL (GHE)" field="githubServerUrl"><f:textbox/></f:entry>
     <f:entry title="Adjudication" field="adjudication">
       <f:textbox placeholder="self | independent | off"/>

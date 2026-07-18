@@ -43,6 +43,10 @@ public class AiPrReviewStep extends Step {
     private String vertexRegion;
     private String anthropicBaseUrl;
     private String openaiBaseUrl;
+    private String copilotProviderBaseUrl;
+    private String copilotProviderType;
+    private String copilotProviderApiKeyCredentialsId;
+    private String copilotModel;
     private String githubServerUrl;
     private String adjudication;
     private String adjudicationModel;
@@ -222,6 +226,42 @@ public class AiPrReviewStep extends Step {
     @DataBoundSetter
     public void setOpenaiBaseUrl(String openaiBaseUrl) {
         this.openaiBaseUrl = openaiBaseUrl;
+    }
+
+    public String getCopilotProviderBaseUrl() {
+        return copilotProviderBaseUrl;
+    }
+
+    @DataBoundSetter
+    public void setCopilotProviderBaseUrl(String copilotProviderBaseUrl) {
+        this.copilotProviderBaseUrl = copilotProviderBaseUrl;
+    }
+
+    public String getCopilotProviderType() {
+        return copilotProviderType;
+    }
+
+    @DataBoundSetter
+    public void setCopilotProviderType(String copilotProviderType) {
+        this.copilotProviderType = copilotProviderType;
+    }
+
+    public String getCopilotProviderApiKeyCredentialsId() {
+        return copilotProviderApiKeyCredentialsId;
+    }
+
+    @DataBoundSetter
+    public void setCopilotProviderApiKeyCredentialsId(String id) {
+        this.copilotProviderApiKeyCredentialsId = id;
+    }
+
+    public String getCopilotModel() {
+        return copilotModel;
+    }
+
+    @DataBoundSetter
+    public void setCopilotModel(String copilotModel) {
+        this.copilotModel = copilotModel;
     }
 
     public String getGithubServerUrl() {

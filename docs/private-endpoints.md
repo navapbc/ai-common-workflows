@@ -24,7 +24,7 @@ So, when the endpoint is in-boundary, run the review on in-boundary compute:
 Decide deliberately; don't let a copy-pasted `runs-on: ubuntu-latest` make the
 call for you.
 
-## Amazon Bedrock (claude)
+## Amazon Bedrock (claude or codex)
 
 ```yaml
 permissions: { contents: read, pull-requests: write, id-token: write }
@@ -54,13 +54,34 @@ keys) with a trust policy that pins your repo/ref. Full policy example in
 On self-hosted runners without instance-role credentials, provide them via
 OIDC (`configure-aws-credentials`) or the standard AWS env vars.
 
+### Bedrock with `codex`
+
+If your program allows the **Codex** CLI (not `claude`), set `ai-tool: codex` —
+the engine selects Codex's built-in `amazon-bedrock` provider, which
+authenticates with the same AWS credentials and calls Bedrock **directly** (no
+gateway). `model` (a Bedrock model ID) is **required** for codex.
+
+```yaml
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+        with:
+          ai-tool: codex
+          provider: bedrock
+          aws-region: us-east-1
+          model: us.anthropic.claude-sonnet-4-5-20250929-v1:0   # a Bedrock model ID
+```
+
+The IAM scope is identical to the claude case. (Codex's built-in Bedrock
+provider does not accept a custom `base_url`; VPC-interface-endpoint routing is
+handled by AWS networking, not Codex config.)
+
 **Jenkins:** ambient agent credentials (instance profile / IRSA) are used
-directly, or wrap the step:
+directly, or wrap the step. Works the same for `claude` and `codex`:
 
 ```groovy
 withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
   aiSecurityComplianceReview(tool: 'claude', endpoint: 'bedrock', awsRegion: 'us-east-1',
              model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0')
+  // or tool: 'codex' with a Bedrock model id — same endpoint/region/creds.
 }
 ```
 
@@ -120,6 +141,43 @@ aiSecurityComplianceReview(tool: 'codex', endpoint: 'azure',
            model: 'my-gpt-deployment',
            openaiBaseUrl: 'https://my-resource.openai.azure.com/openai/deployments/my-gpt-deployment?api-version=2024-10-21',
            openaiApiKeyCredentialsId: 'azure-openai-key')
+```
+
+## Copilot BYOK (bring your own key)
+
+The **Copilot** CLI supports BYOK: it talks **directly** to an endpoint you
+specify, rather than GitHub's hosted models. Configure it with the
+`copilot-provider-*` inputs (the engine passes them through as
+`COPILOT_PROVIDER_BASE_URL` / `_TYPE` / `_API_KEY` and `COPILOT_MODEL`):
+
+```yaml
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+        with:
+          ai-tool: copilot
+          copilot-provider-base-url: https://llm-gw.internal/v1
+          copilot-provider-type: anthropic        # openai | azure | anthropic
+          copilot-provider-api-key: ${{ secrets.GATEWAY_TOKEN }}
+          copilot-model: claude-sonnet-4-5
+```
+
+Because requests go straight to `copilot-provider-base-url`, pointing it at an
+in-boundary endpoint keeps code in your boundary. Copilot has **no native
+Bedrock type** (`copilot-provider-type` is only `openai`/`azure`/`anthropic`),
+so to reach **Bedrock** front it with an in-boundary Anthropic- or
+OpenAI-compatible gateway (e.g. LiteLLM or AWS's Bedrock Access Gateway) and set
+the type accordingly. Note the copilot CLI may still need a GitHub token for CLI
+entitlement even under BYOK.
+
+**Jenkins:** the same values are step params (`copilotProviderBaseUrl`,
+`copilotProviderType`, `copilotModel`) plus a Secret-text credential for the key:
+
+```groovy
+aiSecurityComplianceReview(tool: 'copilot',
+           copilotProviderBaseUrl: 'https://llm-gw.internal/v1',
+           copilotProviderType: 'anthropic',
+           copilotProviderApiKeyCredentialsId: 'copilot-byok-key',
+           copilotModel: 'claude-sonnet-4-5',
+           githubTokenCredentialsId: 'gh-pr-review')
 ```
 
 ## Custom gateway / proxy (claude or codex)

@@ -135,10 +135,10 @@ report
   [[ "$output" == *"requires AWS_REGION"* ]]
 }
 
-@test "endpoint: bedrock rejects non-claude tools" {
-  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=bedrock run ai_review::configure_endpoint
+@test "endpoint: bedrock rejects copilot" {
+  AI_REVIEW_TOOL_RESOLVED=copilot AI_REVIEW_PROVIDER=bedrock run ai_review::configure_endpoint
   [ "$status" -eq 2 ]
-  [[ "$output" == *"only supported with AI_REVIEW_TOOL=claude"* ]]
+  [[ "$output" == *"only supported with AI_REVIEW_TOOL=claude or codex"* ]]
 }
 
 @test "endpoint: bedrock audit line names provider and region, no keys" {
@@ -149,6 +149,39 @@ report
   [[ "$output" == *"provider=bedrock"* ]]
   [[ "$output" == *"region=us-east-1"* ]]
   [[ "$output" != *"AKIAsecret"* ]]
+}
+
+@test "endpoint: codex+bedrock selects the amazon-bedrock provider" {
+  export AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=bedrock AWS_REGION=us-east-1
+  export AWS_ACCESS_KEY_ID=AKIAsecret AI_REVIEW_MODEL=us.anthropic.claude-x
+  run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"provider=bedrock"* ]]
+  [[ "$output" == *"region=us-east-1"* ]]
+}
+
+@test "endpoint: codex+bedrock exports the codex provider selector" {
+  export AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=bedrock AWS_REGION=us-east-1
+  export AWS_ACCESS_KEY_ID=AKIAsecret AI_REVIEW_MODEL=us.anthropic.claude-x
+  ai_review::configure_endpoint >/dev/null 2>&1
+  [ "${AI_REVIEW_CODEX_MODEL_PROVIDER}" = "amazon-bedrock" ]
+}
+
+@test "endpoint: codex+bedrock requires a model id" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=bedrock AWS_REGION=us-east-1 \
+    run ai_review::configure_endpoint
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"requires AI_REVIEW_MODEL to be a Bedrock model ID"* ]]
+}
+
+@test "endpoint: copilot BYOK base URL shows in audit line, no key leak" {
+  export AI_REVIEW_TOOL_RESOLVED=copilot AI_REVIEW_PROVIDER=api
+  export COPILOT_PROVIDER_BASE_URL=https://llm-gw.internal/v1 GH_TOKEN=t
+  export COPILOT_PROVIDER_API_KEY=byoksecret
+  run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"llm-gw.internal"* ]]
+  [[ "$output" != *"byoksecret"* ]]
 }
 
 @test "endpoint: vertex requires project id and region" {

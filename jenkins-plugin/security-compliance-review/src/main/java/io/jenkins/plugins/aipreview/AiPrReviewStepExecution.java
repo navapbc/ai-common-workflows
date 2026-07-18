@@ -133,6 +133,18 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         if ("copilot".equals(tool)) {
             putSecret(runEnv, "GITHUB_TOKEN", githubCredId, run);
             putSecret(runEnv, "GH_TOKEN", githubCredId, run);
+            // copilot BYOK: point the CLI at your own model endpoint (model auth
+            // via the provider key, read directly by the CLI in the AI phase).
+            putIfSet(runEnv, "COPILOT_PROVIDER_BASE_URL",
+                    orGlobal(step.getCopilotProviderBaseUrl(), cfg == null ? null : cfg.getCopilotProviderBaseUrl(), null));
+            putIfSet(runEnv, "COPILOT_PROVIDER_TYPE",
+                    orGlobal(step.getCopilotProviderType(), cfg == null ? null : cfg.getCopilotProviderType(), null));
+            putIfSet(runEnv, "COPILOT_MODEL",
+                    orGlobal(step.getCopilotModel(), cfg == null ? null : cfg.getCopilotModel(), null));
+            putSecret(runEnv, "COPILOT_PROVIDER_API_KEY",
+                    orGlobal(step.getCopilotProviderApiKeyCredentialsId(),
+                            cfg == null ? null : cfg.getCopilotProviderApiKeyCredentialsId(), null),
+                    run);
         }
 
         // Endpoint specifics.

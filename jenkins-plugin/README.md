@@ -120,12 +120,25 @@ aiSecurityComplianceReview tool: 'claude',
            gate: 'unstable'
 ```
 
-Bedrock (in-VPC agent, ambient AWS creds):
+Bedrock (in-VPC agent, ambient AWS creds). Works with `tool: 'claude'` or
+`tool: 'codex'` — codex uses its built-in `amazon-bedrock` provider, same
+endpoint/region/creds (a Bedrock model id is required for codex):
 
 ```groovy
 aiSecurityComplianceReview tool: 'claude', endpoint: 'bedrock',
            awsRegion: 'us-east-1',
            model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+           githubTokenCredentialsId: 'gh-pr-review'
+```
+
+Copilot BYOK (point the CLI at your own model endpoint; key as Secret-text):
+
+```groovy
+aiSecurityComplianceReview tool: 'copilot',
+           copilotProviderBaseUrl: 'https://llm-gw.internal/v1',
+           copilotProviderType: 'anthropic',   // openai | azure | anthropic
+           copilotProviderApiKeyCredentialsId: 'copilot-byok-key',
+           copilotModel: 'claude-sonnet-4-5',
            githubTokenCredentialsId: 'gh-pr-review'
 ```
 

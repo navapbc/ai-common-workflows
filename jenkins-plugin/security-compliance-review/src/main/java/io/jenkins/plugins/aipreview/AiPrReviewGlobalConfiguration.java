@@ -27,6 +27,10 @@ public class AiPrReviewGlobalConfiguration extends GlobalConfiguration {
     private String vertexRegion;
     private String anthropicBaseUrl;
     private String openaiBaseUrl;
+    private String copilotProviderBaseUrl;
+    private String copilotProviderType;
+    private String copilotProviderApiKeyCredentialsId;
+    private String copilotModel;
     private String githubServerUrl;
     private String anthropicApiKeyCredentialsId;
     private String openaiApiKeyCredentialsId;
@@ -139,6 +143,46 @@ public class AiPrReviewGlobalConfiguration extends GlobalConfiguration {
     @DataBoundSetter
     public void setOpenaiBaseUrl(String openaiBaseUrl) {
         this.openaiBaseUrl = openaiBaseUrl;
+        save();
+    }
+
+    public String getCopilotProviderBaseUrl() {
+        return copilotProviderBaseUrl;
+    }
+
+    @DataBoundSetter
+    public void setCopilotProviderBaseUrl(String copilotProviderBaseUrl) {
+        this.copilotProviderBaseUrl = copilotProviderBaseUrl;
+        save();
+    }
+
+    public String getCopilotProviderType() {
+        return copilotProviderType;
+    }
+
+    @DataBoundSetter
+    public void setCopilotProviderType(String copilotProviderType) {
+        this.copilotProviderType = copilotProviderType;
+        save();
+    }
+
+    public String getCopilotProviderApiKeyCredentialsId() {
+        return copilotProviderApiKeyCredentialsId;
+    }
+
+    @DataBoundSetter
+    public void setCopilotProviderApiKeyCredentialsId(String copilotProviderApiKeyCredentialsId) {
+        this.copilotProviderApiKeyCredentialsId = copilotProviderApiKeyCredentialsId;
+        save();
+    }
+
+    public String getCopilotModel() {
+        return copilotModel;
+    }
+
+    @DataBoundSetter
+    public void setCopilotModel(String copilotModel) {
+        this.copilotModel = copilotModel;
         save();
     }
 

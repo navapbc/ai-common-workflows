@@ -35,9 +35,15 @@ ci::validate_inputs() {
       ;;
   esac
   case "${PROVIDER}" in
-    bedrock | vertex)
+    bedrock)
+      if [[ "${AI_TOOL}" != "claude" && "${AI_TOOL}" != "codex" ]]; then
+        echo "::error::provider=bedrock is only supported with ai-tool=claude or codex"
+        return 1
+      fi
+      ;;
+    vertex)
       if [[ "${AI_TOOL}" != "claude" ]]; then
-        echo "::error::provider=${PROVIDER} is only supported with ai-tool=claude"
+        echo "::error::provider=vertex is only supported with ai-tool=claude"
         return 1
       fi
       ;;

@@ -58,14 +58,15 @@ inputs:
   # ── LLM endpoint ──────────────────────────────────────────────────────────
   provider:
     description: >-
-      LLM endpoint: api | bedrock | vertex | azure. bedrock/vertex are
-      claude-only; azure is codex-only (Azure OpenAI serves OpenAI models).
+      LLM endpoint: api | bedrock | vertex | azure. bedrock: claude or codex
+      (codex uses its native amazon-bedrock provider); vertex: claude only;
+      azure: codex only. copilot uses BYOK inputs on the api path.
     required: false
     default: "api"
   model:
     description: >-
-      Model override. For provider=bedrock, the Bedrock model ID; for
-      provider=azure, the Azure deployment name.
+      Model override. For provider=bedrock, the Bedrock model ID (required for
+      ai-tool=codex); for provider=azure, the Azure deployment name.
     required: false
     default: ""
   aws-region:
@@ -98,6 +99,27 @@ inputs:
     default: ""
   openai-base-url:
     description: "Custom OpenAI-compatible endpoint (gateway/proxy)."
+    required: false
+    default: ""
+
+  # ── Copilot BYOK (ai-tool=copilot) ──────────────────────────────────────────
+  # The copilot CLI talks directly to this endpoint. For Bedrock, point it at an
+  # in-boundary Anthropic/OpenAI-compatible gateway (copilot has no native
+  # Bedrock type).
+  copilot-provider-base-url:
+    description: "BYOK endpoint for ai-tool=copilot (COPILOT_PROVIDER_BASE_URL)."
+    required: false
+    default: ""
+  copilot-provider-type:
+    description: "BYOK provider type for ai-tool=copilot: openai | azure | anthropic."
+    required: false
+    default: ""
+  copilot-provider-api-key:
+    description: "BYOK model API key for ai-tool=copilot (COPILOT_PROVIDER_API_KEY)."
+    required: false
+    default: ""
+  copilot-model:
+    description: "BYOK model id for ai-tool=copilot (COPILOT_MODEL); else use 'model'."
     required: false
     default: ""
 
@@ -223,6 +245,11 @@ runs:
         AZURE_OPENAI_ENDPOINT: ${{ inputs.azure-openai-endpoint }}
         AZURE_OPENAI_API_KEY: ${{ inputs.azure-openai-api-key }}
         AZURE_OPENAI_API_VERSION: ${{ inputs.azure-openai-api-version }}
+        # copilot BYOK — read directly by the copilot CLI (model auth, not SCM).
+        COPILOT_PROVIDER_BASE_URL: ${{ inputs.copilot-provider-base-url }}
+        COPILOT_PROVIDER_TYPE: ${{ inputs.copilot-provider-type }}
+        COPILOT_PROVIDER_API_KEY: ${{ inputs.copilot-provider-api-key }}
+        COPILOT_MODEL: ${{ inputs.copilot-model }}
         AI_ADJUDICATION: ${{ inputs.adjudication }}
         AI_ADJUDICATION_MODEL: ${{ inputs.adjudication-model }}
         AI_REVIEW_JOBS: ${{ inputs.jobs }}

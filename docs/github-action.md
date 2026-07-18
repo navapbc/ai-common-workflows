@@ -31,7 +31,8 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
 
 ## Inputs
 
-All inputs are active. Endpoint inputs beyond `api` apply to `claude` only.
+All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
+`codex`; `vertex` → `claude`; `azure` → `codex`; `copilot-provider-*` → `copilot`.
 
 | Input | Default | Description |
 |---|---|---|
@@ -43,14 +44,18 @@ All inputs are active. Endpoint inputs beyond `api` apply to `claude` only.
 | `gate` | `false` | Fail the job on any non-APPROVE result |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
-| `provider` | `api` | `api` \| `bedrock` \| `vertex` \| `azure` (bedrock/vertex→claude, azure→codex) |
-| `model` | — | Model override; Bedrock model ID (bedrock) or Azure deployment name (azure) |
-| `aws-region` | — | Region for provider=bedrock |
+| `provider` | `api` | `api` \| `bedrock` \| `vertex` \| `azure` (bedrock→claude or codex; vertex→claude; azure→codex) |
+| `model` | — | Model override; Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
+| `aws-region` | — | Region for provider=bedrock (claude or codex) |
 | `vertex-project-id` / `vertex-region` | — | provider=vertex |
 | `azure-openai-endpoint` | — | Azure resource endpoint for provider=azure (e.g. `https://res.openai.azure.com`) |
 | `azure-openai-api-key` | — | Azure OpenAI key for provider=azure |
 | `azure-openai-api-version` | `2024-10-21` | Azure REST API version for provider=azure |
 | `anthropic-base-url` / `openai-base-url` | — | Custom gateway endpoint |
+| `copilot-provider-base-url` | — | ai-tool=copilot BYOK endpoint (`COPILOT_PROVIDER_BASE_URL`) |
+| `copilot-provider-type` | — | ai-tool=copilot BYOK type: `openai` \| `azure` \| `anthropic` |
+| `copilot-provider-api-key` | — | ai-tool=copilot BYOK model key (`COPILOT_PROVIDER_API_KEY`) |
+| `copilot-model` | — | ai-tool=copilot BYOK model id (`COPILOT_MODEL`) |
 | `adjudication` | `self` | `self` \| `independent` \| `off` |
 | `adjudication-model` | — | Model for the independent pass only |
 | `jobs` | `4` | Fan-out concurrency for large diffs |

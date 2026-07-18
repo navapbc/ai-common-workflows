@@ -116,11 +116,20 @@ instructions. Add an agency/state variant under `engine/profiles/` — see
 | Tool | api | bedrock | vertex | azure | custom base URL |
 |---|:-:|:-:|:-:|:-:|:-:|
 | `claude` | ✅ | ✅ | ✅ | — | ✅ |
-| `codex` | ✅ | — | — | ✅ | ✅ |
-| `copilot` | ✅ | — | — | — | — |
+| `codex` | ✅ | ✅ | — | ✅ | ✅ |
+| `copilot` | ✅ | —¹ | — | —¹ | ✅ (BYOK) |
 
-Bedrock and Vertex host Claude; Azure OpenAI hosts OpenAI models, so it pairs
-with `codex`. For any other split, point the matching base URL at a gateway.
+Bedrock hosts Claude (`claude`) and, via the Codex CLI's built-in
+`amazon-bedrock` provider, OpenAI-compatible use (`codex`). Vertex is
+Claude-only; Azure OpenAI hosts OpenAI models, so it pairs with `codex`.
+
+¹ **copilot** reaches non-GitHub models through **BYOK** env vars
+(`COPILOT_PROVIDER_BASE_URL` + `_TYPE` `openai|azure|anthropic` + `_API_KEY`),
+sent directly to your endpoint. It has no native Bedrock type, so for Bedrock
+you front it with an in-boundary Anthropic/OpenAI-compatible gateway. The
+`bedrock`/`vertex`/`azure` *provider inputs* apply to `claude`/`codex`; copilot
+uses the BYOK inputs on the `api` path. See
+[docs/private-endpoints.md](docs/private-endpoints.md).
 
 ## Security & supply chain
 
