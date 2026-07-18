@@ -34,8 +34,11 @@ jobs:
         run: mvn -B -ntp verify
       - uses: actions/upload-artifact@v4
         with:
-          name: ai-pr-review-hpi
-          path: jenkins-plugin/target/ai-pr-review.hpi
+          name: ai-security-compliance-review-hpi
+          # Both .hpi files: the workflow plugin and the shared core it depends on.
+          path: |
+            jenkins-plugin/security-compliance-review/target/ai-security-compliance-review.hpi
+            jenkins-plugin/core/target/ai-common-core.hpi
 
   release:
     name: Attach .hpi to the release
@@ -57,17 +60,25 @@ jobs:
           version="${GITHUB_REF_NAME#jenkins-plugin-v}"
           mvn -B -ntp -Drevision="${version}" -Dchangelist= -DskipTests=false package
       - name: Checksum
-        working-directory: jenkins-plugin/target
-        run: sha256sum ai-pr-review.hpi | tee ai-pr-review.hpi.sha256
+        run: |
+          for hpi in \
+            jenkins-plugin/security-compliance-review/target/ai-security-compliance-review.hpi \
+            jenkins-plugin/core/target/ai-common-core.hpi; do
+            (cd "$(dirname "$hpi")" && sha256sum "$(basename "$hpi")" | tee "$(basename "$hpi").sha256")
+          done
       - name: Create / update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            jenkins-plugin/target/ai-pr-review.hpi \
-            jenkins-plugin/target/ai-pr-review.hpi.sha256 \
+          # Ship the workflow plugin AND the shared core plugin it depends on,
+          # each with its checksum. Both must be installed on the controller.
+          assets=(
+            jenkins-plugin/security-compliance-review/target/ai-security-compliance-review.hpi
+            jenkins-plugin/security-compliance-review/target/ai-security-compliance-review.hpi.sha256
+            jenkins-plugin/core/target/ai-common-core.hpi
+            jenkins-plugin/core/target/ai-common-core.hpi.sha256
+          )
+          gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "AI PR Review Jenkins plugin ${GITHUB_REF_NAME#jenkins-plugin-v}. Verify the .hpi against ai-pr-review.hpi.sha256 before installing." \
-            || gh release upload "${GITHUB_REF_NAME}" \
-                 jenkins-plugin/target/ai-pr-review.hpi \
-                 jenkins-plugin/target/ai-pr-review.hpi.sha256 --clobber
+            --notes "AI Security & Compliance Review Jenkins plugin ${GITHUB_REF_NAME#jenkins-plugin-v}. Install both ai-security-compliance-review.hpi and its dependency ai-common-core.hpi; verify each against its .sha256 before installing." \
+            || gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber

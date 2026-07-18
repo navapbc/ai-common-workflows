@@ -1,0 +1,7 @@
+<?jelly escape-by-default='true'?>
+<div>
+  Shared library plugin for the AI Common Workflows engine: engine extraction,
+  LLM endpoint mapping, and pull-request context resolution. It exposes no
+  pipeline step of its own — the per-workflow plugins (e.g. AI Security &amp;
+  Compliance Review) depend on it.
+</div>

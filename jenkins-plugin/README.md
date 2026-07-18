@@ -1,22 +1,29 @@
-# AI PR Review — Jenkins plugin
+# AI Security & Compliance Review — Jenkins plugin
 
-Adds a single `aiPrReview` pipeline step that runs the same AI security &
-compliance review engine as the [GitHub Action](../docs/github-action.md), on
-your Jenkins agents. Supports Claude, Codex, and Copilot on the public API or a
-private endpoint (Bedrock, Vertex, Azure OpenAI, or a custom gateway).
+Adds a single `aiSecurityComplianceReview` pipeline step that runs the same AI
+security & compliance review engine as the [GitHub Action](../docs/github-action.md),
+on your Jenkins agents. Supports Claude, Codex, and Copilot on the public API or
+a private endpoint (Bedrock, Vertex, Azure OpenAI, or a custom gateway), with a
+selectable compliance `profile` (CMS ARS by default).
 
-The plugin is a thin wrapper: it bundles the shared `engine/` (a snapshot,
-zipped at build time), extracts it onto the agent at runtime, and runs it.
-There is one source of truth for review logic across the Action and the plugin.
+The plugin is thin: it bundles the shared `engine/` (a snapshot, zipped at build
+time), extracts it onto the agent at runtime, and runs it. Shared machinery
+(engine extraction, endpoint mapping, PR-context resolution) lives in a separate
+**`ai-common-core`** library plugin that this plugin depends on. There is one
+source of truth for review logic across the Action and the plugin.
 
 ## Install
 
-1. Download `ai-pr-review.hpi` from the
-   [latest release](https://github.com/navapbc/ai-common-workflows/releases)
-   and **verify its SHA-256 against the checksum in the release notes**
-   (`sha256sum ai-pr-review.hpi`).
-2. Manage Jenkins → Plugins → Advanced settings → Deploy Plugin → upload the
-   `.hpi` → restart Jenkins.
+The plugin depends on the shared `ai-common-core` library plugin, so install
+**both**:
+
+1. Download `ai-security-compliance-review.hpi` **and** `ai-common-core.hpi`
+   from the [latest release](https://github.com/navapbc/ai-common-workflows/releases)
+   and **verify each against its SHA-256** in the release notes
+   (`sha256sum ai-security-compliance-review.hpi ai-common-core.hpi`).
+2. Manage Jenkins → Plugins → Advanced settings → Deploy Plugin → upload **both**
+   `.hpi` files → restart Jenkins. (Installing from an update center resolves the
+   `ai-common-core` dependency automatically; manual upload does not.)
 
 Upgrades are a deliberate admin action — never automatic. Review the changes
 between releases as you would any third-party CI dependency (see
@@ -70,20 +77,21 @@ that allows only `bedrock:InvokeModel` on your model ARN(s) (see
 
 ```groovy
 withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
-  aiPrReview(tool: 'claude', endpoint: 'bedrock', awsRegion: 'us-east-1')
+  aiSecurityComplianceReview(tool: 'claude', endpoint: 'bedrock', awsRegion: 'us-east-1')
 }
 ```
 
 ## Global configuration
 
-Manage Jenkins → System → **AI PR Review** sets org-wide defaults (tool,
-endpoint, model, region, gate, credential IDs). Any default set here is used
-whenever the matching step parameter is omitted, so the common Jenkinsfile case
-is a bare `aiPrReview()`. The section is JCasC-compatible:
+Manage Jenkins → System → **AI Security & Compliance Review** sets org-wide
+defaults (tool, endpoint, model, compliance profile, region, gate, credential
+IDs). Any default set here is used whenever the matching step parameter is
+omitted, so the common Jenkinsfile case is a bare
+`aiSecurityComplianceReview()`. The section is JCasC-compatible:
 
 ```yaml
 unclassified:
-  aiPrReview:
+  aiSecurityComplianceReview:
     tool: claude
     endpoint: bedrock
     awsRegion: us-east-1
@@ -99,14 +107,14 @@ Minimal (multibranch PR build, defaults from global config):
 ```groovy
 stage('AI PR Review') {
   when { changeRequest() }
-  steps { aiPrReview() }
+  steps { aiSecurityComplianceReview() }
 }
 ```
 
 Public API with explicit credential, gating as unstable:
 
 ```groovy
-aiPrReview tool: 'claude',
+aiSecurityComplianceReview tool: 'claude',
            anthropicApiKeyCredentialsId: 'anthropic-key',
            githubTokenCredentialsId: 'gh-pr-review',
            gate: 'unstable'
@@ -115,7 +123,7 @@ aiPrReview tool: 'claude',
 Bedrock (in-VPC agent, ambient AWS creds):
 
 ```groovy
-aiPrReview tool: 'claude', endpoint: 'bedrock',
+aiSecurityComplianceReview tool: 'claude', endpoint: 'bedrock',
            awsRegion: 'us-east-1',
            model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
            githubTokenCredentialsId: 'gh-pr-review'
@@ -125,7 +133,7 @@ Azure OpenAI (codex; Azure serves OpenAI models). Point the OpenAI base URL at
 the full deployment URL and pass the key as an OpenAI Secret-text credential:
 
 ```groovy
-aiPrReview tool: 'codex', endpoint: 'azure',
+aiSecurityComplianceReview tool: 'codex', endpoint: 'azure',
            model: 'my-gpt-deployment',
            openaiBaseUrl: 'https://my-resource.openai.azure.com/openai/deployments/my-gpt-deployment?api-version=2024-10-21',
            openaiApiKeyCredentialsId: 'azure-openai-key',
@@ -135,7 +143,7 @@ aiPrReview tool: 'codex', endpoint: 'azure',
 Custom gateway (LiteLLM/proxy):
 
 ```groovy
-aiPrReview tool: 'claude', endpoint: 'custom',
+aiSecurityComplianceReview tool: 'claude', endpoint: 'custom',
            anthropicBaseUrl: 'https://llm-gw.internal/v1',
            githubTokenCredentialsId: 'gh-pr-review'
 ```
@@ -143,7 +151,7 @@ aiPrReview tool: 'claude', endpoint: 'custom',
 GitHub Enterprise:
 
 ```groovy
-aiPrReview githubServerUrl: 'github.mycorp.com',
+aiSecurityComplianceReview githubServerUrl: 'github.mycorp.com',
            githubTokenCredentialsId: 'ghe-pr-review'
 ```
 
@@ -170,9 +178,13 @@ builds). Override with the `pr` and `against` parameters for other setups.
 
 ```bash
 cd jenkins-plugin
-mvn hpi:run          # scratch Jenkins at http://localhost:8080/jenkins
-mvn verify           # compile + tests (JenkinsRule)
+mvn verify                                   # build + test all modules (reactor)
+mvn -pl security-compliance-review -am hpi:run   # scratch Jenkins at http://localhost:8080/jenkins
 ```
+
+The reactor has two modules: `core` (the `ai-common-core` library plugin) and
+`security-compliance-review` (this plugin). `mvn verify` from `jenkins-plugin/`
+builds both; the runnable plugin is `security-compliance-review`.
 
 Use `engineOverridePath` in a Jenkinsfile to run a working-copy engine instead
 of the bundled zip while iterating on engine logic.
