@@ -20,19 +20,20 @@ if (( RUN_LINT )) && command -v shellcheck &>/dev/null; then
     engine/bin/ai-pr-review \
     engine/lib/core.sh engine/lib/endpoints.sh \
     engine/lib/scm/github.sh engine/lib/sandbox/sandbox.sh \
+    workflows/_shared/lib/ci.sh \
     tests/stubs/* tests/run.sh || fail=1
 fi
 
 if (( RUN_LINT )) && command -v shfmt &>/dev/null; then
   echo "==> shfmt (diff check)"
-  shfmt -d -i 2 -ci engine/lib engine/bin || fail=1
+  shfmt -d -i 2 -ci engine/lib engine/bin workflows/_shared/lib || fail=1
 fi
 
 echo "==> pytest"
 python3 -m pytest tests/python/ -q || fail=1
 
-echo "==> bats: core + e2e"
-bats tests/bats/core.bats tests/bats/e2e.bats || fail=1
+echo "==> bats: core + e2e + ci_shared"
+bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats || fail=1
 
 # tests/bats/sandbox.bats covers the experimental (unshipped) sandbox and is
 # not part of the default suite; run it manually with Docker if working on it.

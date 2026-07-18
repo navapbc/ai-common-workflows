@@ -1,8 +1,9 @@
-name: "AI PR Review"
+name: "AI Security & Compliance Review"
 description: >-
   AI-assisted security and compliance review of a pull request. Supports
   Claude, Codex, and Copilot, on the public API or a private endpoint
-  (Bedrock, Vertex, Azure OpenAI, or a custom gateway).
+  (Bedrock, Vertex, Azure OpenAI, or a custom gateway). Selectable compliance
+  profile (CMS ARS by default).
 author: "Nava PBC"
 
 branding:
@@ -45,6 +46,14 @@ inputs:
     description: "PR number. Defaults to the pull_request event's number."
     required: false
     default: ""
+
+  # ── Compliance profile ────────────────────────────────────────────────────
+  profile:
+    description: >-
+      Compliance profile selecting the rubric: cms-ars (default) | baseline, a
+      name under engine/profiles/, or a path to a custom profile directory.
+    required: false
+    default: "cms-ars"
 
   # ── LLM endpoint ──────────────────────────────────────────────────────────
   provider:
@@ -142,79 +151,49 @@ runs:
     - name: Validate inputs
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         AI_TOOL: ${{ inputs.ai-tool }}
         PROVIDER: ${{ inputs.provider }}
       run: |
         set -euo pipefail
-        case "${AI_TOOL}" in
-          claude | codex | copilot) ;;
-          *) echo "::error::ai-tool must be claude | codex | copilot (got '${AI_TOOL}')"; exit 1 ;;
-        esac
-        case "${PROVIDER}" in
-          api | bedrock | vertex | azure) ;;
-          *) echo "::error::provider must be api | bedrock | vertex | azure (got '${PROVIDER}')"; exit 1 ;;
-        esac
-        case "${PROVIDER}" in
-          bedrock | vertex)
-            if [[ "${AI_TOOL}" != "claude" ]]; then
-              echo "::error::provider=${PROVIDER} is only supported with ai-tool=claude"; exit 1
-            fi ;;
-          azure)
-            if [[ "${AI_TOOL}" != "codex" ]]; then
-              echo "::error::provider=azure is only supported with ai-tool=codex (Azure OpenAI serves OpenAI models)"; exit 1
-            fi ;;
-        esac
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::validate_inputs
 
     - name: Resolve PR context
       id: ctx
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         PR_NUMBER_INPUT: ${{ inputs.pr-number }}
         EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
         EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
       run: |
         set -euo pipefail
-        pr="${PR_NUMBER_INPUT:-${EVENT_PR_NUMBER:-}}"
-        base="${EVENT_BASE_REF:-}"
-        if [[ -z "${pr}" ]]; then
-          echo "::notice::No PR context (not a pull_request event and no pr-number given). Skipping review."
-          echo "skip=true" >> "${GITHUB_OUTPUT}"
-          exit 0
-        fi
-        if [[ -z "${base}" ]]; then
-          echo "::error::Could not determine the PR base ref. On non-pull_request events, run on a PR or provide the base via checkout."
-          exit 1
-        fi
-        {
-          echo "skip=false"
-          echo "pr=${pr}"
-          echo "base=${base}"
-        } >> "${GITHUB_OUTPUT}"
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::resolve_pr_context
 
     - name: Ensure base ref is available for the diff
       if: steps.ctx.outputs.skip == 'false'
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         BASE: ${{ steps.ctx.outputs.base }}
       run: |
         set -euo pipefail
-        # actions/checkout fetches the PR head; make origin/<base> resolvable
-        # locally for `git diff`. Consumers who set fetch-depth: 0 already have it.
-        git fetch --no-tags --depth=200 origin "${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null || true
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::ensure_base_ref
 
     - name: Install AI CLI
       if: steps.ctx.outputs.skip == 'false' && inputs.install-cli == 'true'
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         AI_TOOL: ${{ inputs.ai-tool }}
         CLI_VERSION: ${{ inputs.cli-version }}
       run: |
         set -euo pipefail
-        case "${AI_TOOL}" in
-          claude)  npm install -g "@anthropic-ai/claude-code@${CLI_VERSION}" ;;
-          codex)   npm install -g "@openai/codex@${CLI_VERSION}" ;;
-          copilot) npm install -g "@github/copilot@${CLI_VERSION}" ;;
-        esac
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::install_ai_cli
 
     # ── AI phase — runs the review with NO SCM token in scope ────────────────
     # The AI CLI reads untrusted PR content, so the token that can write to your
@@ -232,6 +211,7 @@ runs:
         DRY_RUN: ${{ inputs.dry-run }}
         AI_REVIEW_TOOL: ${{ inputs.ai-tool }}
         AI_REVIEW_PROVIDER: ${{ inputs.provider }}
+        AI_REVIEW_PROFILE: ${{ inputs.profile }}
         AI_REVIEW_MODEL: ${{ inputs.model }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
@@ -256,13 +236,14 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engine/bin/ai-pr-review"
         review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
         echo "review-json=${review_json}" >> "${GITHUB_OUTPUT}"
 
         args=(--against "origin/${BASE}" --json-out "${review_json}")
         [[ "${DRY_RUN}" == "true" ]] && args+=(--dry-run)
 
-        bash "${ACTION_PATH}/engine/bin/ai-pr-review" "${args[@]}"
+        bash "${engine}" "${args[@]}"
 
     # ── Post phase — the only step that holds the SCM token ──────────────────
     - name: Post review
@@ -277,8 +258,8 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
-        bash "${ACTION_PATH}/engine/bin/ai-pr-review" \
-          --post-only --pr "${PR_NUMBER}" --json-in "${REVIEW_JSON}"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engine/bin/ai-pr-review"
+        bash "${engine}" --post-only --pr "${PR_NUMBER}" --json-in "${REVIEW_JSON}"
 
     # ── Result + gate ────────────────────────────────────────────────────────
     - name: Result and gate
@@ -286,15 +267,10 @@ runs:
       if: steps.ctx.outputs.skip == 'false' && inputs.dry-run != 'true'
       shell: bash
       env:
+        ACTION_PATH: ${{ github.action_path }}
         REVIEW_JSON: ${{ steps.review.outputs.review-json }}
         GATE: ${{ inputs.gate }}
       run: |
         set -euo pipefail
-        [[ -f "${REVIEW_JSON}" ]] || exit 0
-        result="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["review_action"])' "${REVIEW_JSON}")"
-        echo "result=${result}" >> "${GITHUB_OUTPUT}"
-        echo "[ai-pr-review] result: ${result}"
-        if [[ "${GATE}" == "true" && "${result}" != "APPROVE" ]]; then
-          echo "::error::AI review result is ${result} and gate is enabled."
-          exit 1
-        fi
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::gate_result
