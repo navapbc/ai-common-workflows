@@ -138,11 +138,12 @@ layer around the runner/agent:
    diffs leave your perimeter — point at Bedrock/Vertex/Azure OpenAI/an internal
    gateway if that matters.
 
-## Least-privilege for the Copilot-instructions distributor
+## Copilot-instructions sync (pull model)
 
-If you run the distribution workflow (`.github/workflows/distribute-instructions.yml`),
-its token reaches *other* repositories, so it deserves the tightest scope: a
-**GitHub App** with only `contents: write` + `pull_requests: write`, installed
-on exactly the subscriber repos — or a fine-grained PAT scoped to those repos
-with the same two permissions. Never a classic PAT. See
+Copilot instruction files are distributed by a **pull** workflow that each
+consumer runs in its own repo ([`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)),
+using that repo's built-in `GITHUB_TOKEN` scoped to `contents: write` +
+`pull-requests: write` on **its own repo only**. There is no cross-repo
+credential and `ai-common-workflows` keeps no list of consumers. Pin `ACW_REF`
+to a commit SHA (or release tag) so upgrades are deliberate. See
 [copilot-instructions.md](copilot-instructions.md).

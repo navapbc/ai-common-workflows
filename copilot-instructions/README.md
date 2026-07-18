@@ -30,29 +30,24 @@ collide with your own instructions and are trivial to identify and upgrade:
 They are self-contained — no repository-specific files or tooling required.
 Your existing `.github/copilot-instructions.md`, if any, is never touched.
 
-## Adopt via subscription (recommended — no manual copying)
+## Adopt via a sync workflow (recommended — self-serve pull)
 
-Open a one-line PR to this repository adding your `owner/repo` to
-[`subscribers.yml`](./subscribers.yml). That's the whole onboarding step. To use
-a non-default profile, add it as an object instead:
+Copy [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
+into your repo's `.github/workflows/`, set two values, and merge:
 
-```yaml
-subscribers:
-  - navapbc/cms-service                 # cms-ars (default)
-  - repo: navapbc/other-service
-    profile: baseline
-```
+- `PROFILE` — the compliance profile to track (`cms-ars` default, `baseline`, …).
+- `ACW_REF` — pin `ai-common-workflows` to a commit SHA or release tag.
 
-Whenever these instruction files change, a workflow opens a pull request
-against each subscriber repo that copies its profile's latest
-`ai-review-*.instructions.md` into `.github/instructions/`. You review and merge
-it like any other PR — the bot never pushes to your branches. New subscribers
-are backfilled on the next change (or immediately, by a maintainer running the
-workflow manually).
+On its schedule (and on demand), the workflow fetches that profile's
+`ai-review-*.instructions.md` from `ai-common-workflows@<ACW_REF>` and opens a PR
+in **your** repo updating `.github/instructions/`. You review and merge it like
+any other PR.
 
-Setup for maintainers of this repo is in
-[`docs/copilot-instructions.md`](../docs/copilot-instructions.md) (the
-distributor needs a GitHub App or PAT with write access to subscriber repos).
+This is a **pull** model: it runs entirely in your repo with your own
+`GITHUB_TOKEN` (`contents: write` + `pull-requests: write` on your repo only).
+`ai-common-workflows` needs **no** knowledge of your repo, no subscriber list,
+and no cross-repo credentials. To change profiles or upgrade, edit `PROFILE` /
+`ACW_REF` in your copy of the workflow.
 
 ## Adopt manually (fallback)
 

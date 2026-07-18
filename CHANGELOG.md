@@ -21,8 +21,8 @@ follow [Semantic Versioning](https://semver.org/).
   compliance rubric is now selectable. Ships `cms-ars` (CMS ARS 5.1 /
   NIST 800-53) and a framework-neutral `baseline` (CIS / NIST CSF / OWASP) under
   `engine/profiles/`, plus a bring-your-own directory path. Surfaced as the
-  `profile` input (Action), the `profile` step/global param (Jenkins), and a
-  per-subscriber `profile` for the Copilot instructions. See
+  `profile` input (Action), the `profile` step/global param (Jenkins), and the
+  `PROFILE` in the Copilot-instructions sync workflow. See
   [docs/profiles.md](docs/profiles.md).
 - **Azure OpenAI endpoint** (`provider=azure`, `codex` only): the engine derives
   the OpenAI-compatible deployment URL from `AZURE_OPENAI_ENDPOINT`, the
@@ -35,8 +35,10 @@ follow [Semantic Versioning](https://semver.org/).
 - **Shared review engine** (`engine/`): relocatable bash engine with parallel
   fan-out, self / independent adjudication, and an SCM seam.
 - **Copilot instruction files** (`copilot-instructions/`): four prefixed,
-  `applyTo`-scoped files per profile, plus a subscription workflow that opens
-  update PRs to subscriber repos.
+  `applyTo`-scoped files per profile, distributed by a **self-serve pull**
+  workflow ([`examples/workflows/copilot-instructions-sync.yml`](examples/workflows/copilot-instructions-sync.yml))
+  that each consumer runs in its own repo with its own token — `ai-common-workflows`
+  keeps no subscriber list and needs no cross-repo credential.
 - Documentation set, test suites (bats, pytest, JenkinsRule), and CI
   (static checks, engine tests, plugin build/release).
 
