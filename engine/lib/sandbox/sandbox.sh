@@ -193,7 +193,7 @@ NET="${RUN_ID}-net"
 PROXY="${RUN_ID}-proxy"
 OUT_DIR="$(mktemp -d)"
 
-# shellcheck disable=SC2329  # invoked via the EXIT trap below
+# shellcheck disable=SC2329,SC2317  # invoked via the EXIT trap below
 teardown() {
   local audit
   if audit="$(docker logs "${PROXY}" 2>&1)" && [[ -n "${audit}" ]]; then
