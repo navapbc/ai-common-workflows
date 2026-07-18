@@ -1,5 +1,7 @@
 # ai-common-workflows
 
+> **Status:** Under active development. Interfaces and behavior may change without notice.
+
 AI-assisted **security and compliance PR review**, packaged as reusable CI
 components. Point your pipeline at it and get inline review comments on every
 pull request — secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations
