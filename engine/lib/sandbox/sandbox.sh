@@ -270,6 +270,12 @@ fi
 RESULT="$(sed -n 's/.*"review_action"[[:space:]]*:[[:space:]]*"\([A-Z_]*\)".*/\1/p' "${OUT_DIR}/review.json" | head -1)"
 log "Review result: ${RESULT:-UNKNOWN}"
 
+# Expose the findings JSON on the host when asked (the container-internal copy
+# in OUT_DIR is discarded on teardown). Frontends use this for step outputs.
+if [[ -n "${AI_REVIEW_HOST_JSON_OUT:-}" ]]; then
+  cp "${OUT_DIR}/review.json" "${AI_REVIEW_HOST_JSON_OUT}"
+fi
+
 # ── Phase 2: trusted post (no AI, normal network, token present) ───────────
 if ((POST_COMMENTS == 1)); then
   log "Posting review to PR #${PR_NUMBER} (trusted post phase)"
