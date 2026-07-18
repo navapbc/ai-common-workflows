@@ -12,7 +12,9 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
     with: { ref: "${{ github.event.pull_request.head.sha }}" }
   ```
   The action runs `git fetch` for the base ref itself; `fetch-depth: 0` is a
-  belt-and-suspenders option for very large PRs.
+  belt-and-suspenders option for very large PRs. For the strongest token
+  isolation, add `persist-credentials: false` to the checkout so no token is
+  left in `.git/config` during the AI phase (see [security.md](security.md)).
 - Least-privilege permissions — `contents: read` (never write) plus
   `pull-requests: write` **only** if posting comments:
   ```yaml

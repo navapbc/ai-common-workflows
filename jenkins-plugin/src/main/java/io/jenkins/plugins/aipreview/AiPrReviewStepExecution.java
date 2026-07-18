@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
@@ -107,9 +109,16 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
                 putSecret(runEnv, "OPENAI_API_KEY", openaiCredId, run);
             }
         }
-        // The GitHub token is needed for the post phase (and copilot's model auth).
-        putSecret(runEnv, "GITHUB_TOKEN", githubCredId, run);
-        putSecret(runEnv, "GH_TOKEN", githubCredId, run);
+        // The SCM token is deliberately NOT placed in runEnv: the AI phase reads
+        // untrusted PR content, so the token that can write to the repo is kept
+        // out of that process's environment (and its /proc/<pid>/environ). It
+        // lives only in postEnv, used by the separate post phase below.
+        // Exception: copilot's model auth *is* a GitHub token, so it must be
+        // present during copilot's AI phase.
+        if ("copilot".equals(tool)) {
+            putSecret(runEnv, "GITHUB_TOKEN", githubCredId, run);
+            putSecret(runEnv, "GH_TOKEN", githubCredId, run);
+        }
 
         // Endpoint specifics.
         if (endpoint == EndpointMode.BEDROCK) {
@@ -166,45 +175,62 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
                         .join();
             }
 
-            // ── Build the engine command ───────────────────────────────────────
+            tmpRoot.mkdirs(); // holds the findings JSON handed from AI phase to post phase
+            String entry = engineHome.child("bin/ai-pr-review").getRemote();
             FilePath findings = tmpRoot.child("findings.json");
-            List<String> cmd = new ArrayList<>();
-            cmd.add("bash");
-            cmd.add(engineHome.child("bin/ai-pr-review").getRemote());
-            cmd.add("--against");
-            cmd.add(baseRef);
-            cmd.add("--json-out");
-            cmd.add(findings.getRemote());
-            if (prNumber != null && !prNumber.isEmpty()) {
-                cmd.add("--pr");
-                cmd.add(prNumber);
-            }
-            if (step.isPostComments()) {
-                cmd.add("--post-comments");
-            }
-            if (step.isDryRun()) {
-                cmd.add("--dry-run");
-            }
-            // Pass --gate to the engine when the plugin's gate policy is active,
-            // so a non-APPROVE result exits non-zero and applyResult() can map
-            // it to UNSTABLE/FAILURE. gate=none leaves the engine advisory.
-            if (!"none".equalsIgnoreCase(gate)) {
-                cmd.add("--gate");
-            }
 
+            // ── AI phase: review with no SCM token in scope, write findings ────
             log.println("[aiPrReview] Running review "
                     + "(tool=" + tool + ", endpoint=" + endpoint.provider() + ", gate=" + gate + ")");
-
-            int rc = launcher.launch()
-                    .cmds(cmd)
+            List<String> aiCmd = new ArrayList<>();
+            aiCmd.add("bash");
+            aiCmd.add(entry);
+            aiCmd.add("--against");
+            aiCmd.add(baseRef);
+            aiCmd.add("--json-out");
+            aiCmd.add(findings.getRemote());
+            if (step.isDryRun()) {
+                aiCmd.add("--dry-run");
+            }
+            int aiRc = launcher.launch()
+                    .cmds(aiCmd)
                     .envs(runEnv)
                     .pwd(workspace)
-                    .quiet(true) // env/cmdline echo suppressed; secrets are env-only regardless
+                    .quiet(true) // secrets are env-only regardless
                     .stdout(listener)
                     .stderr(listener.getLogger())
                     .join();
+            if (aiRc == 2) {
+                throw new AbortException("aiPrReview: configuration error (engine exit 2). See the log above.");
+            }
+            if (aiRc != 0) {
+                throw new AbortException("aiPrReview: the review phase failed (engine exit " + aiRc + ").");
+            }
+            if (step.isDryRun()) {
+                return null;
+            }
 
-            applyResult(rc, gate, run, log);
+            // ── Post phase: the only launch that holds the SCM token ───────────
+            if (step.isPostComments()) {
+                EnvVars postEnv = new EnvVars(runEnv);
+                putSecret(postEnv, "GITHUB_TOKEN", githubCredId, run);
+                putSecret(postEnv, "GH_TOKEN", githubCredId, run);
+                int postRc = launcher.launch()
+                        .cmds("bash", entry, "--post-only", "--pr", prNumber,
+                                "--json-in", findings.getRemote())
+                        .envs(postEnv)
+                        .pwd(workspace)
+                        .quiet(true)
+                        .stdout(listener)
+                        .stderr(listener.getLogger())
+                        .join();
+                if (postRc != 0) {
+                    throw new AbortException("aiPrReview: posting the review failed (engine exit " + postRc + ").");
+                }
+            }
+
+            // ── Result + gate (derived from the findings JSON) ─────────────────
+            applyResult(readReviewAction(findings), gate, run, log);
             return null;
         } finally {
             if (extracted) {
@@ -217,38 +243,42 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         }
     }
 
+    private static final Pattern REVIEW_ACTION =
+            Pattern.compile("\"review_action\"\\s*:\\s*\"([A-Z_]+)\"");
+
+    /** Read the {@code review_action} verdict from the engine's findings JSON. */
+    private String readReviewAction(FilePath findings) throws IOException, InterruptedException {
+        if (!findings.exists()) {
+            return "APPROVE"; // nothing written (e.g. no changes) → nothing to gate on
+        }
+        Matcher m = REVIEW_ACTION.matcher(findings.readToString());
+        return m.find() ? m.group(1) : "APPROVE";
+    }
+
     /**
-     * Map the engine exit code onto the build. The engine already applies
-     * {@code --gate} semantics internally, but the plugin owns the
-     * none/unstable/failure policy, so it drives the result here:
+     * Map the review verdict onto the build, per the plugin's gate policy:
      * <ul>
-     *   <li>0 → success</li>
-     *   <li>2 → config error → fail the step (AbortException)</li>
-     *   <li>non-zero + gate=failure → fail; gate=unstable → mark UNSTABLE;
-     *       gate=none → warn only</li>
+     *   <li>APPROVE → success</li>
+     *   <li>otherwise: gate=failure → fail (AbortException); gate=unstable →
+     *       mark UNSTABLE; gate=none → advisory, log only</li>
      * </ul>
      */
-    private void applyResult(int rc, String gate, Run<?, ?> run, PrintStream log) throws AbortException {
-        if (rc == 0) {
+    private void applyResult(String result, String gate, Run<?, ?> run, PrintStream log) throws AbortException {
+        log.println("[aiPrReview] result: " + result);
+        if ("APPROVE".equals(result)) {
             return;
-        }
-        if (rc == 2) {
-            throw new AbortException("aiPrReview: configuration error (engine exit 2). See the log above.");
         }
         switch (gate == null ? "none" : gate) {
             case "failure":
-                throw new AbortException("aiPrReview: review did not pass and gate=failure (engine exit " + rc + ").");
+                throw new AbortException("aiPrReview: review result is " + result + " and gate=failure.");
             case "unstable":
-                log.println("[aiPrReview] review did not pass; marking build UNSTABLE (gate=unstable).");
+                log.println("[aiPrReview] result is " + result + "; marking build UNSTABLE (gate=unstable).");
                 run.setResult(Result.UNSTABLE);
                 return;
             default:
-                log.println("[aiPrReview] review did not pass (engine exit " + rc + "); advisory, not failing the build.");
+                log.println("[aiPrReview] result is " + result + "; advisory, not failing the build.");
         }
     }
-
-    // Pass --gate to the engine only when the plugin's gate policy is not "none".
-    // (The engine's own gate flag lets it short-circuit posting on failure.)
 
     private static EndpointMode parseEndpoint(String raw) throws AbortException {
         if (raw == null || raw.isEmpty() || "direct".equalsIgnoreCase(raw) || "api".equalsIgnoreCase(raw)) {

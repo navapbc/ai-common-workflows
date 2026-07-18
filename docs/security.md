@@ -12,16 +12,28 @@ phases:
 | Phase | What runs | Network it needs | Credentials in scope |
 |---|---|---|---|
 | Collect | `git diff` against the base ref | none (base ref fetched at checkout) | none |
-| Review | the AI CLI reads the diff, emits findings | the LLM endpoint | the LLM key |
+| Review | the AI CLI reads the diff, emits findings | the LLM endpoint | the LLM key **only** |
 | Post | `gh` turns findings into a PR review | the SCM API | the SCM token |
 
 The AI CLI is agentic and reads untrusted PR content, so the realistic threat
 is prompt injection in a PR steering the CLI to exfiltrate code or
-credentials, or to abuse the SCM token. Two things bound that:
+credentials, or to abuse the SCM token. Three things bound that:
 
-1. **Least-privilege credentials** (below) — so even a fully subverted CLI
-   can do little.
-2. **Egress control on the runner** (below) — so data can't leave to an
+1. **The SCM token is not in the review phase.** The Action and the plugin run
+   the AI CLI as one process whose environment has no `GITHUB_TOKEN`/`GH_TOKEN`,
+   then post in a *separate* process that holds the token. An injected agent
+   reading the diff therefore has no repo-write token in its process tree
+   (nor via `/proc/<ancestor>/environ`). Two caveats:
+   - **`copilot`** authenticates its model with a GitHub token, so that backend
+     alone carries one during the AI phase — prefer `claude`/`codex` if this
+     matters, and scope the token tightly regardless.
+   - If `actions/checkout` **persisted credentials** (its default), a token
+     sits in `.git/config` and the read-only diff phase can read it. Check out
+     with `persist-credentials: false` for full isolation; the action fetches
+     the base ref itself, so this generally just works.
+2. **Least-privilege credentials** (below) — so even a fully subverted CLI
+   can do little with what it *can* reach.
+3. **Egress control on the runner** (below) — so data can't leave to an
    arbitrary destination.
 
 > **On the built-in sandbox.** An earlier design ran the review in a Docker

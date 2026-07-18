@@ -35,16 +35,22 @@ phase can be isolated:
 
 1. **Collect** (trusted): PR context from CI env; diff from local git.
 2. **Review** (untrusted input): the AI reads the diff and emits findings JSON.
+   **The SCM token is not in this phase's environment.**
 3. **Post** (trusted, deterministic): `lib/scm/github.sh` turns findings JSON
-   into a GitHub review via `gh api`. No AI.
+   into a GitHub review via `gh api`. The only phase that holds the SCM token.
 
-The `--json-out` / `--post-only` flags express this split at the engine level,
-so the AI phase and the posting phase *can* run as separate processes. Today
-both front ends run the whole engine in one native invocation — so the SCM
-token is present during the AI phase — but the seam is deliberately preserved:
-a future egress sandbox, or a token-stripped AI phase, will use it to isolate
-phase 2 from phase 3. The experimental sandbox lives in `engine/lib/sandbox/`
-(see its README) and is not shipped.
+Both front ends implement this split with the engine's `--json-out` /
+`--post-only` flags: they run the AI phase as one invocation whose environment
+has **no** `GITHUB_TOKEN`/`GH_TOKEN`, then post in a second invocation that
+does. So an injected agent reading the diff has no repo-write token in its
+process tree (not even via `/proc/<ancestor>/environ`). Two caveats: the
+`copilot` backend's model auth *is* a GitHub token, so it alone carries one in
+the AI phase; and if `actions/checkout` persisted credentials, a token is in
+`.git/config` regardless — check out with `persist-credentials: false` for the
+strongest isolation (see [security.md](../docs/security.md)).
+
+The experimental egress sandbox lives in `engine/lib/sandbox/` (see its
+README) and is not shipped.
 
 ## The SCM seam
 

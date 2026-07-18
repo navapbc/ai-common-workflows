@@ -72,27 +72,8 @@ report
   [ "$output" = "off" ]
 }
 
-# ── fold_markers: worst-of over the PR vocabulary ───────────────────────────
-
-@test "fold_markers: any REQUEST_CHANGES dominates" {
-  run bash -c 'source "'"${ENGINE_HOME}"'/lib/core.sh"; printf "AI_REVIEW_BATCH_RESULT\ta\tAPPROVE\nAI_REVIEW_BATCH_RESULT\tb\tREQUEST_CHANGES\n" | ai_review::fold_markers'
-  [ "$output" = "REQUEST_CHANGES" ]
-}
-
-@test "fold_markers: COMMENT beats APPROVE" {
-  run bash -c 'source "'"${ENGINE_HOME}"'/lib/core.sh"; printf "AI_REVIEW_BATCH_RESULT\ta\tAPPROVE\nAI_REVIEW_BATCH_RESULT\tb\tCOMMENT\n" | ai_review::fold_markers'
-  [ "$output" = "COMMENT" ]
-}
-
-@test "fold_markers: all APPROVE stays APPROVE" {
-  run bash -c 'source "'"${ENGINE_HOME}"'/lib/core.sh"; printf "AI_REVIEW_BATCH_RESULT\ta\tAPPROVE\n" | ai_review::fold_markers'
-  [ "$output" = "APPROVE" ]
-}
-
-@test "fold_markers: a blank/unparseable marker fails safe" {
-  run bash -c 'source "'"${ENGINE_HOME}"'/lib/core.sh"; printf "AI_REVIEW_BATCH_RESULT\ta\tUNPARSEABLE\n" | ai_review::fold_markers'
-  [ "$output" = "UNPARSEABLE" ]
-}
+# (Fan-out verdict folding is done by fold_review_json.py — covered by the
+# pytest suite and the e2e fan-out test — not by a separate marker fold.)
 
 # ── should_batch thresholds ─────────────────────────────────────────────────
 

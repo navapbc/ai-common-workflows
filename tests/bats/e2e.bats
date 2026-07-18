@@ -163,3 +163,20 @@ teardown() {
   [ ! -f "${calls}" ]   # no AI invocation
   [ -f "${posted}" ]
 }
+
+@test "AI phase (--json-out, no --post-comments) never touches the SCM" {
+  # This is the token-free phase the front ends run: it must not call gh at all.
+  local jf="${WORK}/findings.json" posted="${WORK}/posted.ndjson"
+  STUB_RESPONSE_FILE="${FIX}/response-comment.txt" STUB_GH_POSTED="${posted}" \
+    run bash "${ENGINE}" --against origin/main --json-out "${jf}"
+  [ "$status" -eq 0 ]
+  [ -f "${jf}" ]        # findings written for the post phase to consume
+  [ ! -f "${posted}" ] # gh was never invoked
+}
+
+@test "dry-run needs no LLM credentials" {
+  # --dry-run must short-circuit before endpoint/credential validation.
+  AI_REVIEW_TOOL=claude ANTHROPIC_API_KEY="" \
+    run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+}

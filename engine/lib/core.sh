@@ -304,8 +304,8 @@ ai_review::diff_has_iac() {
         ;;
       *.yaml | *.yml)
         # Kubernetes manifests: YAML with both apiVersion: and kind:.
-        if [[ -f "${f}" ]] && grep -lq '^apiVersion:' "${f}" 2>/dev/null &&
-          grep -lq '^kind:' "${f}" 2>/dev/null; then
+        if [[ -f "${f}" ]] && grep -q '^apiVersion:' "${f}" 2>/dev/null &&
+          grep -q '^kind:' "${f}" 2>/dev/null; then
           return 0
         fi
         ;;
@@ -639,45 +639,27 @@ ai_review::context_budget() {
   printf '%s' "${b}"
 }
 
-# ai_review::fold_markers   (reads AI_REVIEW_BATCH_RESULT sentinel lines on stdin)
-# Worst-of reduction over the PR vocabulary: any REQUEST_CHANGES (or
-# unparseable/blank) → the stricter value; else any COMMENT → COMMENT; else
-# APPROVE. No sentinels at all → UNPARSEABLE (caller fails safe).
-ai_review::fold_markers() {
-  awk -F'\t' '
-    $1 == "AI_REVIEW_BATCH_RESULT" {
-      seen++
-      m = $3
-      if      (m == "REQUEST_CHANGES")           rc=1
-      else if (m == "COMMENT")                   comment=1
-      else if (m == "APPROVE")                   approve=1
-      else                                       bad=1   # UNPARSEABLE or blank
-    }
-    END {
-      if      (bad)     print "UNPARSEABLE"
-      else if (rc)      print "REQUEST_CHANGES"
-      else if (comment) print "COMMENT"
-      else if (approve) print "APPROVE"
-      else              print "UNPARSEABLE"
-    }
-  '
-}
-
 # ai_review::fan_out <record>...
 # Re-invokes this engine's entrypoint (AI_REVIEW_SELF) once per batch via
 # `xargs -0 -P AI_REVIEW_JOBS`. Each worker prints its human report to stderr
 # (so it streams live) and exactly one sentinel line to stdout (captured here):
 #   AI_REVIEW_BATCH_RESULT\t<key>\t<marker>\t<json_file>
-# Publishes results via globals — AI_REVIEW_FOLDED_RESULT (marker) and
-# AI_REVIEW_BATCH_SENTINELS (raw sentinel lines, for JSON-file collection) —
-# keeping this function's own logging on stdout from polluting them.
+# where <json_file> is "-" if the worker produced no parseable findings JSON.
+#
+# The verdict is derived downstream by merging the per-batch JSON files
+# (fold_review_json.py) — the single source of truth. This function's only job
+# is to run the workers and report *completeness*: it publishes
+#   AI_REVIEW_FAN_COMPLETE   "1" iff every batch returned a usable JSON file
+#   AI_REVIEW_BATCH_SENTINELS raw sentinel lines (for JSON-file collection)
+# so the caller can fail safe when a batch was not reviewed rather than post a
+# partial review as if it were complete.
 ai_review::fan_out() {
   local -a records=("$@")
   local expected=${#records[@]}
 
   if [[ -z "${AI_REVIEW_SELF:-}" ]]; then
     ai_review::err "Internal error: AI_REVIEW_SELF not set; the entrypoint must export it for fan-out."
-    AI_REVIEW_FOLDED_RESULT="UNPARSEABLE"
+    AI_REVIEW_FAN_COMPLETE=0
     AI_REVIEW_BATCH_SENTINELS=""
     return 0
   fi
@@ -699,19 +681,18 @@ ai_review::fan_out() {
   sentinels="$(printf '%s\0' "${records[@]}" |
     xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" --__review-one)" || fan_rc=$?
 
-  local seen folded
-  seen="$(printf '%s\n' "${sentinels}" | grep -c '^AI_REVIEW_BATCH_RESULT' || true)"
-  folded="$(printf '%s\n' "${sentinels}" | ai_review::fold_markers)"
+  # A batch counts as reviewed only if it emitted a sentinel with a real JSON
+  # file (field 4 != "-"). A crashed worker (xargs rc != 0), a missing
+  # sentinel, or a worker that produced no JSON all leave us short.
+  local produced
+  produced="$(printf '%s\n' "${sentinels}" |
+    awk -F'\t' '$1=="AI_REVIEW_BATCH_RESULT" && $4!="-" && $4!="" {n++} END {print n+0}')"
 
-  # Fail-safe: a crashed worker (xargs returns 123) or a missing sentinel means
-  # a batch was not reviewed — treat the run as unparseable rather than risk
-  # reporting a partial review as complete.
-  if ((fan_rc != 0)) || ((seen < expected)); then
-    ai_review::warn "Some batches did not return a result (xargs rc=${fan_rc}; ${seen}/${expected} reported). Failing safe."
-    folded="UNPARSEABLE"
+  if ((fan_rc != 0)) || ((produced < expected)); then
+    ai_review::warn "Some batches did not return findings (xargs rc=${fan_rc}; ${produced}/${expected} produced JSON). Failing safe."
+    AI_REVIEW_FAN_COMPLETE=0
+  else
+    AI_REVIEW_FAN_COMPLETE=1
   fi
-
-  ai_review::info "Per-batch results folded to: ${folded} (worst-of across ${expected} batch(es))."
-  AI_REVIEW_FOLDED_RESULT="${folded}"
   AI_REVIEW_BATCH_SENTINELS="${sentinels}"
 }

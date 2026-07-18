@@ -57,6 +57,12 @@ with **Pull requests: Read and write** and **Contents: Read** — nothing else.
 Do **not** use a classic PAT (its `repo` scope is far broader than needed). A
 **GitHub App** installation token (short-lived, per-repo) is stronger still.
 
+The token is injected **only into the post phase**, not the AI phase: the step
+runs the review with no `GITHUB_TOKEN` in its environment, then posts in a
+separate process that has it — so injected PR content can't reach it. (The
+`copilot` backend is the exception: its model auth is a GitHub token, so it's
+present during copilot's AI phase.)
+
 For **Bedrock**, don't create a plugin credential — the engine uses ambient AWS
 credentials on the agent (instance profile / IRSA), scoped by an IAM policy
 that allows only `bedrock:InvokeModel` on your model ARN(s) (see

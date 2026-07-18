@@ -115,7 +115,7 @@ inputs:
 outputs:
   result:
     description: "APPROVE | COMMENT | REQUEST_CHANGES."
-    value: ${{ steps.review.outputs.result }}
+    value: ${{ steps.result.outputs.result }}
   review-json:
     description: "Path to the findings JSON written by the review."
     value: ${{ steps.review.outputs.review-json }}
@@ -193,18 +193,20 @@ runs:
           copilot) npm install -g "@github/copilot@${CLI_VERSION}" ;;
         esac
 
-    - name: Run AI PR review
+    # ── AI phase — runs the review with NO SCM token in scope ────────────────
+    # The AI CLI reads untrusted PR content, so the token that can write to your
+    # repo is deliberately absent from this step's environment (and thus from
+    # the CLI's process tree). Posting happens in the separate step below, which
+    # is the only place the token exists. Exception: ai-tool=copilot, whose
+    # model auth *is* a GitHub token, so it receives one here.
+    - name: AI review
       id: review
       if: steps.ctx.outputs.skip == 'false'
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
-        PR_NUMBER: ${{ steps.ctx.outputs.pr }}
         BASE: ${{ steps.ctx.outputs.base }}
-        POST_COMMENTS: ${{ inputs.post-comments }}
-        GATE: ${{ inputs.gate }}
         DRY_RUN: ${{ inputs.dry-run }}
-        # Engine environment
         AI_REVIEW_TOOL: ${{ inputs.ai-tool }}
         AI_REVIEW_PROVIDER: ${{ inputs.provider }}
         AI_REVIEW_MODEL: ${{ inputs.model }}
@@ -221,23 +223,52 @@ runs:
         AI_REVIEW_BATCH_BY: ${{ inputs.batch-by }}
         AI_REVIEW_BATCH_MIN_FILES: ${{ inputs.batch-min-files }}
         AI_REVIEW_CONTEXT_BUDGET: ${{ inputs.context-budget }}
+        # Copilot only: its model credential is a GitHub token. Every other
+        # tool runs with no SCM token in scope.
+        GITHUB_TOKEN: ${{ inputs.ai-tool == 'copilot' && inputs.github-token || '' }}
+        GH_TOKEN: ${{ inputs.ai-tool == 'copilot' && inputs.github-token || '' }}
+        CI: "true"
+      run: |
+        set -euo pipefail
+        review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
+        echo "review-json=${review_json}" >> "${GITHUB_OUTPUT}"
+
+        args=(--against "origin/${BASE}" --json-out "${review_json}")
+        [[ "${DRY_RUN}" == "true" ]] && args+=(--dry-run)
+
+        bash "${ACTION_PATH}/engine/bin/ai-pr-review" "${args[@]}"
+
+    # ── Post phase — the only step that holds the SCM token ──────────────────
+    - name: Post review
+      if: steps.ctx.outputs.skip == 'false' && inputs.post-comments == 'true' && inputs.dry-run != 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PR_NUMBER: ${{ steps.ctx.outputs.pr }}
+        REVIEW_JSON: ${{ steps.review.outputs.review-json }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
         CI: "true"
       run: |
         set -euo pipefail
-        review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
+        bash "${ACTION_PATH}/engine/bin/ai-pr-review" \
+          --post-only --pr "${PR_NUMBER}" --json-in "${REVIEW_JSON}"
 
-        args=(--against "origin/${BASE}" --pr "${PR_NUMBER}" --json-out "${review_json}")
-        [[ "${POST_COMMENTS}" == "true" ]] && args+=(--post-comments)
-        [[ "${GATE}" == "true" ]] && args+=(--gate)
-        [[ "${DRY_RUN}" == "true" ]] && args+=(--dry-run)
-
-        bash "${ACTION_PATH}/engine/bin/ai-pr-review" "${args[@]}"
-
-        # Publish outputs (best-effort; the JSON may be absent on dry-run).
-        if [[ -f "${review_json}" ]]; then
-          result="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["review_action"])' "${review_json}" 2>/dev/null || echo "")"
-          echo "result=${result}" >> "${GITHUB_OUTPUT}"
-          echo "review-json=${review_json}" >> "${GITHUB_OUTPUT}"
+    # ── Result + gate ────────────────────────────────────────────────────────
+    - name: Result and gate
+      id: result
+      if: steps.ctx.outputs.skip == 'false' && inputs.dry-run != 'true'
+      shell: bash
+      env:
+        REVIEW_JSON: ${{ steps.review.outputs.review-json }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        [[ -f "${REVIEW_JSON}" ]] || exit 0
+        result="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["review_action"])' "${REVIEW_JSON}")"
+        echo "result=${result}" >> "${GITHUB_OUTPUT}"
+        echo "[ai-pr-review] result: ${result}"
+        if [[ "${GATE}" == "true" && "${result}" != "APPROVE" ]]; then
+          echo "::error::AI review result is ${result} and gate is enabled."
+          exit 1
         fi

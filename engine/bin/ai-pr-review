@@ -324,7 +324,6 @@ pr_review::run() {
   fi
 
   ai_review::resolve_tool
-  ai_review::configure_endpoint
 
   # ── Plan the batches (consulted by --list-batches, --dry-run, executor) ──
   local -a _batch_records=()
@@ -380,7 +379,8 @@ pr_review::run() {
   export AI_REVIEW_AGAINST
   SKILL_PROMPT="$(pr_review::build_prompt)"
 
-  # Dry-run path: print plan, do not invoke AI.
+  # Dry-run path: print plan, do not invoke AI. Deliberately before
+  # configure_endpoint so --dry-run and --list-batches need no LLM credentials.
   if ((AI_REVIEW_DRY_RUN == 1)); then
     ai_review::info "DRY-RUN — no AI invocation will be made."
     ai_review::log "  Skill:          ${SKILL_HUMAN_NAME} (${SKILL_NAME})"
@@ -400,6 +400,9 @@ pr_review::run() {
     exit 0
   fi
 
+  # Validate/configure the LLM endpoint now that a real invocation will happen.
+  ai_review::configure_endpoint
+
   local result="" review_json=""
 
   if ai_review::should_batch "${_nfiles}" "${_nbatches}"; then
@@ -412,14 +415,13 @@ pr_review::run() {
     export AI_REVIEW_SELF
     trap 'rm -rf "${AI_REVIEW_BATCH_DIR}"' EXIT
 
-    AI_REVIEW_FOLDED_RESULT=""
+    AI_REVIEW_FAN_COMPLETE=0
     AI_REVIEW_BATCH_SENTINELS=""
     ai_review::fan_out "${_batch_records[@]}"
-    result="${AI_REVIEW_FOLDED_RESULT}"
     ai_review::log "────────────────────────────────────────────────────────────"
 
-    if [[ "${result}" == "UNPARSEABLE" ]]; then
-      ai_review::err "Fan-out did not produce a complete result; failing safe."
+    if ((AI_REVIEW_FAN_COMPLETE != 1)); then
+      ai_review::err "Fan-out did not review every batch; failing safe."
       if ((AI_REVIEW_NO_BLOCK == 1)); then
         ai_review::warn "--no-block in effect: exiting 0 despite the incomplete review."
         exit 0
@@ -427,7 +429,9 @@ pr_review::run() {
       exit 1
     fi
 
-    # Merge the per-batch JSON blocks into one review.
+    # Merge the per-batch JSON blocks into one review. The merged JSON is the
+    # single source of truth for the verdict — dedup can only reduce findings,
+    # and fan_out already guaranteed every batch produced a file.
     local -a _json_files=()
     local _line _jf
     while IFS= read -r _line; do
@@ -436,15 +440,7 @@ pr_review::run() {
       [[ -n "${_jf}" && "${_jf}" != "-" ]] && _json_files+=("${_jf}")
     done <<<"${AI_REVIEW_BATCH_SENTINELS}"
 
-    if ((${#_json_files[@]} != _nbatches)); then
-      ai_review::err "Expected ${_nbatches} batch JSON file(s), got ${#_json_files[@]}; failing safe."
-      if ((AI_REVIEW_NO_BLOCK == 1)); then exit 0; fi
-      exit 1
-    fi
-
     review_json="$(python3 "${ENGINE_HOME}/lib/fold_review_json.py" "${_json_files[@]}")"
-    # The merged JSON's action is authoritative (dedup can only reduce, and
-    # fold_markers already failed safe on missing batches).
     result="$(printf '%s' "${review_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
   else
     # ── Single-call path (full diff in one review) ───────────────────────
