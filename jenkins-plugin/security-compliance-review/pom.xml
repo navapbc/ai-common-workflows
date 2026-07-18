@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.jenkins.plugins</groupId>
+    <artifactId>ai-common-parent</artifactId>
+    <version>${revision}${changelist}</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>ai-security-compliance-review</artifactId>
+  <packaging>hpi</packaging>
+
+  <name>AI Security &amp; Compliance Review</name>
+  <description>AI-assisted security and compliance review of pull requests.</description>
+
+  <dependencies>
+    <!-- Shared core library plugin (engine extraction, endpoint mapping, PR
+         context). Being an hpi dependency, it is loaded as a separate plugin at
+         runtime — installing this plugin requires ai-common-core too. -->
+    <dependency>
+      <groupId>io.jenkins.plugins</groupId>
+      <artifactId>ai-common-core</artifactId>
+    </dependency>
+
+    <!-- Pipeline step API -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-step-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>structs</artifactId>
+    </dependency>
+    <!-- Credentials (Secret text for API keys / tokens) -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>credentials</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>plain-credentials</artifactId>
+    </dependency>
+
+    <!-- Test scope -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-step-api</artifactId>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-cps</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-job</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-basic-steps</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-durable-task-step</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.jenkins</groupId>
+      <artifactId>configuration-as-code</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Bundle the shared engine (../../engine) into plugin resources as a zip
+           so it ships inside the .hpi and can be unpacked onto any agent at
+           runtime via FilePath.unzipFrom(). Single source of truth: the engine
+           is never duplicated in git. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>bundle-engine</id>
+            <phase>generate-resources</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.outputDirectory}/io/jenkins/plugins/aipreview"/>
+                <zip destfile="${project.build.outputDirectory}/io/jenkins/plugins/aipreview/ai-review-engine.zip"
+                     basedir="${project.basedir}/../../engine"/>
+                <echo file="${project.build.outputDirectory}/io/jenkins/plugins/aipreview/engine-version.txt">${project.version}</echo>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

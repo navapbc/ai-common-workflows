@@ -2,12 +2,30 @@
 
 > **Status:** Under active development. Interfaces and behavior may change without notice.
 
-AI-assisted **security and compliance PR review**, packaged as reusable CI
-components. Point your pipeline at it and get inline review comments on every
-pull request — secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations
-against CMS ARS 5.1 / NIST SP 800-53 Rev 5. It works against the public API or
-a private LLM endpoint (Amazon Bedrock, Google Vertex, or a custom gateway) so
-code and diffs can stay inside your boundary.
+Reusable, AI-assisted CI/CD workflows you can drop into any pipeline. This repo
+is a **collection** of independent workflows that share a small set of
+conventions — pin to a commit SHA, run least-privilege, keep each concern in
+its own self-contained engine — so teams can adopt them one at a time.
+
+## Workflows in this repo
+
+| Workflow | What it does | Docs |
+|---|---|---|
+| **AI security & compliance review** | Security & compliance review of a pull request: inline comments for secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations. The compliance framework is a selectable [profile](docs/profiles.md) — CMS ARS 5.1 / NIST SP 800-53 by default, a generic `baseline`, or bring your own. | [docs/github-action.md](docs/github-action.md) |
+
+More workflows will land here over time. Each one is meant to stand alone — you
+adopt only the ones you need. **Adding a workflow?** See the conventions in
+[docs/adding-workflows.md](docs/adding-workflows.md).
+
+---
+
+# Workflow: AI security & compliance review
+
+Point your pipeline at it and get inline review comments on every pull request.
+It works against the public API or a private LLM endpoint (Amazon Bedrock,
+Google Vertex, Azure OpenAI, or a custom gateway) so code and diffs can stay
+inside your boundary. The compliance rubric is a selectable
+[profile](docs/profiles.md) (CMS ARS by default).
 
 ## Quickstart (GitHub Actions)
 
@@ -26,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -38,7 +56,7 @@ That's the whole setup. [Pin `@<commit-sha>`, not a tag](docs/security.md).
 | Component | What it is | Docs |
 |---|---|---|
 | **GitHub Action** | Composite action; `uses:` it in any workflow. | [docs/github-action.md](docs/github-action.md) |
-| **Jenkins plugin** | `.hpi` adding an `aiPrReview` pipeline step. | [jenkins-plugin/README.md](jenkins-plugin/README.md) |
+| **Jenkins plugin** | `.hpi` adding an `aiSecurityComplianceReview` pipeline step. | [jenkins-plugin/README.md](jenkins-plugin/README.md) |
 | **Copilot instructions** | Files that make Copilot's built-in review match. | [copilot-instructions/README.md](copilot-instructions/README.md) |
 
 The Action and the plugin run the **same review engine** ([`engine/`](engine/README.md)) —
@@ -51,15 +69,16 @@ Bedrock is three extra lines — and the diff never leaves your AWS boundary:
 ```yaml
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: arn:aws:iam::…:role/ai-pr-review, aws-region: us-east-1 }
-      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           provider: bedrock
           model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
 ```
 
-Vertex and custom gateways (LiteLLM, etc.) are the same shape. If you pick an
-in-boundary LLM for isolation, run the review on in-boundary compute too — see
-[docs/private-endpoints.md](docs/private-endpoints.md).
+Vertex, **Azure OpenAI**, and custom gateways (LiteLLM, etc.) are the same
+shape. Azure serves OpenAI models, so it drives the `codex` tool rather than
+`claude`. If you pick an in-boundary LLM for isolation, run the review on
+in-boundary compute too — see [docs/private-endpoints.md](docs/private-endpoints.md).
 
 ## How it works
 
@@ -76,13 +95,32 @@ The review runs natively on your runner; there is no built-in network sandbox
 yet, so egress control is your infrastructure's responsibility — see
 [docs/security.md](docs/security.md).
 
+## Compliance profiles
+
+The security perspective is universal; the **compliance** perspective is a
+selectable `profile`:
+
+```yaml
+        with:
+          profile: cms-ars   # default — CMS ARS 5.1 / NIST SP 800-53 Rev 5
+        # profile: baseline  # generic CIS / NIST CSF / OWASP, no agency controls
+        # profile: ./my-org-profile   # bring your own rubric directory
+```
+
+Same knob on the Jenkins step (`profile:`) and per-subscriber for the Copilot
+instructions. Add an agency/state variant under `engine/profiles/` — see
+[docs/profiles.md](docs/profiles.md).
+
 ## Support matrix
 
-| Tool | api | bedrock | vertex | custom base URL |
-|---|:-:|:-:|:-:|:-:|
-| `claude` | ✅ | ✅ | ✅ | ✅ |
-| `codex` | ✅ | — | — | ✅ |
-| `copilot` | ✅ | — | — | — |
+| Tool | api | bedrock | vertex | azure | custom base URL |
+|---|:-:|:-:|:-:|:-:|:-:|
+| `claude` | ✅ | ✅ | ✅ | — | ✅ |
+| `codex` | ✅ | — | — | ✅ | ✅ |
+| `copilot` | ✅ | — | — | — | — |
+
+Bedrock and Vertex host Claude; Azure OpenAI hosts OpenAI models, so it pairs
+with `codex`. For any other split, point the matching base URL at a gateway.
 
 ## Security & supply chain
 
@@ -91,7 +129,7 @@ in scope. Before adopting, three things are imperative:
 
 - **Least privilege.** Scope the SCM token to `contents: read` +
   `pull-requests: write` (Action) or a fine-grained PAT / GitHub App (Jenkins);
-  scope Bedrock/Vertex to invoking the one model. Details in
+  scope Bedrock/Vertex/Azure to invoking the one model or deployment. Details in
   [docs/security.md](docs/security.md).
 - **Review the engine** — it's deliberately small (a few hundred lines of bash
   plus two short Python files) — and **pin to a commit SHA**, not a mutable tag.

@@ -8,19 +8,46 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Composite GitHub Action** (`action.yml`) for AI-assisted security &
-  compliance PR review: all engine parameters, first-class Bedrock / Vertex /
-  custom-gateway endpoints, and `result` / `review-json` outputs.
-- **Jenkins plugin** (`jenkins-plugin/`) providing the `aiPrReview` pipeline
-  step, org-wide defaults (JCasC-ready), and the same engine bundled as a
-  resource. Distributed as a `.hpi` on GitHub Releases with a SHA-256 checksum.
+- **Compliance profiles** (`AI_REVIEW_PROFILE`, default `cms-ars`): the
+  compliance rubric is now selectable. Ships `cms-ars` (CMS ARS 5.1 /
+  NIST 800-53) and a framework-neutral `baseline` (CIS / NIST CSF / OWASP) under
+  `engine/profiles/`, plus a bring-your-own directory path. Surfaced as the
+  `profile` input (Action), the `profile` step/global param (Jenkins), and a
+  per-subscriber `profile` for the Copilot instructions. See
+  [docs/profiles.md](docs/profiles.md).
+- **Azure OpenAI endpoint** (`provider=azure`, `codex` only): the engine derives
+  the OpenAI-compatible deployment URL from `AZURE_OPENAI_ENDPOINT`, the
+  deployment name (`model`), and `AZURE_OPENAI_API_VERSION`. Exposed as
+  `azure-openai-*` Action inputs and the `azure` endpoint in the Jenkins plugin.
+- **Pluggable-repo framing**: the top-level README presents this repo as a
+  collection of independent workflows, and [docs/adding-workflows.md](docs/adding-workflows.md)
+  documents the conventions (self-contained front ends, shared cores, the
+  `github.action_path` bash-sourcing pattern, profiles) for adding more.
 - **Shared review engine** (`engine/`): relocatable bash engine with parallel
   fan-out, self / independent adjudication, and an SCM seam.
 - **Copilot instruction files** (`copilot-instructions/`): four prefixed,
-  `applyTo`-scoped files plus a subscription workflow that opens update PRs to
-  subscriber repos.
+  `applyTo`-scoped files per profile, plus a subscription workflow that opens
+  update PRs to subscriber repos.
 - Documentation set, test suites (bats, pytest, JenkinsRule), and CI
   (static checks, engine tests, plugin build/release).
+
+### Changed
+
+- **Front ends restructured into shared core + thin per-workflow units.**
+  - The GitHub Action moved from the repo root to
+    `workflows/security-compliance-review/action.yml`. Consumers must update
+    `uses:` to `navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>`.
+    Generic CI plumbing is factored into `workflows/_shared/lib/ci.sh`, sourced by
+    absolute path (a composite action cannot reference a sibling composite
+    cross-repo).
+  - The Jenkins plugin is now a Maven reactor: a shared **`ai-common-core`**
+    library plugin (engine extraction, endpoint mapping, PR-context resolution)
+    plus the thin **`ai-security-compliance-review`** plugin that depends on it.
+    Installing the plugin now also requires `ai-common-core.hpi`; both are
+    attached to releases.
+- **Workflow renamed** `pr-review` → `security-compliance-review`. The Jenkins
+  pipeline step and JCasC symbol are now `aiSecurityComplianceReview`; the plugin
+  artifact is `ai-security-compliance-review`.
 
 ### Security
 

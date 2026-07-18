@@ -156,6 +156,38 @@ report
   [ "$status" -eq 2 ]
 }
 
+@test "endpoint: azure rejects non-codex tools" {
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=azure run ai_review::configure_endpoint
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"only supported with AI_REVIEW_TOOL=codex"* ]]
+}
+
+@test "endpoint: azure requires AZURE_OPENAI_ENDPOINT" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure AI_REVIEW_MODEL=gpt-review \
+    run ai_review::configure_endpoint
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"requires AZURE_OPENAI_ENDPOINT"* ]]
+}
+
+@test "endpoint: azure requires a deployment via AI_REVIEW_MODEL" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure \
+    AZURE_OPENAI_ENDPOINT=https://res.openai.azure.com run ai_review::configure_endpoint
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"Azure deployment name"* ]]
+}
+
+@test "endpoint: azure derives the deployment base URL, no key leak" {
+  export AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure
+  export AZURE_OPENAI_ENDPOINT=https://res.openai.azure.com AI_REVIEW_MODEL=gpt-review
+  export AZURE_OPENAI_API_KEY=azuresecret AZURE_OPENAI_API_VERSION=2024-10-21
+  run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"provider=azure"* ]]
+  [[ "$output" == *"openai/deployments/gpt-review"* ]]
+  [[ "$output" == *"api-version=2024-10-21"* ]]
+  [[ "$output" != *"azuresecret"* ]]
+}
+
 @test "endpoint: invalid provider rejected" {
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=nonsense run ai_review::configure_endpoint
   [ "$status" -eq 2 ]

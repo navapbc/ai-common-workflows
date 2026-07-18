@@ -50,6 +50,33 @@ fi
 # shellcheck source=../lib/scm/github.sh
 source "${ENGINE_HOME}/lib/scm/${AI_REVIEW_SCM}.sh"
 
+# ── Compliance profile resolution ───────────────────────────────────────────
+# A profile supplies the compliance rubric (and may override any base skill).
+# AI_REVIEW_PROFILE is a bundled name under profiles/ (cms-ars is the default),
+# or a path to a custom profile directory (bring-your-own). Rubric files resolve
+# from the active profile first, then fall back to the shared skills/ base.
+AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-cms-ars}"
+if [[ -d "${AI_REVIEW_PROFILE}" ]]; then
+  PROFILE_DIR="$(cd "${AI_REVIEW_PROFILE}" && pwd)"
+elif [[ -d "${ENGINE_HOME}/profiles/${AI_REVIEW_PROFILE}" ]]; then
+  PROFILE_DIR="${ENGINE_HOME}/profiles/${AI_REVIEW_PROFILE}"
+else
+  ai_review::err "AI_REVIEW_PROFILE='${AI_REVIEW_PROFILE}' is not a known profile or an existing directory."
+  ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
+  ai_review::log "  Or pass a path to a custom profile directory."
+  exit 2
+fi
+
+# pr_review::rubric <file> — echo the path to a rubric file, preferring the
+# active profile's override, else the shared base in skills/.
+pr_review::rubric() {
+  if [[ -f "${PROFILE_DIR}/$1" ]]; then
+    printf '%s' "${PROFILE_DIR}/$1"
+  else
+    printf '%s' "${ENGINE_HOME}/skills/$1"
+  fi
+}
+
 # ── Prompt construction ─────────────────────────────────────────────────────
 # The full review instructions are inlined into the prompt at dispatch time:
 # consumer repositories carry no skill files, so the AI must receive
@@ -77,7 +104,7 @@ SCOPE
       cat <<COMPLIANCE
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
-$(cat "${ENGINE_HOME}/skills/iac-compliance.md")
+$(cat "$(pr_review::rubric iac-compliance.md)")
 COMPLIANCE
     )"
   fi
@@ -100,10 +127,10 @@ request. The diff under review is between the base ref "${AI_REVIEW_AGAINST}"
 current working directory. Your full instructions follow.
 
 ──────────────────── PR-REVIEW INSTRUCTIONS ────────────────────
-$(cat "${ENGINE_HOME}/skills/pr-review.md")
+$(cat "$(pr_review::rubric pr-review.md)")
 
 ──────────────────── SECURITY PERSPECTIVE ────────────────────
-$(cat "${ENGINE_HOME}/skills/code-security.md")
+$(cat "$(pr_review::rubric code-security.md)")
 ${compliance_block}
 ${scope_block}
 ${self_adjudication_block}
@@ -384,6 +411,7 @@ pr_review::run() {
   if ((AI_REVIEW_DRY_RUN == 1)); then
     ai_review::info "DRY-RUN — no AI invocation will be made."
     ai_review::log "  Skill:          ${SKILL_HUMAN_NAME} (${SKILL_NAME})"
+    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE} (${PROFILE_DIR})"
     ai_review::log "  AI tool:        ${AI_REVIEW_TOOL_RESOLVED}"
     ai_review::log "  PR number:      ${PR_NUMBER:-(none — using --against directly)}"
     ai_review::log "  Diff source:    $(ai_review::diff_command_description)"
@@ -402,6 +430,7 @@ pr_review::run() {
 
   # Validate/configure the LLM endpoint now that a real invocation will happen.
   ai_review::configure_endpoint
+  ai_review::info "Compliance profile: ${AI_REVIEW_PROFILE}"
 
   local result="" review_json=""
 

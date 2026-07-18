@@ -72,7 +72,7 @@ writes repository contents.
   token (short-lived, installed per repo). Store it as a Secret-text
   credential and reference it by ID.
 
-### The LLM credential (Bedrock / Vertex)
+### The LLM credential (Bedrock / Vertex / Azure)
 
 Scope the model credential to *invoking the one model*, not to the service.
 
@@ -92,6 +92,9 @@ Scope the model credential to *invoking the one model*, not to the service.
 - **Vertex:** grant the workload-identity service account only the
   **Vertex AI User** role (or a custom role with just
   `aiplatform.endpoints.predict`), scoped to the project — not Editor/Owner.
+- **Azure OpenAI:** scope the key (or a managed identity via a gateway) to the
+  one deployment, and put the resource behind a Private Endpoint / firewall so
+  it is not publicly reachable. Rotate the key independently of other secrets.
 - **Public API keys:** use a key dedicated to this workload so it can be
   rotated/revoked independently, and store it as a secret, never in the
   workflow file.
@@ -116,15 +119,15 @@ layer around the runner/agent:
 1. **Review the code before adopting.** The engine is deliberately small and
    readable — [`engine/`](../engine/README.md) is a few hundred lines of bash
    plus `github_payload.py` and `fold_review_json.py`. Read it, the
-   [`action.yml`](../action.yml), and (for Jenkins) the plugin, the way you'd
-   review any dependency that runs in your pipeline. Re-review on upgrade by
-   diffing tags.
+   [action](../workflows/security-compliance-review/action.yml), and (for
+   Jenkins) the plugin, the way you'd review any dependency that runs in your
+   pipeline. Re-review on upgrade by diffing tags.
 
 2. **Pin to an immutable reference.**
    - **GitHub Action:** pin `uses:` to a full 40-character commit SHA, not a
      tag or branch:
      ```yaml
-     - uses: navapbc/ai-common-workflows@<40-char-sha> # v1.0.0
+     - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<40-char-sha> # v1.0.0
      ```
      The `# vX.Y.Z` comment records which release the SHA is.
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its
@@ -132,8 +135,8 @@ layer around the runner/agent:
      manual admin action, never automatic.
 
 3. **Skip drafts, and remember the network boundary.** On the public API, PR
-   diffs leave your perimeter — point at Bedrock/Vertex/an internal gateway if
-   that matters.
+   diffs leave your perimeter — point at Bedrock/Vertex/Azure OpenAI/an internal
+   gateway if that matters.
 
 ## Least-privilege for the Copilot-instructions distributor
 

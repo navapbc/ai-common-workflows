@@ -176,9 +176,11 @@ Options:
 
 Environment variables:
   AI_REVIEW_TOOL           Required. One of: claude | codex | copilot.
-  AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex.
+  AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
+                           bedrock/vertex are claude-only; azure is codex-only.
   AI_REVIEW_MODEL          Model override passed to the CLI's --model flag.
-                           For bedrock this is the Bedrock model ID.
+                           For bedrock this is the Bedrock model ID; for azure
+                           it is the Azure deployment name.
   ANTHROPIC_API_KEY        Claude on the public API (provider=api).
   OPENAI_API_KEY           Codex on the public API.
   ANTHROPIC_BASE_URL       Custom Anthropic-compatible endpoint (gateways).
@@ -186,6 +188,9 @@ Environment variables:
   AWS_REGION               Required for provider=bedrock.
   ANTHROPIC_VERTEX_PROJECT_ID, CLOUD_ML_REGION
                            Required for provider=vertex.
+  AZURE_OPENAI_ENDPOINT    Required for provider=azure (resource endpoint).
+  AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_VERSION
+                           Key and REST API version for provider=azure.
   AI_ADJUDICATION          self (default) | independent | off.
   AI_ADJUDICATION_MODEL    Model for the independent adjudication pass only.
   AI_REVIEW_JOBS           Concurrent fan-out workers (default 4).

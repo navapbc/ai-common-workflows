@@ -21,6 +21,7 @@ jobs:
             engine/bin/ai-pr-review \
             engine/lib/core.sh engine/lib/endpoints.sh \
             engine/lib/scm/github.sh engine/lib/sandbox/sandbox.sh \
+            workflows/_shared/lib/ci.sh \
             tests/stubs/* tests/run.sh
       - name: shfmt
         run: |
@@ -65,7 +66,7 @@ jobs:
       # Dry-run exercises the composite wiring and env mapping without an AI
       # CLI or keys. On push (no PR context) the action skips cleanly; on a PR
       # it runs the dry-run plan.
-      - uses: ./
+      - uses: ./workflows/security-compliance-review
         with:
           ai-tool: claude
           dry-run: true

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.jenkins.plugins</groupId>
+    <artifactId>ai-common-parent</artifactId>
+    <version>${revision}${changelist}</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>ai-common-core</artifactId>
+  <!-- Library plugin: it exposes shared classes AND a real @Extension
+       (GitHubPrContextResolver / PrContextResolver ExtensionPoint), so it must
+       be an hpi, not a plain jar — extension registration requires a plugin. -->
+  <packaging>hpi</packaging>
+
+  <name>AI Common Workflows — shared core</name>
+  <description>Shared engine-extraction, endpoint mapping, and PR-context resolution for the per-workflow plugins.</description>
+
+  <!-- No extra runtime dependencies: the moved classes use only jenkins-core
+       (hudson.*), which the plugin parent provides. -->
+
+  <build>
+    <plugins>
+      <!-- Produce a generic engine zip for EngineExtractorTest ONLY. The real
+           per-workflow engine bundling lives in each workflow plugin; core just
+           needs a fixture so the generalized extractor can be unit-tested. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>bundle-test-engine</id>
+            <phase>generate-test-resources</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.testOutputDirectory}/io/jenkins/plugins/aicommon/core"/>
+                <zip destfile="${project.build.testOutputDirectory}/io/jenkins/plugins/aicommon/core/test-engine.zip"
+                     basedir="${project.basedir}/../../engine"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

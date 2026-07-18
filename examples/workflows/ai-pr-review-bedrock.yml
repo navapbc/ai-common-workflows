@@ -28,7 +28,7 @@ jobs:
           role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
           aws-region: us-east-1
 
-      - uses: navapbc/ai-common-workflows@REPLACE_WITH_COMMIT_SHA # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
         with:
           ai-tool: claude
           provider: bedrock

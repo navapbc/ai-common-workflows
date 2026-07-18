@@ -1,6 +1,6 @@
 # GitHub Action reference
 
-`uses: navapbc/ai-common-workflows@<commit-sha>` — a composite action that
+`uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha>` — a composite action that
 reviews a pull request and posts inline comments. Pin to a commit SHA
 ([why](security.md)).
 
@@ -43,10 +43,13 @@ All inputs are active. Endpoint inputs beyond `api` apply to `claude` only.
 | `gate` | `false` | Fail the job on any non-APPROVE result |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
-| `provider` | `api` | `api` \| `bedrock` \| `vertex` |
-| `model` | — | Model override; Bedrock model ID for provider=bedrock |
+| `provider` | `api` | `api` \| `bedrock` \| `vertex` \| `azure` (bedrock/vertex→claude, azure→codex) |
+| `model` | — | Model override; Bedrock model ID (bedrock) or Azure deployment name (azure) |
 | `aws-region` | — | Region for provider=bedrock |
 | `vertex-project-id` / `vertex-region` | — | provider=vertex |
+| `azure-openai-endpoint` | — | Azure resource endpoint for provider=azure (e.g. `https://res.openai.azure.com`) |
+| `azure-openai-api-key` | — | Azure OpenAI key for provider=azure |
+| `azure-openai-api-version` | `2024-10-21` | Azure REST API version for provider=azure |
 | `anthropic-base-url` / `openai-base-url` | — | Custom gateway endpoint |
 | `adjudication` | `self` | `self` \| `independent` \| `off` |
 | `adjudication-model` | — | Model for the independent pass only |
