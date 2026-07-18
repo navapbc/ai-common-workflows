@@ -33,10 +33,17 @@ setup() {
   [[ "$output" == *"provider must be"* ]]
 }
 
-@test "validate_inputs: bedrock requires claude" {
+@test "validate_inputs: bedrock accepts claude and codex" {
+  AI_TOOL=claude PROVIDER=bedrock run ci::validate_inputs
+  [ "$status" -eq 0 ]
   AI_TOOL=codex PROVIDER=bedrock run ci::validate_inputs
+  [ "$status" -eq 0 ]
+}
+
+@test "validate_inputs: bedrock rejects copilot" {
+  AI_TOOL=copilot PROVIDER=bedrock run ci::validate_inputs
   [ "$status" -ne 0 ]
-  [[ "$output" == *"only supported with ai-tool=claude"* ]]
+  [[ "$output" == *"claude or codex"* ]]
 }
 
 @test "validate_inputs: azure requires codex" {
