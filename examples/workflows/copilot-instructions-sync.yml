@@ -1,0 +1,78 @@
+# Keep this repo's AI-review Copilot instructions in sync with ai-common-workflows.
+#
+# PULL model: copy this file into your repo's .github/workflows/. It fetches the
+# ai-review-*.instructions.md files for your chosen compliance profile from
+# ai-common-workflows (pinned to a ref you control) and opens a PR that updates
+# .github/instructions/. It uses only this repo's own GITHUB_TOKEN — no central
+# distributor, and ai-common-workflows needs no knowledge of your repo.
+#
+# Setup: set PROFILE and pin ACW_REF below, then merge. Nothing else required.
+name: Sync AI-review Copilot instructions
+
+on:
+  schedule:
+    - cron: "0 12 * * 1" # weekly (Mon 12:00 UTC); adjust as you like
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # push the update branch
+  pull-requests: write # open the PR
+
+env:
+  # Compliance profile to track: cms-ars (default) | baseline | <your profile>.
+  PROFILE: cms-ars
+  # Pin ai-common-workflows to a commit SHA (preferred) or a release tag.
+  ACW_REPO: navapbc/ai-common-workflows
+  ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char SHA, or v1.0.0
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Fetch instruction files from ai-common-workflows
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ACW_REPO }}
+          ref: ${{ env.ACW_REF }}
+          path: .acw-src
+          persist-credentials: false
+
+      - name: Copy the chosen profile into .github/instructions/
+        run: |
+          set -euo pipefail
+          src=".acw-src/copilot-instructions/profiles/${PROFILE}/instructions"
+          if [[ ! -d "${src}" ]]; then
+            echo "::error::profile '${PROFILE}' not found at ${src} in ${ACW_REPO}@${ACW_REF}"
+            exit 1
+          fi
+          mkdir -p .github/instructions
+          cp "${src}"/ai-review-*.instructions.md .github/instructions/
+          rm -rf .acw-src
+
+      - name: Open or update the sync PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="ai-review/instructions-sync"
+          # Catches both modified and newly added instruction files.
+          if [[ -z "$(git status --porcelain -- .github/instructions)" ]]; then
+            echo "Copilot instructions already up to date; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${branch}"
+          git add .github/instructions/ai-review-*.instructions.md
+          git commit -q -m "Sync AI-review Copilot instructions (${PROFILE})"
+          git push -f -q origin "${branch}"
+          if gh pr view "${branch}" >/dev/null 2>&1; then
+            echo "Existing sync PR updated."
+          else
+            gh pr create --head "${branch}" \
+              --title "Sync AI-review Copilot instructions (${PROFILE})" \
+              --body "Automated sync of \`.github/instructions/ai-review-*.instructions.md\` from ${ACW_REPO}@\`${ACW_REF}\` (profile: \`${PROFILE}\`). Review and merge as usual."
+          fi
