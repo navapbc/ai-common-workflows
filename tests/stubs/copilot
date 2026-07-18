@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Stub `copilot` CLI for engine tests. Mimics: copilot -p "<prompt>" [flags]
+# Same knobs as the claude stub.
+set -euo pipefail
+
+prompt=""
+expect_prompt=0
+for arg in "$@"; do
+  if (( expect_prompt )); then prompt="${arg}"; expect_prompt=0; continue; fi
+  [[ "${arg}" == "-p" ]] && expect_prompt=1
+done
+
+[[ -n "${STUB_CALLS:-}" ]] && printf 'copilot\n' >> "${STUB_CALLS}"
+if [[ -n "${STUB_PROMPT_LOG:-}" ]]; then
+  { printf '%s\n' "${prompt}"; printf -- '---PROMPT-END---\n'; } >> "${STUB_PROMPT_LOG}"
+fi
+[[ -n "${STUB_EXIT:-}" ]] && exit "${STUB_EXIT}"
+
+if [[ -n "${STUB_ADJ_RESPONSE_FILE:-}" ]] && grep -q 'ADJUDICATION INSTRUCTIONS' <<< "${prompt}"; then
+  cat "${STUB_ADJ_RESPONSE_FILE}"
+  exit 0
+fi
+cat "${STUB_RESPONSE_FILE:?STUB_RESPONSE_FILE must be set}"

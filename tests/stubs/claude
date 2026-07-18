@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Stub `claude` CLI for engine tests. Mimics: claude -p "<prompt>" [flags]
+# Behavior knobs (env):
+#   STUB_CALLS              append one line per invocation ("claude")
+#   STUB_PROMPT_LOG         append each prompt (delimited) for assertions
+#   STUB_EXIT               exit with this code instead of responding
+#   STUB_RESPONSE_FILE      response body for review prompts (required)
+#   STUB_ADJ_RESPONSE_FILE  response body when the prompt is an adjudication
+set -euo pipefail
+
+prompt=""
+expect_prompt=0
+for arg in "$@"; do
+  if (( expect_prompt )); then prompt="${arg}"; expect_prompt=0; continue; fi
+  [[ "${arg}" == "-p" ]] && expect_prompt=1
+done
+
+[[ -n "${STUB_CALLS:-}" ]] && printf 'claude\n' >> "${STUB_CALLS}"
+if [[ -n "${STUB_PROMPT_LOG:-}" ]]; then
+  { printf '%s\n' "${prompt}"; printf -- '---PROMPT-END---\n'; } >> "${STUB_PROMPT_LOG}"
+fi
+[[ -n "${STUB_EXIT:-}" ]] && exit "${STUB_EXIT}"
+
+if [[ -n "${STUB_ADJ_RESPONSE_FILE:-}" ]] && grep -q 'ADJUDICATION INSTRUCTIONS' <<< "${prompt}"; then
+  cat "${STUB_ADJ_RESPONSE_FILE}"
+  exit 0
+fi
+cat "${STUB_RESPONSE_FILE:?STUB_RESPONSE_FILE must be set}"
