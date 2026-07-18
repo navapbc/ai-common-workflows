@@ -177,10 +177,12 @@ Options:
 Environment variables:
   AI_REVIEW_TOOL           Required. One of: claude | codex | copilot.
   AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
-                           bedrock/vertex are claude-only; azure is codex-only.
+                           bedrock: claude or codex; vertex: claude only;
+                           azure: codex only. (copilot uses BYOK env vars —
+                           COPILOT_PROVIDER_BASE_URL etc. — on the api path.)
   AI_REVIEW_MODEL          Model override passed to the CLI's --model flag.
-                           For bedrock this is the Bedrock model ID; for azure
-                           it is the Azure deployment name.
+                           For bedrock this is the Bedrock model ID (required
+                           for codex); for azure it is the Azure deployment name.
   ANTHROPIC_API_KEY        Claude on the public API (provider=api).
   OPENAI_API_KEY           Codex on the public API.
   ANTHROPIC_BASE_URL       Custom Anthropic-compatible endpoint (gateways).
@@ -348,9 +350,18 @@ ai_review::invoke_tool() {
     codex)
       ai_review::require_cli "codex" \
         "Install OpenAI Codex CLI:  npm install -g @openai/codex"
+      # provider=bedrock selects codex's built-in amazon-bedrock provider via
+      # -c config overrides (AWS-cred auth, direct to Bedrock, no gateway).
+      local codex_cfg=()
+      if [[ "${AI_REVIEW_CODEX_MODEL_PROVIDER:-}" == "amazon-bedrock" ]]; then
+        codex_cfg+=(-c 'model_provider=amazon-bedrock')
+        [[ -n "${AWS_REGION:-}" ]] &&
+          codex_cfg+=(-c "model_providers.amazon-bedrock.aws.region=${AWS_REGION}")
+      fi
       # --sandbox read-only = filesystem read access (git diff / file reads)
       # with no write/network side effects.
       codex exec --sandbox read-only --skip-git-repo-check \
+        "${codex_cfg[@]+"${codex_cfg[@]}"}" \
         ${model:+--model "${model}"} \
         "${prompt}" 2>&1
       ;;

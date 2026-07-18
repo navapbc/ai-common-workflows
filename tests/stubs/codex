@@ -10,6 +10,8 @@ prompt=""
 for arg in "$@"; do prompt="${arg}"; done   # last positional wins
 
 [[ -n "${STUB_CALLS:-}" ]] && printf 'codex\n' >> "${STUB_CALLS}"
+# Optional: record the full argv (space-joined) so tests can assert on flags.
+[[ -n "${STUB_ARGS_LOG:-}" ]] && { printf '%s ' "$@"; printf '\n'; } >> "${STUB_ARGS_LOG}"
 if [[ -n "${STUB_PROMPT_LOG:-}" ]]; then
   { printf '%s\n' "${prompt}"; printf -- '---PROMPT-END---\n'; } >> "${STUB_PROMPT_LOG}"
 fi

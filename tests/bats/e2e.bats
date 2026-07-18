@@ -88,6 +88,17 @@ teardown() {
   [[ "$output" == *"not a known profile"* ]]
 }
 
+@test "codex+bedrock passes the amazon-bedrock provider override to the CLI" {
+  local args="${WORK}/codex-args.log"
+  AI_REVIEW_TOOL=codex AI_REVIEW_PROVIDER=bedrock AWS_REGION=us-east-1 \
+    AWS_ACCESS_KEY_ID=AKIAsecret AI_REVIEW_MODEL=us.anthropic.claude-x \
+    STUB_ARGS_LOG="${args}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+    run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  grep -q -- "-c model_provider=amazon-bedrock" "${args}"
+  grep -q -- "model_providers.amazon-bedrock.aws.region=us-east-1" "${args}"
+}
+
 @test "profile: bring-your-own directory path resolves" {
   local byo="${WORK}/myprofile"
   mkdir -p "${byo}"
