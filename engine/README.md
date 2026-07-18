@@ -47,9 +47,9 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | Variable | Required | Meaning |
 |---|---|---|
 | `AI_REVIEW_TOOL` | yes | `claude` \| `codex` \| `copilot` |
-| `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` \| `vertex` (claude only) \| `azure` (codex only) |
+| `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` (claude or codex) \| `vertex` (claude) \| `azure` (codex) |
 | `AI_REVIEW_PROFILE` | no | Compliance profile: `cms-ars` (default) \| `baseline` \| a `profiles/` name or a directory path |
-| `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock) or Azure deployment name (azure) |
+| `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `ANTHROPIC_API_KEY` | claude+api | Public Anthropic API key |
 | `OPENAI_API_KEY` | codex | Public OpenAI API key |
 | `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` | no | Custom/gateway endpoints, passed through |
@@ -57,6 +57,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `ANTHROPIC_VERTEX_PROJECT_ID`, `CLOUD_ML_REGION` | vertex | Plus ambient GCP ADC |
 | `AZURE_OPENAI_ENDPOINT` | azure | Azure resource endpoint; `OPENAI_BASE_URL` is derived from it + the deployment |
 | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION` | azure | Key (→`OPENAI_API_KEY`) and REST API version (default `2024-10-21`) |
+| `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY`, `COPILOT_MODEL` | copilot BYOK | Passed through to the copilot CLI (talks directly to your endpoint) |
 | `AI_ADJUDICATION` | no | `self` (default) \| `independent` \| `off` |
 | `AI_ADJUDICATION_MODEL` | no | Model for the independent pass only |
 | `AI_REVIEW_JOBS` | no | Fan-out concurrency (default 4) |

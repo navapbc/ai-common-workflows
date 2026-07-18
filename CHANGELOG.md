@@ -8,6 +8,15 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Bedrock for `codex`** (`ai-tool=codex` + `provider=bedrock`): selects the
+  Codex CLI's built-in `amazon-bedrock` provider (AWS-cred auth, direct to
+  Bedrock, no gateway); a Bedrock model ID is required. Bedrock now serves both
+  `claude` and `codex`.
+- **Copilot BYOK pass-through**: `copilot-provider-base-url` / `-type` /
+  `-api-key` / `copilot-model` inputs (Action) and the matching Jenkins step /
+  global params flow to the copilot CLI as `COPILOT_PROVIDER_*` / `COPILOT_MODEL`,
+  which the CLI sends directly to your endpoint. copilot has no native Bedrock
+  type — front Bedrock with an in-boundary Anthropic/OpenAI-compatible gateway.
 - **Compliance profiles** (`AI_REVIEW_PROFILE`, default `cms-ars`): the
   compliance rubric is now selectable. Ships `cms-ars` (CMS ARS 5.1 /
   NIST 800-53) and a framework-neutral `baseline` (CIS / NIST CSF / OWASP) under
