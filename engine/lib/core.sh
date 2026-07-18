@@ -160,11 +160,11 @@ Options:
   --gate               Exit 1 on any non-APPROVE result (CI-blocking mode).
                        Default is advisory: findings never fail the build.
   --json-only          Print only the machine-readable JSON block.
-  --json-out <file>    Also write the JSON block to <file> (used by the
-                       sandbox wrapper to hand findings to the post phase).
+  --json-out <file>    Also write the JSON block to <file> (lets a caller run
+                       the AI phase and the post phase as separate processes).
   --post-only          Skip the AI entirely: post a previously produced JSON
-                       block (requires --pr and --json-in). Trusted post
-                       phase of the sandboxed flow.
+                       block (requires --pr and --json-in). The trusted post
+                       phase of a split run.
   --json-in <file>     JSON block to post in --post-only mode.
   -n, --dry-run        Print the resolved tool, plan, and prompt; no AI call.
   --no-block           Always exit 0 regardless of findings or gate mode.

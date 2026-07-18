@@ -21,7 +21,11 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
   For a fully read-only run, set `post-comments: false` and gate on the
   `result` output; then `contents: read` alone suffices. See
   [security.md](security.md).
-- Node.js on the runner (for the AI CLI) — present on GitHub-hosted runners.
+- Runner tooling: **Node.js** (for the AI CLI), and — when `post-comments` is
+  true — **`gh`** and **`python3`** to post the review. All three are present
+  on GitHub-hosted runners; on self-hosted runners, install them (or bake them
+  into the runner image). The review runs natively; there is no bundled image
+  providing these.
 
 ## Inputs
 
