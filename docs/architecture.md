@@ -6,7 +6,7 @@ One engine, two front ends, plus a set of Copilot instruction files.
                          ┌───────────────────────────┐
    GitHub Action ───────▶│                           │
    (action.yml)          │      engine/  (bash)      │──▶ AI CLI (claude/codex/copilot)
-                         │  bin/ai-pr-review         │      via api / bedrock / vertex / gateway
+                         │  bin/ai-pr-review         │      via api / bedrock / vertex / azure / gateway
    Jenkins plugin ──────▶│  lib/core.sh              │
    (bundles engine zip)  │  lib/endpoints.sh         │──▶ SCM (gh api) — post phase only
                          │  lib/scm/github.sh        │

@@ -8,9 +8,17 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Azure OpenAI endpoint** (`provider=azure`, `codex` only): the engine derives
+  the OpenAI-compatible deployment URL from `AZURE_OPENAI_ENDPOINT`, the
+  deployment name (`model`), and `AZURE_OPENAI_API_VERSION`. Exposed as
+  `azure-openai-*` Action inputs and the `azure` endpoint in the Jenkins plugin.
+- **Pluggable-repo framing**: the top-level README now presents this repo as a
+  collection of independent workflows (AI PR review is the first), and a new
+  [docs/adding-workflows.md](docs/adding-workflows.md) documents the conventions
+  for adding more.
 - **Composite GitHub Action** (`action.yml`) for AI-assisted security &
   compliance PR review: all engine parameters, first-class Bedrock / Vertex /
-  custom-gateway endpoints, and `result` / `review-json` outputs.
+  Azure OpenAI / custom-gateway endpoints, and `result` / `review-json` outputs.
 - **Jenkins plugin** (`jenkins-plugin/`) providing the `aiPrReview` pipeline
   step, org-wide defaults (JCasC-ready), and the same engine bundled as a
   resource. Distributed as a `.hpi` on GitHub Releases with a SHA-256 checksum.

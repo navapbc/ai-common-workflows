@@ -108,6 +108,10 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
             } else if ("codex".equals(tool)) {
                 putSecret(runEnv, "OPENAI_API_KEY", openaiCredId, run);
             }
+        } else if (endpoint == EndpointMode.AZURE) {
+            // Azure OpenAI is OpenAI-compatible: the engine reads OPENAI_API_KEY
+            // and the OpenAI base URL (set below) pointed at the deployment.
+            putSecret(runEnv, "OPENAI_API_KEY", openaiCredId, run);
         }
         // The SCM token is deliberately NOT placed in runEnv: the AI phase reads
         // untrusted PR content, so the token that can write to the repo is kept
@@ -287,7 +291,8 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         try {
             return EndpointMode.valueOf(raw.toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new AbortException("aiPrReview: endpoint must be direct | bedrock | vertex | custom (got '" + raw + "').");
+            throw new AbortException(
+                    "aiPrReview: endpoint must be direct | bedrock | vertex | azure | custom (got '" + raw + "').");
         }
     }
 

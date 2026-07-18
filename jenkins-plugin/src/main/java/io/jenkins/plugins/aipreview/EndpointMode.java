@@ -12,6 +12,8 @@ public enum EndpointMode {
     BEDROCK,
     /** Google Vertex AI (claude only). */
     VERTEX,
+    /** Azure OpenAI Service (codex only); reached via the OpenAI base URL. */
+    AZURE,
     /** OpenAI/Anthropic-compatible gateway via a custom base URL. */
     CUSTOM;
 
@@ -22,6 +24,8 @@ public enum EndpointMode {
                 return "bedrock";
             case VERTEX:
                 return "vertex";
+            case AZURE:
+                return "azure";
             default:
                 // DIRECT and CUSTOM both use the vendor SDK path; CUSTOM only
                 // differs by the base-URL env var, set separately.

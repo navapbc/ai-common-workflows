@@ -16,6 +16,12 @@
 #   vertex   Google Vertex AI (claude only). Sets CLAUDE_CODE_USE_VERTEX=1;
 #            requires ANTHROPIC_VERTEX_PROJECT_ID and CLOUD_ML_REGION; auth
 #            via ambient Google Application Default Credentials.
+#   azure    Azure OpenAI Service (codex only). Azure serves OpenAI models,
+#            so it drives the OpenAI-compatible CLI: requires
+#            AZURE_OPENAI_ENDPOINT and AI_REVIEW_MODEL (the deployment name).
+#            AZURE_OPENAI_API_KEY supplies the key; AZURE_OPENAI_API_VERSION
+#            selects the REST API version. The engine derives OPENAI_BASE_URL /
+#            OPENAI_API_KEY from these unless they are already set.
 #
 # Independent of the provider, ANTHROPIC_BASE_URL and OPENAI_BASE_URL pass
 # through untouched — that is how gateway/proxy deployments (LiteLLM etc.)
@@ -41,20 +47,33 @@ ai_review::configure_endpoint() {
   provider="$(printf '%s' "${AI_REVIEW_PROVIDER:-api}" | tr '[:upper:]' '[:lower:]')"
 
   case "${provider}" in
-    api | bedrock | vertex) ;;
+    api | bedrock | vertex | azure) ;;
     *)
       ai_review::err "AI_REVIEW_PROVIDER='${AI_REVIEW_PROVIDER}' is not a recognized value."
-      ai_review::log "  Valid values: api | bedrock | vertex"
+      ai_review::log "  Valid values: api | bedrock | vertex | azure"
       exit 2
       ;;
   esac
 
-  if [[ "${provider}" != "api" && "${AI_REVIEW_TOOL_RESOLVED}" != "claude" ]]; then
-    ai_review::err "AI_REVIEW_PROVIDER=${provider} is only supported with AI_REVIEW_TOOL=claude."
-    ai_review::log "  The ${AI_REVIEW_TOOL_RESOLVED} CLI has no ${provider} backend."
-    ai_review::log "  For codex, point OPENAI_BASE_URL at an OpenAI-compatible gateway instead."
-    exit 2
-  fi
+  # Provider/tool compatibility. Bedrock and Vertex host Claude; Azure serves
+  # OpenAI models via the codex CLI. Each rejects the wrong tool up front.
+  case "${provider}" in
+    bedrock | vertex)
+      if [[ "${AI_REVIEW_TOOL_RESOLVED}" != "claude" ]]; then
+        ai_review::err "AI_REVIEW_PROVIDER=${provider} is only supported with AI_REVIEW_TOOL=claude."
+        ai_review::log "  The ${AI_REVIEW_TOOL_RESOLVED} CLI has no ${provider} backend."
+        ai_review::log "  For codex on Azure OpenAI, use AI_REVIEW_PROVIDER=azure, or point OPENAI_BASE_URL at a gateway."
+        exit 2
+      fi
+      ;;
+    azure)
+      if [[ "${AI_REVIEW_TOOL_RESOLVED}" != "codex" ]]; then
+        ai_review::err "AI_REVIEW_PROVIDER=azure is only supported with AI_REVIEW_TOOL=codex (Azure OpenAI serves OpenAI models)."
+        ai_review::log "  For claude, use AI_REVIEW_PROVIDER=bedrock|vertex, or ANTHROPIC_BASE_URL for a gateway."
+        exit 2
+      fi
+      ;;
+  esac
 
   local region="-" base_url="(default)"
 
@@ -89,6 +108,32 @@ ai_review::configure_endpoint() {
         exit 2
       fi
       region="${CLOUD_ML_REGION}"
+      ;;
+    azure)
+      # Azure OpenAI, reached through the OpenAI-compatible CLI. Derive
+      # OPENAI_BASE_URL / OPENAI_API_KEY from the Azure-specific inputs unless
+      # the caller already set the OpenAI vars directly.
+      if [[ -z "${AZURE_OPENAI_ENDPOINT:-}" && -z "${OPENAI_BASE_URL:-}" ]]; then
+        ai_review::err "provider=azure requires AZURE_OPENAI_ENDPOINT (e.g. https://my-resource.openai.azure.com)."
+        exit 2
+      fi
+      if [[ -z "${AI_REVIEW_MODEL:-}" ]]; then
+        ai_review::err "provider=azure requires AI_REVIEW_MODEL to be set to the Azure deployment name."
+        exit 2
+      fi
+      local api_version="${AZURE_OPENAI_API_VERSION:-2024-10-21}"
+      # Build the deployment URL only if the caller has not supplied one.
+      if [[ -z "${OPENAI_BASE_URL:-}" ]]; then
+        export OPENAI_BASE_URL="${AZURE_OPENAI_ENDPOINT%/}/openai/deployments/${AI_REVIEW_MODEL}?api-version=${api_version}"
+      fi
+      if [[ -z "${OPENAI_API_KEY:-}" && -n "${AZURE_OPENAI_API_KEY:-}" ]]; then
+        export OPENAI_API_KEY="${AZURE_OPENAI_API_KEY}"
+      fi
+      if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+        ai_review::warn "provider=azure with no AZURE_OPENAI_API_KEY/OPENAI_API_KEY — assuming the endpoint handles auth."
+      fi
+      # The resource region is encoded in the endpoint host; the audit line's
+      # base_url (printed below for codex) already shows it and the api-version.
       ;;
     api)
       case "${AI_REVIEW_TOOL_RESOLVED}" in

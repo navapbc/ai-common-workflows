@@ -4,10 +4,10 @@
     <f:textbox default="" placeholder="claude | codex | copilot (default: global config)"/>
   </f:entry>
   <f:entry title="Endpoint" field="endpoint">
-    <f:textbox default="" placeholder="direct | bedrock | vertex | custom"/>
+    <f:textbox default="" placeholder="direct | bedrock | vertex | azure | custom"/>
   </f:entry>
   <f:entry title="Model" field="model">
-    <f:textbox placeholder="model id / Bedrock model id (optional)"/>
+    <f:textbox placeholder="model id / Bedrock model id / Azure deployment (optional)"/>
   </f:entry>
   <f:entry title="Gate" field="gate">
     <f:textbox default="none" placeholder="none | unstable | failure"/>
@@ -45,7 +45,9 @@
     <f:entry title="Vertex project id" field="vertexProjectId"><f:textbox/></f:entry>
     <f:entry title="Vertex region" field="vertexRegion"><f:textbox/></f:entry>
     <f:entry title="Anthropic base URL" field="anthropicBaseUrl"><f:textbox/></f:entry>
-    <f:entry title="OpenAI base URL" field="openaiBaseUrl"><f:textbox/></f:entry>
+    <f:entry title="OpenAI base URL" field="openaiBaseUrl">
+      <f:textbox placeholder="gateway URL; for endpoint=azure, the full Azure deployment URL incl. api-version"/>
+    </f:entry>
     <f:entry title="GitHub server URL (GHE)" field="githubServerUrl"><f:textbox/></f:entry>
     <f:entry title="Adjudication" field="adjudication">
       <f:textbox placeholder="self | independent | off"/>

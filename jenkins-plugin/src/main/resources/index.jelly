@@ -2,6 +2,6 @@
 <div>
   AI-assisted security and compliance review of pull requests. Adds the
   <code>aiPrReview</code> pipeline step, which runs a shared review engine
-  (Claude, Codex, or Copilot; public API, Bedrock, Vertex, or a custom
-  gateway) on the build agent and posts the findings as inline PR comments.
+  (Claude, Codex, or Copilot; public API, Bedrock, Vertex, Azure OpenAI, or a
+  custom gateway) on the build agent and posts the findings as inline PR comments.
 </div>

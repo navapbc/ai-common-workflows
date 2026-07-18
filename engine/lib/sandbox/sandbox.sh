@@ -137,6 +137,10 @@ derive_allowlist() {
     codex)
       if [[ -n "${OPENAI_BASE_URL:-}" ]]; then
         hosts="$(url_host "${OPENAI_BASE_URL}")"
+      elif [[ "${provider}" == "azure" && -n "${AZURE_OPENAI_ENDPOINT:-}" ]]; then
+        # Azure OpenAI: allow the resource endpoint host (the engine derives
+        # OPENAI_BASE_URL from it, but that may not be set yet at this point).
+        hosts="$(url_host "${AZURE_OPENAI_ENDPOINT}")"
       else
         hosts="api.openai.com"
       fi

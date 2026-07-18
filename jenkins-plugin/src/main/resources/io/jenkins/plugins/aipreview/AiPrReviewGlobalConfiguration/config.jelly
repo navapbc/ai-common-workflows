@@ -5,7 +5,7 @@
       <f:textbox default="claude" placeholder="claude | codex | copilot"/>
     </f:entry>
     <f:entry title="Default endpoint" field="endpoint">
-      <f:textbox default="direct" placeholder="direct | bedrock | vertex | custom"/>
+      <f:textbox default="direct" placeholder="direct | bedrock | vertex | azure | custom"/>
     </f:entry>
     <f:entry title="Default model" field="model"><f:textbox/></f:entry>
     <f:entry title="Default gate" field="gate">

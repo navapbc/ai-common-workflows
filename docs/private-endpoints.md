@@ -84,6 +84,44 @@ workload-identity service account only the **Vertex AI User** role (or a
 custom role with just `aiplatform.endpoints.predict`), scoped to the project —
 not Editor/Owner.
 
+## Azure OpenAI (codex)
+
+Azure serves **OpenAI** models, not Claude, so `provider=azure` drives the
+`codex` tool. The engine builds the OpenAI-compatible base URL from your
+resource endpoint, the deployment name (`model`), and the API version:
+
+```yaml
+      - uses: navapbc/ai-common-workflows@<commit-sha> # v1.0.0
+        with:
+          ai-tool: codex
+          provider: azure
+          azure-openai-endpoint: https://my-resource.openai.azure.com
+          azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          azure-openai-api-version: "2024-10-21" # optional; this is the default
+          model: my-gpt-deployment            # the Azure *deployment* name
+```
+
+The derived endpoint is
+`https://<resource>.openai.azure.com/openai/deployments/<deployment>?api-version=<version>`.
+If you would rather pass the full URL yourself, set `openai-base-url` directly
+and it is used as-is. Keep your Azure resource in the region/boundary you need;
+as with Bedrock, in-boundary only holds if the review also runs on in-boundary
+compute.
+
+**Least privilege:** issue a key (or use a managed identity via a gateway)
+scoped to the one deployment, and prefer a Private Endpoint / firewall so the
+resource is not publicly reachable.
+
+**Jenkins:** set the endpoint to `azure`, point the OpenAI base URL at the full
+Azure deployment URL, and supply the key as an OpenAI Secret-text credential:
+
+```groovy
+aiPrReview(tool: 'codex', endpoint: 'azure',
+           model: 'my-gpt-deployment',
+           openaiBaseUrl: 'https://my-resource.openai.azure.com/openai/deployments/my-gpt-deployment?api-version=2024-10-21',
+           openaiApiKeyCredentialsId: 'azure-openai-key')
+```
+
 ## Custom gateway / proxy (claude or codex)
 
 For a LiteLLM / gateway deployment that speaks the Anthropic or OpenAI API:

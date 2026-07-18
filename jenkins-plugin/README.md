@@ -3,7 +3,7 @@
 Adds a single `aiPrReview` pipeline step that runs the same AI security &
 compliance review engine as the [GitHub Action](../docs/github-action.md), on
 your Jenkins agents. Supports Claude, Codex, and Copilot on the public API or a
-private endpoint (Bedrock, Vertex, or a custom gateway).
+private endpoint (Bedrock, Vertex, Azure OpenAI, or a custom gateway).
 
 The plugin is a thin wrapper: it bundles the shared `engine/` (a snapshot,
 zipped at build time), extracts it onto the agent at runtime, and runs it.
@@ -118,6 +118,17 @@ Bedrock (in-VPC agent, ambient AWS creds):
 aiPrReview tool: 'claude', endpoint: 'bedrock',
            awsRegion: 'us-east-1',
            model: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+           githubTokenCredentialsId: 'gh-pr-review'
+```
+
+Azure OpenAI (codex; Azure serves OpenAI models). Point the OpenAI base URL at
+the full deployment URL and pass the key as an OpenAI Secret-text credential:
+
+```groovy
+aiPrReview tool: 'codex', endpoint: 'azure',
+           model: 'my-gpt-deployment',
+           openaiBaseUrl: 'https://my-resource.openai.azure.com/openai/deployments/my-gpt-deployment?api-version=2024-10-21',
+           openaiApiKeyCredentialsId: 'azure-openai-key',
            githubTokenCredentialsId: 'gh-pr-review'
 ```
 

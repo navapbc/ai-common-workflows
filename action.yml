@@ -2,7 +2,7 @@ name: "AI PR Review"
 description: >-
   AI-assisted security and compliance review of a pull request. Supports
   Claude, Codex, and Copilot, on the public API or a private endpoint
-  (Bedrock, Vertex, or a custom gateway).
+  (Bedrock, Vertex, Azure OpenAI, or a custom gateway).
 author: "Nava PBC"
 
 branding:
@@ -48,11 +48,15 @@ inputs:
 
   # ── LLM endpoint ──────────────────────────────────────────────────────────
   provider:
-    description: "LLM endpoint: api | bedrock | vertex (bedrock/vertex are claude-only)."
+    description: >-
+      LLM endpoint: api | bedrock | vertex | azure. bedrock/vertex are
+      claude-only; azure is codex-only (Azure OpenAI serves OpenAI models).
     required: false
     default: "api"
   model:
-    description: "Model override. For provider=bedrock, the Bedrock model ID."
+    description: >-
+      Model override. For provider=bedrock, the Bedrock model ID; for
+      provider=azure, the Azure deployment name.
     required: false
     default: ""
   aws-region:
@@ -65,6 +69,18 @@ inputs:
     default: ""
   vertex-region:
     description: "Vertex region for provider=vertex (e.g. us-east5)."
+    required: false
+    default: ""
+  azure-openai-endpoint:
+    description: "Azure OpenAI resource endpoint for provider=azure (e.g. https://my-resource.openai.azure.com)."
+    required: false
+    default: ""
+  azure-openai-api-key:
+    description: "Azure OpenAI API key for provider=azure (ai-tool=codex)."
+    required: false
+    default: ""
+  azure-openai-api-version:
+    description: "Azure OpenAI REST API version for provider=azure (default 2024-10-21)."
     required: false
     default: ""
   anthropic-base-url:
@@ -135,12 +151,19 @@ runs:
           *) echo "::error::ai-tool must be claude | codex | copilot (got '${AI_TOOL}')"; exit 1 ;;
         esac
         case "${PROVIDER}" in
-          api | bedrock | vertex) ;;
-          *) echo "::error::provider must be api | bedrock | vertex (got '${PROVIDER}')"; exit 1 ;;
+          api | bedrock | vertex | azure) ;;
+          *) echo "::error::provider must be api | bedrock | vertex | azure (got '${PROVIDER}')"; exit 1 ;;
         esac
-        if [[ "${PROVIDER}" != "api" && "${AI_TOOL}" != "claude" ]]; then
-          echo "::error::provider=${PROVIDER} is only supported with ai-tool=claude"; exit 1
-        fi
+        case "${PROVIDER}" in
+          bedrock | vertex)
+            if [[ "${AI_TOOL}" != "claude" ]]; then
+              echo "::error::provider=${PROVIDER} is only supported with ai-tool=claude"; exit 1
+            fi ;;
+          azure)
+            if [[ "${AI_TOOL}" != "codex" ]]; then
+              echo "::error::provider=azure is only supported with ai-tool=codex (Azure OpenAI serves OpenAI models)"; exit 1
+            fi ;;
+        esac
 
     - name: Resolve PR context
       id: ctx
@@ -217,6 +240,9 @@ runs:
         AWS_REGION: ${{ inputs.aws-region }}
         ANTHROPIC_VERTEX_PROJECT_ID: ${{ inputs.vertex-project-id }}
         CLOUD_ML_REGION: ${{ inputs.vertex-region }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure-openai-endpoint }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure-openai-api-key }}
+        AZURE_OPENAI_API_VERSION: ${{ inputs.azure-openai-api-version }}
         AI_ADJUDICATION: ${{ inputs.adjudication }}
         AI_ADJUDICATION_MODEL: ${{ inputs.adjudication-model }}
         AI_REVIEW_JOBS: ${{ inputs.jobs }}
