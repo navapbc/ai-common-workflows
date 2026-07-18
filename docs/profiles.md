@@ -32,13 +32,11 @@ Everything defaults to `cms-ars`; set it explicitly to change it.
   aiSecurityComplianceReview(profile: 'baseline')
   ```
 - **Engine directly** — the `AI_REVIEW_PROFILE` environment variable.
-- **Copilot instructions** — per subscriber in
-  [`copilot-instructions/subscribers.yml`](../copilot-instructions/subscribers.yml):
+- **Copilot instructions** — the `PROFILE` in your copy of the sync workflow
+  ([`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)):
   ```yaml
-  subscribers:
-    - navapbc/cms-service                 # cms-ars (default)
-    - repo: navapbc/other-service
-      profile: baseline
+  env:
+    PROFILE: cms-ars   # or baseline, or your own profile
   ```
 
 ## How resolution works
