@@ -1,0 +1,13 @@
+# Repositories subscribed to AI-review Copilot instruction updates.
+#
+# To subscribe: open a PR adding your "owner/repo" to the list below. That is
+# the only step. When the instruction files change, a bot opens a PR against
+# each subscriber that copies the latest ai-review-*.instructions.md into
+# .github/instructions/ — you review and merge it like any other PR. The bot
+# never pushes directly.
+#
+# The distributing account (a GitHub App or a PAT — see docs/copilot-instructions.md)
+# must be installed on / have write access to each repo listed here.
+subscribers: []
+  # - navapbc/example-service
+  # - navapbc/another-service
