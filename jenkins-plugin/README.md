@@ -18,12 +18,23 @@ The plugin depends on the shared `ai-common-core` library plugin, so install
 **both**:
 
 1. Download `ai-security-compliance-review.hpi` **and** `ai-common-core.hpi`
-   from the [latest release](https://github.com/navapbc/ai-common-workflows/releases)
-   and **verify each against its SHA-256** in the release notes
-   (`sha256sum ai-security-compliance-review.hpi ai-common-core.hpi`).
-2. Manage Jenkins → Plugins → Advanced settings → Deploy Plugin → upload **both**
+   from the [latest release](https://github.com/navapbc/ai-common-workflows/releases).
+2. **Verify build provenance** (requires `gh` ≥ 2.49). Each release carries a
+   signed [artifact attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
+   binding the `.hpi` to this repo's release workflow and tagged commit; a
+   tampered or re-uploaded asset fails this check:
+   ```bash
+   gh attestation verify ai-security-compliance-review.hpi -R navapbc/ai-common-workflows
+   gh attestation verify ai-common-core.hpi -R navapbc/ai-common-workflows
+   ```
+   The `.sha256` sidecars remain for download-integrity checks
+   (`sha256sum -c`), but they are not tamper-proof on their own — the
+   attestation is the authenticity check.
+3. Manage Jenkins → Plugins → Advanced settings → Deploy Plugin → upload **both**
    `.hpi` files → restart Jenkins. (Installing from an update center resolves the
-   `ai-common-core` dependency automatically; manual upload does not.)
+   `ai-common-core` dependency automatically; manual upload does not. Jenkins
+   itself performs no signature verification on manually uploaded plugins —
+   step 2 is the verification.)
 
 Upgrades are a deliberate admin action — never automatic. Review the changes
 between releases as you would any third-party CI dependency (see

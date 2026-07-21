@@ -79,6 +79,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Signed build provenance for the Jenkins plugin releases.** The release
+  workflow now attests both `.hpi` files with
+  `actions/attest-build-provenance` (Sigstore-signed SLSA provenance, logged in
+  the Rekor transparency log), binding each artifact digest to this repo, the
+  release workflow, and the tagged commit. Admins verify pre-install with
+  `gh attestation verify <file>.hpi -R navapbc/ai-common-workflows` (gh ≥ 2.49).
+  The `.sha256` sidecars remain for download integrity; the attestation is the
+  authenticity check.
 - **The SCM token is kept out of the AI (review) phase.** The Action and the
   plugin run the review with no `GITHUB_TOKEN`/`GH_TOKEN` in its environment and
   post in a separate process that holds the token, so prompt-injected PR content
