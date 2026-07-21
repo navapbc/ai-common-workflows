@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write # OIDC identity for Sigstore signing of the provenance
+      attestations: write # store the attestation on the repo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -66,6 +68,18 @@ jobs:
             jenkins-plugin/core/target/ai-common-core.hpi; do
             (cd "$(dirname "$hpi")" && sha256sum "$(basename "$hpi")" | tee "$(basename "$hpi").sha256")
           done
+
+      # Signed SLSA build provenance (Sigstore): binds each .hpi digest to this
+      # workflow, repo, and tagged commit, logged in the Rekor transparency log.
+      # Unlike the .sha256 sidecars (same-channel, integrity only), a swapped
+      # release asset cannot carry valid provenance. Admins verify pre-install:
+      #   gh attestation verify <file>.hpi -R ${{ github.repository }}
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            jenkins-plugin/security-compliance-review/target/ai-security-compliance-review.hpi
+            jenkins-plugin/core/target/ai-common-core.hpi
       - name: Create / update release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,7 +92,12 @@ jobs:
             jenkins-plugin/core/target/ai-common-core.hpi
             jenkins-plugin/core/target/ai-common-core.hpi.sha256
           )
+          notes="AI Security & Compliance Review Jenkins plugin ${GITHUB_REF_NAME#jenkins-plugin-v}."
+          notes+=" Install both ai-security-compliance-review.hpi and its dependency ai-common-core.hpi."
+          notes+=" Verify provenance before installing (gh >= 2.49):"
+          notes+=" \`gh attestation verify <file>.hpi -R ${GITHUB_REPOSITORY}\`"
+          notes+=" — plus the .sha256 sidecars for download integrity."
           gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes "AI Security & Compliance Review Jenkins plugin ${GITHUB_REF_NAME#jenkins-plugin-v}. Install both ai-security-compliance-review.hpi and its dependency ai-common-core.hpi; verify each against its .sha256 before installing." \
+            --notes "${notes}" \
             || gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber

@@ -131,8 +131,25 @@ layer around the runner/agent:
      ```
      The `# vX.Y.Z` comment records which release the SHA is.
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its
-     SHA-256** against the checksum in the release notes. Upgrades are a
+     build provenance** before uploading (requires `gh` ≥ 2.49):
+     ```bash
+     gh attestation verify <file>.hpi -R navapbc/ai-common-workflows
+     ```
+     The release workflow signs an [artifact attestation](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
+     (Sigstore, logged in the Rekor transparency log) binding each `.hpi`
+     digest to this repo, the release workflow, and the tagged commit — a
+     swapped release asset cannot carry valid provenance. The `.sha256`
+     sidecars cover download integrity only; because they live in the same
+     release as the artifact, they are **not** an authenticity check on their
+     own. Jenkins performs no signature verification on manually uploaded
+     plugins, so this pre-install check *is* the verification. Upgrades are a
      manual admin action, never automatic.
+
+   **Honest limits:** provenance attests whatever the workflow built — it does
+   not defend against a compromised repo or workflow. Upstream of it, release
+   tags should be protected (a ruleset on `jenkins-plugin-v*` preventing tag
+   moves/deletion) and ideally signed by the releasing maintainer
+   (`git tag -s`), so the tag itself has human provenance.
 
 3. **Skip drafts, and remember the network boundary.** On the public API, PR
    diffs leave your perimeter — point at Bedrock/Vertex/Azure OpenAI/an internal
