@@ -1,0 +1,293 @@
+name: "AI Test Classifier"
+description: >-
+  AI triage of failing tests on a pull request: classifies each failure as an
+  APPLICATION_BUG, TEST_BUG, FLAKY_FAILURE, or ENVIRONMENT_ISSUE and posts one
+  advisory PR comment with the verdicts and a 👍/👎 feedback ask. Supports
+  Claude, Codex, and Copilot, on the public API or a private endpoint
+  (Bedrock, Vertex, Azure OpenAI, or a custom gateway).
+author: "Nava PBC"
+
+branding:
+  icon: "check-circle"
+  color: "purple"
+
+inputs:
+  ai-tool:
+    description: "Which AI CLI to use: claude | codex | copilot."
+    required: false
+    default: "claude"
+  anthropic-api-key:
+    description: "Anthropic API key (ai-tool=claude, provider=api)."
+    required: false
+    default: ""
+  openai-api-key:
+    description: "OpenAI API key (ai-tool=codex)."
+    required: false
+    default: ""
+  github-token:
+    description: >-
+      Token used to post the PR comment. Needs 'pull-requests: write'.
+      Defaults to the workflow token.
+    required: false
+    default: ${{ github.token }}
+
+  post-comment:
+    description: "Post the one classification comment to the PR."
+    required: false
+    default: "true"
+  gate:
+    description: "Fail the job (exit 1) when any failing test was classified. Default: advisory."
+    required: false
+    default: "false"
+  dry-run:
+    description: "Print the plan and exit without calling the AI."
+    required: false
+    default: "false"
+  pr-number:
+    description: "PR number. Defaults to the pull_request event's number."
+    required: false
+    default: ""
+
+  # ── Suite execution (OBSERVED vs INFERRED) ──────────────────────────────────
+  run-suite:
+    description: >-
+      Run the repository's test suite for OBSERVED verdicts (default). Set
+      false for a read-only INFERRED pass that predicts from the diff without
+      executing the change — use this on PRs from untrusted forks.
+    required: false
+    default: "true"
+  max-turns:
+    description: "Agentic turn budget for the suite run (default 80)."
+    required: false
+    default: "80"
+  suite-timeout-seconds:
+    description: "Hard wall-clock ceiling on the AI call in seconds (default 1500)."
+    required: false
+    default: "1500"
+
+  # ── LLM endpoint ──────────────────────────────────────────────────────────
+  provider:
+    description: >-
+      LLM endpoint: api | bedrock | vertex | azure. bedrock: claude or codex
+      (codex uses its native amazon-bedrock provider); vertex: claude only;
+      azure: codex only. copilot uses BYOK inputs on the api path.
+    required: false
+    default: "api"
+  model:
+    description: >-
+      Model override. For provider=bedrock, the Bedrock model ID (required for
+      ai-tool=codex); for provider=azure, the Azure deployment name.
+    required: false
+    default: ""
+  aws-region:
+    description: "AWS region for provider=bedrock (else taken from the AWS env)."
+    required: false
+    default: ""
+  vertex-project-id:
+    description: "GCP project ID for provider=vertex."
+    required: false
+    default: ""
+  vertex-region:
+    description: "Vertex region for provider=vertex (e.g. us-east5)."
+    required: false
+    default: ""
+  azure-openai-endpoint:
+    description: "Azure OpenAI resource endpoint for provider=azure (e.g. https://my-resource.openai.azure.com)."
+    required: false
+    default: ""
+  azure-openai-api-key:
+    description: "Azure OpenAI API key for provider=azure (ai-tool=codex)."
+    required: false
+    default: ""
+  azure-openai-api-version:
+    description: "Azure OpenAI REST API version for provider=azure (default 2024-10-21)."
+    required: false
+    default: ""
+  anthropic-base-url:
+    description: "Custom Anthropic-compatible endpoint (gateway/proxy)."
+    required: false
+    default: ""
+  openai-base-url:
+    description: "Custom OpenAI-compatible endpoint (gateway/proxy)."
+    required: false
+    default: ""
+
+  # ── Copilot BYOK (ai-tool=copilot) ──────────────────────────────────────────
+  # The copilot CLI talks directly to this endpoint. For Bedrock, point it at an
+  # in-boundary Anthropic/OpenAI-compatible gateway (copilot has no native
+  # Bedrock type).
+  copilot-provider-base-url:
+    description: "BYOK endpoint for ai-tool=copilot (COPILOT_PROVIDER_BASE_URL)."
+    required: false
+    default: ""
+  copilot-provider-type:
+    description: "BYOK provider type for ai-tool=copilot: openai | azure | anthropic."
+    required: false
+    default: ""
+  copilot-provider-api-key:
+    description: "BYOK model API key for ai-tool=copilot (COPILOT_PROVIDER_API_KEY)."
+    required: false
+    default: ""
+  copilot-model:
+    description: "BYOK model id for ai-tool=copilot (COPILOT_MODEL); else use 'model'."
+    required: false
+    default: ""
+
+  # ── AI CLI installation ─────────────────────────────────────────────────────
+  install-cli:
+    description: "npm-install the chosen AI CLI on the runner (default true; set false if pre-baked)."
+    required: false
+    default: "true"
+  cli-version:
+    description: "npm version of the AI CLI to install."
+    required: false
+    default: "latest"
+
+outputs:
+  result:
+    description: "CLASSIFIED | NO_ACTION."
+    value: ${{ steps.result.outputs.result }}
+  classification-json:
+    description: "Path to the classifications JSON written by the run."
+    value: ${{ steps.classify.outputs.classification-json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        AI_TOOL: ${{ inputs.ai-tool }}
+        PROVIDER: ${{ inputs.provider }}
+      run: |
+        set -euo pipefail
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::validate_inputs
+
+    - name: Resolve PR context
+      id: ctx
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PR_NUMBER_INPUT: ${{ inputs.pr-number }}
+        EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+      run: |
+        set -euo pipefail
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::resolve_pr_context
+
+    - name: Ensure base ref is available for the diff
+      if: steps.ctx.outputs.skip == 'false'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        BASE: ${{ steps.ctx.outputs.base }}
+      run: |
+        set -euo pipefail
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::ensure_base_ref
+
+    - name: Install AI CLI
+      if: steps.ctx.outputs.skip == 'false' && inputs.install-cli == 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        AI_TOOL: ${{ inputs.ai-tool }}
+        CLI_VERSION: ${{ inputs.cli-version }}
+      run: |
+        set -euo pipefail
+        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
+        ci::install_ai_cli
+
+    # ── AI phase — classifies with NO SCM token in scope ─────────────────────
+    # In OBSERVED mode (the default) the AI agent installs and RUNS the PR's
+    # test suite — executing the PR's code — so the token that can write to
+    # your repo is deliberately absent from this step's environment. Posting
+    # happens in the separate step below, the only place the token exists.
+    # Exception: ai-tool=copilot, whose model auth *is* a GitHub token.
+    - name: Classify failing tests
+      id: classify
+      if: steps.ctx.outputs.skip == 'false'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PR_NUMBER: ${{ steps.ctx.outputs.pr }}
+        BASE: ${{ steps.ctx.outputs.base }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        AI_REVIEW_TOOL: ${{ inputs.ai-tool }}
+        AI_REVIEW_PROVIDER: ${{ inputs.provider }}
+        AI_REVIEW_MODEL: ${{ inputs.model }}
+        AI_RUN_SUITE: ${{ inputs.run-suite == 'false' && '0' || '1' }}
+        AI_SUITE_MAX_TURNS: ${{ inputs.max-turns }}
+        AI_SUITE_TIMEOUT_SECS: ${{ inputs.suite-timeout-seconds }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
+        OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        ANTHROPIC_VERTEX_PROJECT_ID: ${{ inputs.vertex-project-id }}
+        CLOUD_ML_REGION: ${{ inputs.vertex-region }}
+        AZURE_OPENAI_ENDPOINT: ${{ inputs.azure-openai-endpoint }}
+        AZURE_OPENAI_API_KEY: ${{ inputs.azure-openai-api-key }}
+        AZURE_OPENAI_API_VERSION: ${{ inputs.azure-openai-api-version }}
+        # copilot BYOK — read directly by the copilot CLI (model auth, not SCM).
+        COPILOT_PROVIDER_BASE_URL: ${{ inputs.copilot-provider-base-url }}
+        COPILOT_PROVIDER_TYPE: ${{ inputs.copilot-provider-type }}
+        COPILOT_PROVIDER_API_KEY: ${{ inputs.copilot-provider-api-key }}
+        COPILOT_MODEL: ${{ inputs.copilot-model }}
+        # Copilot only: its model credential is a GitHub token. Every other
+        # tool runs with no SCM token in scope.
+        GITHUB_TOKEN: ${{ inputs.ai-tool == 'copilot' && inputs.github-token || '' }}
+        GH_TOKEN: ${{ inputs.ai-tool == 'copilot' && inputs.github-token || '' }}
+        CI: "true"
+      run: |
+        set -euo pipefail
+        engine="${ACTION_PATH}/engine/bin/ai-test-classifier"
+        classification_json="${RUNNER_TEMP:-/tmp}/ai-test-classifier.json"
+        echo "classification-json=${classification_json}" >> "${GITHUB_OUTPUT}"
+
+        args=(--pr "${PR_NUMBER}" --against "origin/${BASE}" --json-out "${classification_json}")
+        [[ "${DRY_RUN}" == "true" ]] && args+=(--dry-run)
+
+        bash "${engine}" "${args[@]}"
+
+    # ── Post phase — the only step that holds the SCM token ──────────────────
+    - name: Post PR comment
+      if: steps.ctx.outputs.skip == 'false' && inputs.post-comment == 'true' && inputs.dry-run != 'true'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PR_NUMBER: ${{ steps.ctx.outputs.pr }}
+        BASE: ${{ steps.ctx.outputs.base }}
+        CLASSIFICATION_JSON: ${{ steps.classify.outputs.classification-json }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        CI: "true"
+      run: |
+        set -euo pipefail
+        engine="${ACTION_PATH}/engine/bin/ai-test-classifier"
+        bash "${engine}" --post-only --pr "${PR_NUMBER}" \
+          --json-in "${CLASSIFICATION_JSON}" --against "origin/${BASE}"
+
+    # ── Result + gate ────────────────────────────────────────────────────────
+    # Evaluated AFTER posting so a gated red build still carries the comment
+    # explaining why.
+    - name: Result and gate
+      id: result
+      if: steps.ctx.outputs.skip == 'false' && inputs.dry-run != 'true'
+      shell: bash
+      env:
+        CLASSIFICATION_JSON: ${{ steps.classify.outputs.classification-json }}
+        GATE: ${{ inputs.gate }}
+      run: |
+        set -euo pipefail
+        [[ -f "${CLASSIFICATION_JSON}" ]] || exit 0
+        result="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("CLASSIFIED" if d.get("classifications") else "NO_ACTION")' "${CLASSIFICATION_JSON}")"
+        echo "result=${result}" >> "${GITHUB_OUTPUT}"
+        echo "[test-classifier] result: ${result}"
+        if [[ "${GATE}" == "true" && "${result}" == "CLASSIFIED" ]]; then
+          echo "::error::AI test classifier triaged failing tests and gate is enabled."
+          exit 1
+        fi
