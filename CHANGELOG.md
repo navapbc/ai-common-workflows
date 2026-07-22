@@ -25,6 +25,18 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **AI test classifier** — the repo's second workflow
+  (`workflows/test-classifier/`): triages each failing test of a PR's change
+  into `APPLICATION_BUG` / `TEST_BUG` / `FLAKY_FAILURE` / `ENVIRONMENT_ISSUE`
+  and posts one advisory PR comment with the verdicts and a 👍/👎 feedback
+  ask. Diagnostic only (never edits code or tests); advisory by default with
+  an opt-in `gate`. Runs OBSERVED (executes the repo's suite; the AI phase
+  holds no SCM token) or INFERRED (`run-suite: false`, diff-only — for
+  untrusted forks). Self-contained engine under
+  `workflows/test-classifier/engine/` following the same relocatability,
+  endpoint (`api`/`bedrock`/`vertex`/`azure` + copilot BYOK), and
+  `--json-out`/`--post-only` phase-split conventions as the review engine.
+  See [docs/test-classifier.md](docs/test-classifier.md).
 - **Bedrock for `codex`** (`ai-tool=codex` + `provider=bedrock`): selects the
   Codex CLI's built-in `amazon-bedrock` provider (AWS-cred auth, direct to
   Bedrock, no gateway); a Bedrock model ID is required. Bedrock now serves both

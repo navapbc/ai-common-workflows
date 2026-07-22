@@ -12,6 +12,7 @@ its own self-contained engine — so teams can adopt them one at a time.
 | Workflow | What it does | Docs |
 |---|---|---|
 | **AI security & compliance review** | Security & compliance review of a pull request: inline comments for secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations. The compliance framework is a selectable [profile](docs/profiles.md) — CMS ARS 5.1 / NIST SP 800-53 by default, a generic `baseline`, or bring your own. | [docs/github-action.md](docs/github-action.md) |
+| **AI test classifier** | Triage of failing tests on a pull request: classifies each failure as `APPLICATION_BUG` / `TEST_BUG` / `FLAKY_FAILURE` / `ENVIRONMENT_ISSUE` — is the test wrong or the code wrong? — and posts one advisory comment with a 👍/👎 feedback ask. Diagnostic only; never edits code or tests. | [docs/test-classifier.md](docs/test-classifier.md) |
 
 More workflows will land here over time. Each one is meant to stand alone — you
 adopt only the ones you need. **Adding a workflow?** See the conventions in

@@ -7,14 +7,18 @@ linked. If something here fights the code, trust the code and fix this file.
 ## What this is
 
 A collection of reusable, AI-assisted CI/CD workflows. Each workflow is a thin
-front end over a shared, front-end-agnostic engine. The first (currently only)
-workflow is a **security & compliance PR review**.
+front end over a front-end-agnostic engine. Two workflows so far: the
+**security & compliance PR review** and the **AI test classifier**.
 
 ## Architecture
 
 - `engine/` — the review engine (bash + a little Python). **Single source of
   truth** for review behavior; relocatable (resolves paths from `ENGINE_HOME`,
   never the CWD). Change review logic here, once.
+- `workflows/test-classifier/engine/` — the classifier's own engine, same
+  conventions (relocatable, endpoint env, `--json-out`/`--post-only` phase
+  split). Its `lib/endpoints.sh` is a verbatim copy of the review engine's —
+  keep the two in sync.
 - `workflows/<name>/action.yml` — the GitHub Action front end (a thin composite).
   Generic CI plumbing is bash in `workflows/_shared/lib/`, sourced by an absolute
   path derived from `${{ github.action_path }}`.

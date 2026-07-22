@@ -1,0 +1,35 @@
+# Minimal AI test classifier — Claude on the public Anthropic API.
+#
+# Copy this into .github/workflows/ in your repository. Pin the action to a
+# full commit SHA (see docs/security.md); the "# v1.x.x" comment records which
+# release that SHA is, so upgrades are a deliberate, reviewable change.
+#
+# By default the agent RUNS the PR's test suite on the runner (OBSERVED mode)
+# — that is executing the PR's code. Keep the `pull_request` trigger (never
+# pull_request_target); for public repos with untrusted forks, set
+# `run-suite: false` for a read-only pass that predicts from the diff.
+#
+# Run it in parallel with your build — no `needs:`. It is advisory and never
+# gates the build unless you opt in with `gate: true`.
+name: AI test classifier
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    # Installing deps + running a suite is slower than a diff-only review;
+    # bound the job so a stuck install can't run for the 6h default.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: navapbc/ai-common-workflows/workflows/test-classifier@REPLACE_WITH_COMMIT_SHA # v1.x.x
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
