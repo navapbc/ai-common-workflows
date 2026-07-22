@@ -1,0 +1,46 @@
+## Test Classifier Report
+**Scope:** Change under test = diff against origin/main (2 files changed)
+**Failing tests classified:** 2
+
+#### `src/app_test.py`
+
+- **APPLICATION_BUG** | behavioral-drift | confidence: high
+  `test_reads_api_key`
+  The change reads the API key with a hard KeyError path; the test correctly
+  caught the regression. Fix the code.
+
+- **TEST_BUG** | behavioral-drift | confidence: medium
+  `test_prints_greeting`
+  The diff intentionally replaces the greeting; the assertion is stale. Update
+  the test.
+
+<!-- AI_CLASSIFIER_JSON_BEGIN -->
+{
+  "mode": "OBSERVED",
+  "summary": "Ran the suite: 2 failed. 1 APPLICATION_BUG, 1 TEST_BUG.",
+  "classifications": [
+    {
+      "test": "test_reads_api_key",
+      "path": "src/app_test.py",
+      "line": 4,
+      "verdict": "APPLICATION_BUG",
+      "category": "behavioral-drift",
+      "confidence": "high",
+      "in_scope": true,
+      "rationale": "The change reads the API key with a hard KeyError path; the test correctly caught the regression. Fix the code, not the test."
+    },
+    {
+      "test": "test_prints_greeting",
+      "path": "src/app_test.py",
+      "line": 9,
+      "verdict": "TEST_BUG",
+      "category": "behavioral-drift",
+      "confidence": "medium",
+      "in_scope": true,
+      "rationale": "The diff intentionally replaces the greeting; the assertion is stale. Update the test."
+    }
+  ]
+}
+<!-- AI_CLASSIFIER_JSON_END -->
+
+<<<AI_REVIEW_RESULT:CLASSIFIED>>>
