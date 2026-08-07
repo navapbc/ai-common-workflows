@@ -17,14 +17,22 @@ unrelated one.
 The tree separates the shared cores from the thin per-workflow front ends:
 
 ```
-engine/                              # the review engine (bash + a little Python)
-  bin/ai-pr-review                   #   entrypoint
-  lib/                               #   endpoint config, SCM glue, helpers
-  skills/                            #   framework-neutral rubric base
-  profiles/<name>/                   #   per-compliance-framework rubric overrides
+engines/
+  _common/                           # shared, workflow-agnostic runtime — never copied
+    harness/core.sh                  #   dispatch · markers + JSON · fan-out · adjudication
+    endpoints.sh                     #   provider → CLI mapping (api · bedrock · vertex · azure)
+    scm/<name>.sh                    #   SCM seam — github ships; others implement 3 fns
+    CONTRACT.md                      #   the interface every entrypoint targets
+  security-compliance-review/        # workflow 1
+    harness/ai-pr-review             #   THIN entrypoint → sources _common
+    skills/base/*.md                 #   framework-neutral rubric base
+    skills/profiles/<name>/          #   per-compliance-framework rubric overrides
+  test-classifier/                   # workflow 2 — same shape, zero overlap
+    harness/ai-test-classifier
+    skills/base/*.md
 workflows/
   _shared/lib/ci.sh                  # shared GH Actions plumbing, sourced by actions
-  security-compliance-review/action.yml   # the first workflow's composite action
+  <name>/action.yml                  # one composite action per workflow
 jenkins-plugin/                      # Maven reactor (Jenkins front ends)
   core/                              #   ai-common-core: shared library plugin
   security-compliance-review/        #   the workflow's thin plugin (depends on core)
@@ -32,10 +40,14 @@ copilot-instructions/profiles/<name>/instructions/   # Copilot-native variant, p
 docs/  tests/  examples/workflows/
 ```
 
-A **second, unrelated workflow** gets its own `workflows/<name>/` (and, if it
-needs a Jenkins front end, its own reactor module) so it can be pinned,
-documented, and reasoned about on its own — it should not entangle an existing
-workflow's front end.
+A **second, unrelated workflow** gets its own `engines/<name>/` +
+`workflows/<name>/` (and, if it needs a Jenkins front end, its own reactor
+module) so it can be pinned, documented, and reasoned about on its own — it
+should not entangle an existing workflow's engine or front end. Adopting one
+workflow pulls in `_common` (the shared dependency) but never another
+workflow. Copying `_common` into an engine is the one thing NOT to do — that
+duplicates the most-reusable code; source it instead, per
+[engines/_common/CONTRACT.md](../engines/_common/CONTRACT.md).
 
 ## Where a new workflow goes
 
@@ -89,9 +101,9 @@ workflow inherits them:
 
 ## LLM endpoints
 
-If your workflow calls a model, reuse the endpoint conventions the review engine
-already establishes in [`engine/lib/endpoints.sh`](../engine/lib/endpoints.sh)
-rather than inventing new environment variables:
+If your workflow calls a model, source the shared endpoint layer
+[`engines/_common/endpoints.sh`](../engines/_common/endpoints.sh) rather than
+inventing new environment variables:
 
 - `AI_REVIEW_PROVIDER` (or an analogous `*_PROVIDER`) selects
   `api | bedrock | vertex | azure`.
@@ -106,8 +118,8 @@ the per-provider setup.
 
 If your workflow judges code against a control framework, make the framework a
 **profile** rather than hardcoding it — the same pattern the review uses
-(`AI_REVIEW_PROFILE`, resolved from `engine/profiles/<name>/` with fallback to
-the shared base, or a bring-your-own directory path). This lets one workflow
+(`AI_REVIEW_PROFILE`, resolved from the engine's `skills/profiles/<name>/` with
+fallback to `skills/base/`, or a bring-your-own directory path). This lets one workflow
 serve several agencies without forks. See [profiles.md](profiles.md).
 
 ## Checklist before you open the PR

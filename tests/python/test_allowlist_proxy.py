@@ -1,4 +1,4 @@
-"""Tests for engine/lib/sandbox/allowlist_proxy.py — host-matching logic.
+"""Tests for engines/_common/sandbox/allowlist_proxy.py — host-matching logic.
 
 The end-to-end tunnel behavior (default-deny network, 403 on denied hosts) is
 covered by the live sandbox e2e in CI; here we unit-test the allowlist
@@ -9,7 +9,7 @@ import pathlib
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[2]
-    / "engine" / "lib" / "sandbox" / "allowlist_proxy.py"
+    / "engines" / "_common" / "sandbox" / "allowlist_proxy.py"
 )
 _spec = importlib.util.spec_from_file_location("allowlist_proxy", _MODULE_PATH)
 ap = importlib.util.module_from_spec(_spec)

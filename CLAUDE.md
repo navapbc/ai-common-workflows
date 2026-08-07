@@ -6,15 +6,20 @@ linked. If something here fights the code, trust the code and fix this file.
 
 ## What this is
 
-A collection of reusable, AI-assisted CI/CD workflows. Each workflow is a thin
-front end over a shared, front-end-agnostic engine. The first (currently only)
-workflow is a **security & compliance PR review**.
+A collection of reusable, AI-assisted CI/CD workflows in three shippable
+layers: per-workflow **skills**, a mostly-shared **harness**, and thin
+**adapters** per CI. Two workflows so far: the **security & compliance PR
+review** and the **AI test classifier**.
 
 ## Architecture
 
-- `engine/` — the review engine (bash + a little Python). **Single source of
-  truth** for review behavior; relocatable (resolves paths from `ENGINE_HOME`,
-  never the CWD). Change review logic here, once.
+- `engines/_common/` — the shared, workflow-agnostic runtime (dispatch,
+  markers, fan-out, adjudication, endpoints, SCM seam). **Never copied** into
+  an engine — entrypoints source it. Interface: `engines/_common/CONTRACT.md`.
+- `engines/<workflow>/` — one engine per workflow: `skills/base/` (+
+  `skills/profiles/` when it judges against a framework) and a THIN
+  `harness/<entrypoint>`. Relocatable (paths from `ENGINE_HOME`, never the
+  CWD); copy the `engines/` tree as a unit.
 - `workflows/<name>/action.yml` — the GitHub Action front end (a thin composite).
   Generic CI plumbing is bash in `workflows/_shared/lib/`, sourced by an absolute
   path derived from `${{ github.action_path }}`.
@@ -58,7 +63,7 @@ internals.
   for its area:
   - Adding a workflow → [docs/adding-workflows.md](docs/adding-workflows.md)
   - Providers / private endpoints (api · bedrock · vertex · azure · BYOK) → [docs/private-endpoints.md](docs/private-endpoints.md)
-  - Compliance profiles (`AI_REVIEW_PROFILE`, `engine/profiles/`) → [docs/profiles.md](docs/profiles.md)
+  - Compliance profiles (`AI_REVIEW_PROFILE`, the review engine's `skills/profiles/`) → [docs/profiles.md](docs/profiles.md)
   - Copilot instruction distribution → [copilot-instructions/README.md](copilot-instructions/README.md)
   - Threat model / credentials → [docs/security.md](docs/security.md)
 

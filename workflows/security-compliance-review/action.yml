@@ -51,7 +51,7 @@ inputs:
   profile:
     description: >-
       Compliance profile selecting the rubric: cms-ars (default) | baseline, a
-      name under engine/profiles/, or a path to a custom profile directory.
+      name under the engine's skills/profiles/, or a path to a custom profile directory.
     required: false
     default: "cms-ars"
 
@@ -263,7 +263,7 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
-        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engine/bin/ai-pr-review"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-pr-review"
         review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
         echo "review-json=${review_json}" >> "${GITHUB_OUTPUT}"
 
@@ -285,7 +285,7 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
-        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engine/bin/ai-pr-review"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-pr-review"
         bash "${engine}" --post-only --pr "${PR_NUMBER}" --json-in "${REVIEW_JSON}"
 
     # ── Result + gate ────────────────────────────────────────────────────────

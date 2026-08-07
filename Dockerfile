@@ -1,17 +1,17 @@
 # Review image for the AI PR review sandbox.
 #
 # EXPERIMENTAL — supports the not-yet-shipped egress sandbox
-# (engine/lib/sandbox/). The released GitHub Action and Jenkins plugin do NOT
+# (engines/_common/sandbox/). The released GitHub Action and Jenkins plugin do NOT
 # use this image; they run the engine natively. See engine/lib/sandbox/README.md.
 #
 # One image, three roles, selected by the command:
-#   review phase   bash /opt/engine/bin/ai-pr-review --against ... --json-out ...
-#   post phase     bash /opt/engine/bin/ai-pr-review --post-only ...
-#   proxy sidecar  python3 /opt/engine/lib/sandbox/allowlist_proxy.py
+#   review phase   bash /opt/engines/security-compliance-review/harness/ai-pr-review --against ... --json-out ...
+#   post phase     bash /opt/engines/security-compliance-review/harness/ai-pr-review --post-only ...
+#   proxy sidecar  python3 /opt/engines/_common/sandbox/allowlist_proxy.py
 #
-# The engine baked into the image at /opt/engine makes it usable standalone;
-# the sandbox wrapper (engine/lib/sandbox/sandbox.sh) bind-mounts its own
-# engine copy over /opt/engine so the engine version always matches the
+# The engines tree baked into the image at /opt/engines makes it usable standalone;
+# the sandbox wrapper (engines/_common/sandbox/sandbox.sh) bind-mounts its own
+# engines copy over /opt/engines so the engine version always matches the
 # checked-out action / installed plugin, not the image build date.
 #
 # Release builds pass explicit CLI versions (see .github/workflows/
@@ -44,7 +44,7 @@ RUN npm install -g \
       "@github/copilot@${COPILOT_VERSION}" \
   && npm cache clean --force
 
-COPY engine /opt/engine
+COPY engines /opt/engines
 
 # Non-root by default; the sandbox wrapper additionally drops capabilities,
 # mounts the checkout read-only, and puts HOME on a tmpfs.

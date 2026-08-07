@@ -38,7 +38,7 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
     // classloader and these paths.
     private static final String ENGINE_RESOURCE = "/io/jenkins/plugins/aipreview/ai-review-engine.zip";
     private static final String VERSION_RESOURCE = "/io/jenkins/plugins/aipreview/engine-version.txt";
-    private static final String ENTRYPOINT = "bin/ai-pr-review";
+    private static final String ENTRYPOINT = "security-compliance-review/harness/ai-pr-review";
 
     private final transient AiPrReviewStep step;
 
@@ -204,7 +204,7 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
             }
 
             tmpRoot.mkdirs(); // holds the findings JSON handed from AI phase to post phase
-            String entry = engineHome.child("bin/ai-pr-review").getRemote();
+            String entry = engineHome.child(ENTRYPOINT).getRemote();
             FilePath findings = tmpRoot.child("findings.json");
 
             // ── AI phase: review with no SCM token in scope, write findings ────

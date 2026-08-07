@@ -39,7 +39,7 @@ credentials, or to abuse the SCM token. Three things bound that:
 > **On the built-in sandbox.** An earlier design ran the review in a Docker
 > container with default-deny egress. It's not in this release — it was
 > unverified with real CLIs and broke on common container-in-container CI
-> topologies (see `engine/lib/sandbox/README.md`). Egress control is therefore
+> topologies (see `engines/_common/sandbox/README.md`). Egress control is therefore
 > **your infrastructure's responsibility** today; a hardened built-in sandbox
 > is on the roadmap. This is the honest posture: the tool does not claim an
 > egress boundary it hasn't proven.
@@ -117,7 +117,7 @@ layer around the runner/agent:
 ## Supply-chain: review and pin
 
 1. **Review the code before adopting.** The engine is deliberately small and
-   readable — [`engine/`](../engine/README.md) is a few hundred lines of bash
+   readable — [`engines/`](../docs/architecture.md) is a few hundred lines of bash
    plus `github_payload.py` and `fold_review_json.py`. Read it, the
    [action](../workflows/security-compliance-review/action.yml), and (for
    Jenkins) the plugin, the way you'd review any dependency that runs in your

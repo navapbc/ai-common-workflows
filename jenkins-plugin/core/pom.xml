@@ -39,8 +39,10 @@
             <configuration>
               <target>
                 <mkdir dir="${project.build.testOutputDirectory}/io/jenkins/plugins/aicommon/core"/>
-                <zip destfile="${project.build.testOutputDirectory}/io/jenkins/plugins/aicommon/core/test-engine.zip"
-                     basedir="${project.basedir}/../../engine"/>
+                <zip destfile="${project.build.testOutputDirectory}/io/jenkins/plugins/aicommon/core/test-engine.zip">
+                  <zipfileset dir="${project.basedir}/../../engines/_common" prefix="_common"/>
+                  <zipfileset dir="${project.basedir}/../../engines/security-compliance-review" prefix="security-compliance-review"/>
+                </zip>
               </target>
             </configuration>
           </execution>
