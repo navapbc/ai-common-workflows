@@ -11,9 +11,9 @@ import org.junit.rules.TemporaryFolder;
 /**
  * The engine zip unpacks with its entrypoint present and executable. The zip
  * fixture is produced at build time by this module's maven-antrun step (it zips
- * the repo's real {@code ../../engine} into {@code target/test-classes}), so the
- * assertions below exercise the actual engine layout via the generalized,
- * classloader-parameterized extractor.
+ * the repo's real {@code ../../engines/_common} + workflow engine into
+ * {@code target/test-classes}), so the assertions below exercise the actual
+ * engines layout via the generalized, classloader-parameterized extractor.
  */
 public class EngineExtractorTest {
 
@@ -30,8 +30,9 @@ public class EngineExtractorTest {
 
         assertTrue("entrypoint exists", entry.exists());
         assertTrue("entrypoint is executable", (entry.mode() & 0100) != 0);
-        assertTrue("core lib present", dest.child("lib/core.sh").exists());
-        assertTrue("sandbox present", dest.child("lib/sandbox/sandbox.sh").exists());
-        assertTrue("skills present", dest.child("skills/pr-review.md").exists());
+        assertTrue("shared runtime present", dest.child("_common/harness/core.sh").exists());
+        assertTrue("sandbox present", dest.child("_common/sandbox/sandbox.sh").exists());
+        assertTrue("skills present",
+                dest.child("security-compliance-review/skills/base/pr-review.md").exists());
     }
 }
