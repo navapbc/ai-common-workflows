@@ -12,6 +12,7 @@ its own self-contained engine — so teams can adopt them one at a time.
 | Workflow | What it does | Docs |
 |---|---|---|
 | **AI security & compliance review** | Security & compliance review of a pull request: inline comments for secrets, PII/PHI, OWASP Top 10, and IaC misconfigurations. The compliance framework is a selectable [profile](docs/profiles.md) — CMS ARS 5.1 / NIST SP 800-53 by default, a generic `baseline`, or bring your own. | [docs/github-action.md](docs/github-action.md) |
+| **AI test classifier** | Triage of failing tests on a pull request: classifies each failure as `APPLICATION_BUG` / `TEST_BUG` / `FLAKY_FAILURE` / `ENVIRONMENT_ISSUE` — is the test wrong or the code wrong? — and posts one advisory comment with a 👍/👎 feedback ask. Diagnostic only; never edits code or tests. | [docs/test-classifier.md](docs/test-classifier.md) |
 
 More workflows will land here over time. Each one is meant to stand alone — you
 adopt only the ones you need. **Adding a workflow?** See the conventions in
@@ -59,7 +60,7 @@ That's the whole setup. [Pin `@<commit-sha>`, not a tag](docs/security.md).
 | **Jenkins plugin** | `.hpi` adding an `aiSecurityComplianceReview` pipeline step. | [jenkins-plugin/README.md](jenkins-plugin/README.md) |
 | **Copilot instructions** | Files that make Copilot's built-in review match. | [copilot-instructions/README.md](copilot-instructions/README.md) |
 
-The Action and the plugin run the **same review engine** ([`engine/`](engine/README.md)) —
+The Action and the plugin run the **same review engine** ([`engines/security-compliance-review/`](engines/security-compliance-review/README.md)) —
 one source of truth for the review logic, two front ends.
 
 ## Private & self-hosted LLM endpoints
@@ -108,7 +109,7 @@ selectable `profile`:
 ```
 
 Same knob on the Jenkins step (`profile:`) and per-subscriber for the Copilot
-instructions. Add an agency/state variant under `engine/profiles/` — see
+instructions. Add an agency/state variant under the engine's `skills/profiles/` — see
 [docs/profiles.md](docs/profiles.md).
 
 ## Support matrix

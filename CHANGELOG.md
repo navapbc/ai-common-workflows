@@ -6,6 +6,38 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **AI test classifier** — the repo's second workflow: triages each failing
+  test of a PR's change into `APPLICATION_BUG` / `TEST_BUG` / `FLAKY_FAILURE`
+  / `ENVIRONMENT_ISSUE` and posts one advisory PR comment with the verdicts
+  and a 👍/👎 feedback ask. Diagnostic only (never edits code or tests);
+  advisory by default with an opt-in `gate`. Runs OBSERVED (executes the
+  repo's suite via the harness's new agentic posture; the AI phase holds no
+  SCM token) or INFERRED (`run-suite: false`, diff-only — for untrusted
+  forks). Ships as `engines/test-classifier/` + the
+  `workflows/test-classifier` composite action. See
+  [docs/test-classifier.md](docs/test-classifier.md).
+
+### Changed
+
+- **Repo restructured into three shippable layers** (skills · harness ·
+  adapters). The engine tree is now `engines/`: the workflow-agnostic runtime
+  lives once in `engines/_common/` (dispatch, result markers, JSON extraction,
+  fan-out, adjudication, `endpoints.sh`, the SCM seam, the experimental
+  sandbox — interface documented in `engines/_common/CONTRACT.md`), and each
+  workflow is a self-contained `engines/<name>/` holding its `skills/base/`
+  (+ `skills/profiles/`) and a thin `harness/<entrypoint>` that sources
+  `_common`. The former `engine/` became `engines/security-compliance-review/`
+  + `engines/_common/`; consumer-facing action paths
+  (`workflows/security-compliance-review`, `workflows/test-classifier`) are
+  unchanged. The shared runtime gained a per-workflow marker/JSON-fence
+  parameterization and a suite-running invocation posture (`AI_RUN_SUITE=1`)
+  used by the test classifier; the review's read-only invocation behavior is
+  unchanged. The Jenkins plugins bundle `_common` + their workflow engine in
+  the `.hpi` (entrypoint moved to
+  `security-compliance-review/harness/ai-pr-review`).
+
 ### Fixed
 
 - **Copilot-instructions sync: works without granting Actions approve rights.**
