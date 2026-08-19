@@ -29,8 +29,11 @@ name: Release action
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+-*" # prereleases: v1.1.0-rc.1
+      # These patterns are globs, and they are not regular expressions. A `+`
+      # character has no special function here. Therefore use `[0-9]*` for each
+      # number. This also matches a version with two or more digits.
+      # The patterns do not match a `jenkins-plugin-v*` tag.
+      - "v[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: read
