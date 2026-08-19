@@ -12,11 +12,16 @@ jobs:
   lint:
     name: Static checks (shell, actions)
     runs-on: ubuntu-latest
+    # Without a limit, a package mirror that stops responding holds the runner
+    # for the 6-hour default. These steps need less than 2 minutes.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: |
-          sudo apt-get update && sudo apt-get install -y shellcheck
+          # The runner image includes shellcheck. Do not install it with apt.
+          # An apt install can stop for a long time if a mirror is slow.
+          shellcheck --version
           shellcheck -x -P SCRIPTDIR \
             engines/security-compliance-review/harness/ai-pr-review \
             engines/test-classifier/harness/ai-test-classifier \
@@ -26,7 +31,11 @@ jobs:
             tests/stubs/* tests/run.sh
       - name: shfmt
         run: |
-          curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
+          # --retry makes the download try again if the network fails.
+          # --max-time stops a download that does not finish.
+          curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 --max-time 120 \
+            "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" \
+            -o /usr/local/bin/shfmt
           chmod +x /usr/local/bin/shfmt
           shfmt -d -i 2 -ci engines
       - name: actionlint
@@ -37,6 +46,7 @@ jobs:
   python:
     name: pytest
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,15 +58,35 @@ jobs:
   bats:
     name: bats (engine)
     runs-on: ubuntu-latest
+    # The tests need approximately 30 seconds. The limit prevents a hang of
+    # many hours if the apt mirror stops responding.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y bats
+      # The runner image does not include bats, so an install is necessary.
+      # Try the install three times. A slow mirror is the usual cause of a
+      # failure, and a later try often uses a different mirror.
+      - name: Install bats
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "bats install: attempt ${attempt}"
+            if sudo timeout 180 apt-get update && sudo timeout 180 apt-get install -y bats; then
+              bats --version
+              exit 0
+            fi
+            echo "::warning::bats install attempt ${attempt} failed"
+            sleep 10
+          done
+          echo "::error::Could not install bats after 3 attempts."
+          exit 1
       - name: core + e2e + test_classifier
         run: bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/test_classifier.bats
 
   action-self-test:
     name: Action self-test (dry-run, no keys)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
