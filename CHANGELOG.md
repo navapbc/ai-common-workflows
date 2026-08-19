@@ -6,8 +6,21 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-19
+
+The first release with a tag. A consumer can now pin `@v1.0.0`, or use `@v1` to
+get each new 1.x release. Refer to [docs/releasing.md](docs/releasing.md).
+
 ### Added
 
+- **Release automation for the action**. A `vX.Y.Z` tag starts
+  `.github/workflows/release.yml`. The workflow makes the GitHub release and
+  moves the `vX` alias tag. The workflow stops if the tag is not on `main`. It
+  also makes sure that the release tree has all the consumer files. These files
+  are the two `action.yml` files, `_shared/lib/ci.sh`, and the engine entry
+  points. A pre-release does not move the alias. Refer to
+  [docs/releasing.md](docs/releasing.md).
+- **A pull request template** at `.github/pull_request_template.md`.
 - **AI test classifier** — the repo's second workflow: triages each failing
   test of a PR's change into `APPLICATION_BUG` / `TEST_BUG` / `FLAKY_FAILURE`
   / `ENVIRONMENT_ISSUE` and posts one advisory PR comment with the verdicts
@@ -130,4 +143,5 @@ follow [Semantic Versioning](https://semver.org/).
   README). Least-privilege credentials and SHA/checksum pinning are documented
   as imperative in `docs/security.md`.
 
-[Unreleased]: https://github.com/navapbc/ai-common-workflows/commits/main
+[Unreleased]: https://github.com/navapbc/ai-common-workflows/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/navapbc/ai-common-workflows/releases/tag/v1.0.0

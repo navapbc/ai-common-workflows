@@ -1,8 +1,10 @@
 # Minimal AI PR review — Claude on the public Anthropic API.
 #
-# Copy this into .github/workflows/ in your repository. Pin the action to a
-# full commit SHA (see docs/security.md); the "# v1.0.0" comment records which
-# release that SHA is, so upgrades are a deliberate, reviewable change.
+# Copy this file into .github/workflows/ in your repository. The `@v1` alias
+# points to the newest stable 1.x release. Corrections come to your repository
+# automatically. To use a reference that does not change, replace `@v1` with a
+# 40-character commit SHA or a vX.Y.Z tag. Then record the release in a comment
+# at the end of the line. Refer to docs/security.md.
 name: AI PR review
 on:
   pull_request:
@@ -19,6 +21,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or pin a 40-char SHA; see docs/security.md
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

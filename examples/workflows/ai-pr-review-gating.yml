@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or pin a 40-char SHA; see docs/security.md
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           gate: true

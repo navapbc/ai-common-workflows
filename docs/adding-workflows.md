@@ -54,7 +54,7 @@ duplicates the most-reusable code; source it instead, per
 Pick the front end that fits how consumers will call it:
 
 - **Composite action** (most common) — `workflows/<name>/action.yml`, referenced
-  as `uses: navapbc/ai-common-workflows/workflows/<name>@<sha>`. Keep the action
+  as `uses: navapbc/ai-common-workflows/workflows/<name>@v1`. Keep the action
   thin: locate shared code via `${{ github.action_path }}` and delegate to the
   engine.
 - **Reusable workflow** — `.github/workflows/<name>.yml` with `on: workflow_call`

@@ -23,7 +23,7 @@ Everything defaults to `cms-ars`; set it explicitly to change it.
 
 - **GitHub Action** — the `profile` input:
   ```yaml
-  - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
+  - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1
     with:
       profile: baseline
   ```

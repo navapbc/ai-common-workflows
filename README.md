@@ -45,12 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or pin a 40-char SHA; see docs/security.md
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-That's the whole setup. [Pin `@<commit-sha>`, not a tag](docs/security.md).
+That's the whole setup. The `@v1` alias points to the newest stable 1.x release. [Pin a SHA or a `vX.Y.Z` tag](docs/security.md) if you need a reference that does not change.
 
 ## Components
 
@@ -70,7 +70,7 @@ Bedrock is three extra lines — and the diff never leaves your AWS boundary:
 ```yaml
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: arn:aws:iam::…:role/ai-pr-review, aws-region: us-east-1 }
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or pin a 40-char SHA; see docs/security.md
         with:
           provider: bedrock
           model: us.anthropic.claude-sonnet-4-5-20250929-v1:0

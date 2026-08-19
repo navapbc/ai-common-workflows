@@ -1,8 +1,10 @@
 # AI test classifier
 
-`uses: navapbc/ai-common-workflows/workflows/test-classifier@<commit-sha>` — a
-composite action that triages the failing tests on a pull request and posts
-one advisory PR comment. Pin to a commit SHA ([why](security.md)).
+`uses: navapbc/ai-common-workflows/workflows/test-classifier@v1` is a composite
+action. It classifies the failed tests on a pull request. Then it writes one
+advisory comment on the pull request. The `@v1` alias points to the newest
+stable 1.x release. To use a reference that does not change, pin a SHA or a
+`vX.Y.Z` tag ([why](security.md)).
 
 ## The problem it solves
 
@@ -44,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
-      - uses: navapbc/ai-common-workflows/workflows/test-classifier@<commit-sha> # v1.x.x
+      - uses: navapbc/ai-common-workflows/workflows/test-classifier@v1 # or a 40-char SHA
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```

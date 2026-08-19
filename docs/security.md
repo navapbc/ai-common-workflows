@@ -124,12 +124,23 @@ layer around the runner/agent:
    pipeline. Re-review on upgrade by diffing tags.
 
 2. **Pin to an immutable reference.**
-   - **GitHub Action:** pin `uses:` to a full 40-character commit SHA, not a
-     tag or branch:
+   - **GitHub Action:** pin `uses:` to a full 40-character commit SHA, or to a
+     `vX.Y.Z` release tag. This repository does not move these references:
      ```yaml
      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<40-char-sha> # v1.0.0
      ```
      The `# vX.Y.Z` comment records which release the SHA is.
+
+     The `@vX` alias, for example `@v1`, moves. This is intentional. The alias
+     points to the newest stable `X.Y.Z` release. Therefore a new release
+     changes the code that your job runs, and you do not make a pull request.
+     This is correct for a pilot repository that wants new releases
+     automatically. It is not correct for a repository with high security
+     requirements, because a person who can move the tag can change the code
+     that you run. If you use `@vX`, first make sure that the `v*` ruleset is
+     in place. Refer to
+     [releasing.md](releasing.md#necessary-tag-protection). If you cannot use a
+     reference that moves, pin a SHA or a `vX.Y.Z` tag. Never pin a branch.
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its
      build provenance** before uploading (requires `gh` ≥ 2.49):
      ```bash

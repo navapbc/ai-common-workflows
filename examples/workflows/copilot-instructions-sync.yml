@@ -45,9 +45,11 @@ permissions:
 env:
   # Compliance profile to track: cms-ars (default) | baseline | <your profile>.
   PROFILE: cms-ars
-  # Pin ai-common-workflows to a commit SHA (preferred) or a release tag.
+  # The `v1` alias points to the newest stable 1.x release. To use a reference
+  # that does not change, pin a commit SHA or a vX.Y.Z tag. Do this if your
+  # repository has high security requirements. Refer to docs/security.md.
   ACW_REPO: navapbc/ai-common-workflows
-  ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char SHA, or v1.0.0
+  ACW_REF: v1 # this alias moves; or pin a 40-char SHA or a vX.Y.Z tag
 
 jobs:
   sync:

@@ -38,7 +38,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
           aws-region: us-east-1
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or a 40-char SHA
         with:
           provider: bedrock
           aws-region: us-east-1
@@ -62,7 +62,7 @@ authenticates with the same AWS credentials and calls Bedrock **directly** (no
 gateway). `model` (a Bedrock model ID) is **required** for codex.
 
 ```yaml
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or a 40-char SHA
         with:
           ai-tool: codex
           provider: bedrock
@@ -97,7 +97,7 @@ withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
         with:
           workload_identity_provider: projects/…/providers/…
           service_account: ai-pr-review@project.iam.gserviceaccount.com
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or a 40-char SHA
         with:
           provider: vertex
           vertex-project-id: my-gcp-project
@@ -117,7 +117,7 @@ Azure serves **OpenAI** models, not Claude, so `provider=azure` drives the
 resource endpoint, the deployment name (`model`), and the API version:
 
 ```yaml
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or a 40-char SHA
         with:
           ai-tool: codex
           provider: azure
@@ -156,7 +156,7 @@ specify, rather than GitHub's hosted models. Configure it with the
 `COPILOT_PROVIDER_BASE_URL` / `_TYPE` / `_API_KEY` and `COPILOT_MODEL`):
 
 ```yaml
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or a 40-char SHA
         with:
           ai-tool: copilot
           copilot-provider-base-url: https://llm-gw.internal/v1
@@ -190,7 +190,7 @@ aiSecurityComplianceReview(tool: 'copilot',
 For a LiteLLM / gateway deployment that speaks the Anthropic or OpenAI API:
 
 ```yaml
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@v1 # or a 40-char SHA
         with:
           ai-tool: claude
           anthropic-base-url: https://llm-gw.internal/v1
