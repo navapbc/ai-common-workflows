@@ -1,4 +1,4 @@
-"""Tests for engine/lib/scm/github_payload.py — the review-JSON → GitHub API
+"""Tests for engines/_common/scm/github_payload.py — the review-JSON → GitHub API
 payload transform. This is the highest-defect-density code in the engine
 (idempotency de-dup, diff-position filtering, 422-avoidance), so it gets the
 most exhaustive coverage."""
@@ -10,7 +10,7 @@ import pathlib
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[2]
-    / "engine" / "lib" / "scm" / "github_payload.py"
+    / "engines" / "_common" / "scm" / "github_payload.py"
 )
 _spec = importlib.util.spec_from_file_location("github_payload", _MODULE_PATH)
 gp = importlib.util.module_from_spec(_spec)

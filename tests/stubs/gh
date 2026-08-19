@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Stub `gh` CLI for engine tests. Handles exactly the calls the engine makes;
-# anything else is an error so contract drift shows up as a test failure.
+# Stub `gh` CLI for engine tests. Handles exactly the calls the engines make
+# (security review + test classifier); anything else is an error so contract
+# drift shows up as a test failure.
 # Behavior knobs (env):
 #   STUB_GH_COMMENTS   NDJSON file for the existing-comments fetch (default: empty)
 #   STUB_GH_FILES      NDJSON file for the PR-files fetch (default: empty)
-#   STUB_GH_POSTED     file to append each posted review payload to
-#   STUB_GH_POST_EXIT  exit code for the review POST (default 0)
+#   STUB_GH_POSTED     file to append each posted review/comment payload to
+#   STUB_GH_POST_EXIT  exit code for the review/comment POST (default 0)
 #   STUB_GH_BASE       base branch for `gh pr view <n>` (default: main)
 set -euo pipefail
 
@@ -32,7 +33,18 @@ case "$1" in
     done
     case "${endpoint}" in
       */comments)
-        [[ -n "${STUB_GH_COMMENTS:-}" ]] && cat "${STUB_GH_COMMENTS}"
+        if [[ "${method}" == "POST" ]]; then
+          # Classifier comment POST (body arrives via --field in argv). Emulate
+          # the engine's --jq '"\(.id)\t\(.created_at)"' output shape.
+          [[ -n "${STUB_GH_POSTED:-}" ]] && printf '%s\n' "$*" >> "${STUB_GH_POSTED}"
+          if [[ -n "${STUB_GH_POST_EXIT:-}" && "${STUB_GH_POST_EXIT}" != "0" ]]; then
+            echo '{"message":"Unprocessable Entity","status":"422"}'
+            exit "${STUB_GH_POST_EXIT}"
+          fi
+          printf '4242\t2026-01-01T00:00:00Z\n'
+        else
+          [[ -n "${STUB_GH_COMMENTS:-}" ]] && cat "${STUB_GH_COMMENTS}"
+        fi
         ;;
       */files)
         [[ -n "${STUB_GH_FILES:-}" ]] && cat "${STUB_GH_FILES}"
@@ -48,6 +60,11 @@ case "$1" in
           echo '{"message":"Unprocessable Entity","status":"422"}'
           exit "${STUB_GH_POST_EXIT}"
         fi
+        ;;
+      */pulls/[0-9]*)
+        # Classifier head-sha lookup; ordered after the more specific
+        # /comments, /files, and /reviews endpoints.
+        printf 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n'
         ;;
       *)
         echo "gh stub: unexpected api endpoint: $*" >&2

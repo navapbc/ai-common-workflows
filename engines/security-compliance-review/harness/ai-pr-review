@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# engine/bin/ai-pr-review
+# engines/security-compliance-review/harness/ai-pr-review
 #
 # AI-assisted PR review: composes security + compliance perspectives into a
 # single review of a pull-request diff and (optionally) posts the result as
-# inline review comments on the PR.
+# inline review comments on the PR. A thin entrypoint over the shared runtime
+# in engines/_common (see engines/_common/CONTRACT.md).
 #
 # Usage:
 #   ai-pr-review --against origin/main                # review; print only
@@ -31,24 +32,30 @@ set -euo pipefail
 # ── Engine self-location ────────────────────────────────────────────────────
 # Resolved purely from this script's own path. The working directory is the
 # reviewed repository; `git rev-parse` here would find the wrong root.
+# ENGINE_HOME is this workflow's engine (engines/security-compliance-review);
+# the shared runtime lives in the sibling engines/_common.
 ENGINE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AI_COMMON_HOME="$(cd "${ENGINE_HOME}/../_common" && pwd)"
 
 SKILL_NAME="pr-review"
 SKILL_HUMAN_NAME="AI-Assisted PR Review (security + compliance)"
+# Defaults in _common already match this workflow; set explicitly for clarity.
+AI_REVIEW_MARKER_VOCAB="APPROVE|COMMENT|REQUEST_CHANGES"
+AI_REVIEW_JSON_MARKER="AI_REVIEW_JSON"
 
-# shellcheck source=../lib/core.sh
-source "${ENGINE_HOME}/lib/core.sh"
-# shellcheck source=../lib/endpoints.sh
-source "${ENGINE_HOME}/lib/endpoints.sh"
+# shellcheck source=../../_common/harness/core.sh
+source "${AI_COMMON_HOME}/harness/core.sh"
+# shellcheck source=../../_common/endpoints.sh
+source "${AI_COMMON_HOME}/endpoints.sh"
 
 AI_REVIEW_SCM="${AI_REVIEW_SCM:-github}"
-if [[ ! -f "${ENGINE_HOME}/lib/scm/${AI_REVIEW_SCM}.sh" ]]; then
-  ai_review::err "AI_REVIEW_SCM='${AI_REVIEW_SCM}' has no backend at lib/scm/${AI_REVIEW_SCM}.sh"
-  ai_review::log "  Available backends: $(find "${ENGINE_HOME}/lib/scm" -name '*.sh' -exec basename {} .sh \; | tr '\n' ' ')"
+if [[ ! -f "${AI_COMMON_HOME}/scm/${AI_REVIEW_SCM}.sh" ]]; then
+  ai_review::err "AI_REVIEW_SCM='${AI_REVIEW_SCM}' has no backend at _common/scm/${AI_REVIEW_SCM}.sh"
+  ai_review::log "  Available backends: $(find "${AI_COMMON_HOME}/scm" -name '*.sh' -exec basename {} .sh \; | tr '\n' ' ')"
   exit 2
 fi
-# shellcheck source=../lib/scm/github.sh
-source "${ENGINE_HOME}/lib/scm/${AI_REVIEW_SCM}.sh"
+# shellcheck source=../../_common/scm/github.sh
+source "${AI_COMMON_HOME}/scm/${AI_REVIEW_SCM}.sh"
 
 # ── Compliance profile resolution ───────────────────────────────────────────
 # A profile supplies the compliance rubric (and may override any base skill).
@@ -58,23 +65,93 @@ source "${ENGINE_HOME}/lib/scm/${AI_REVIEW_SCM}.sh"
 AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-cms-ars}"
 if [[ -d "${AI_REVIEW_PROFILE}" ]]; then
   PROFILE_DIR="$(cd "${AI_REVIEW_PROFILE}" && pwd)"
-elif [[ -d "${ENGINE_HOME}/profiles/${AI_REVIEW_PROFILE}" ]]; then
-  PROFILE_DIR="${ENGINE_HOME}/profiles/${AI_REVIEW_PROFILE}"
+elif [[ -d "${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}" ]]; then
+  PROFILE_DIR="${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}"
 else
   ai_review::err "AI_REVIEW_PROFILE='${AI_REVIEW_PROFILE}' is not a known profile or an existing directory."
-  ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
+  ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
   ai_review::log "  Or pass a path to a custom profile directory."
   exit 2
 fi
 
 # pr_review::rubric <file> — echo the path to a rubric file, preferring the
-# active profile's override, else the shared base in skills/.
+# active profile's override, else the shared base in skills/base/.
 pr_review::rubric() {
   if [[ -f "${PROFILE_DIR}/$1" ]]; then
     printf '%s' "${PROFILE_DIR}/$1"
   else
-    printf '%s' "${ENGINE_HOME}/skills/$1"
+    printf '%s' "${ENGINE_HOME}/skills/base/$1"
   fi
+}
+
+# ── Help (overrides the generic _common fallback) ──────────────────────────
+ai_review::print_help() {
+  cat <<EOF
+AI-assisted PR review (security + compliance)
+
+Usage:
+  ai-pr-review [options]
+
+Options:
+  --pr <number>        Explicit PR number (overrides auto-discovery).
+  --against <ref>      Base ref to diff against (e.g. origin/main). When set,
+                       PR discovery is skipped; required unless a PR can be
+                       discovered via the SCM CLI.
+  --post-comments      Post the review with inline comments to the SCM
+                       (default SCM: GitHub via the gh CLI).
+  --gate               Exit 1 on any non-APPROVE result (CI-blocking mode).
+                       Default is advisory: findings never fail the build.
+  --json-only          Print only the machine-readable JSON block.
+  --json-out <file>    Also write the JSON block to <file> (lets a caller run
+                       the AI phase and the post phase as separate processes).
+  --post-only          Skip the AI entirely: post a previously produced JSON
+                       block (requires --pr and --json-in). The trusted post
+                       phase of a split run.
+  --json-in <file>     JSON block to post in --post-only mode.
+  -n, --dry-run        Print the resolved tool, plan, and prompt; no AI call.
+  --no-block           Always exit 0 regardless of findings or gate mode.
+  --no-adjudicate      Disable adjudication (same as AI_ADJUDICATION=off).
+  --jobs <N>           Concurrent workers when the diff is large enough to
+                       fan out (default 4; also AI_REVIEW_JOBS). 1 = serial.
+  --list-batches       Print how the diff would be batched; no AI call.
+  -h, --help           Show this help and exit.
+
+Environment variables:
+  AI_REVIEW_TOOL           Required. One of: claude | codex | copilot.
+  AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
+                           bedrock: claude or codex; vertex: claude only;
+                           azure: codex only. (copilot uses BYOK env vars —
+                           COPILOT_PROVIDER_BASE_URL etc. — on the api path.)
+  AI_REVIEW_MODEL          Model override passed to the CLI's --model flag.
+                           For bedrock this is the Bedrock model ID (required
+                           for codex); for azure it is the Azure deployment name.
+  ANTHROPIC_API_KEY        Claude on the public API (provider=api).
+  OPENAI_API_KEY           Codex on the public API.
+  ANTHROPIC_BASE_URL       Custom Anthropic-compatible endpoint (gateways).
+  OPENAI_BASE_URL          Custom OpenAI-compatible endpoint (gateways).
+  AWS_REGION               Required for provider=bedrock.
+  ANTHROPIC_VERTEX_PROJECT_ID, CLOUD_ML_REGION
+                           Required for provider=vertex.
+  AZURE_OPENAI_ENDPOINT    Required for provider=azure (resource endpoint).
+  AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_VERSION
+                           Key and REST API version for provider=azure.
+  AI_ADJUDICATION          self (default) | independent | off.
+  AI_ADJUDICATION_MODEL    Model for the independent adjudication pass only.
+  AI_REVIEW_JOBS           Concurrent fan-out workers (default 4).
+  AI_REVIEW_BATCH_BY       dir (default) | file — fan-out batching key.
+  AI_REVIEW_BATCH_MIN_FILES
+                           Minimum changed files before fanning out (default 10).
+  AI_REVIEW_CONTEXT_BUDGET Ceiling on context files per AI call (default 15).
+  AI_REVIEW_SCM            SCM backend for discovery/posting (default github).
+  GITHUB_TOKEN / GH_TOKEN  Auth for the gh CLI when posting.
+  CI                       "true" suppresses color output.
+  NO_COLOR                 Suppress ANSI color codes.
+
+Exit codes:
+  0   APPROVE, or findings in advisory mode (or --dry-run / --no-block)
+  1   --gate with non-APPROVE result, or unrecoverable runtime error
+  2   Configuration error (AI_REVIEW_TOOL unset/invalid; bad flags)
+EOF
 }
 
 # ── Prompt construction ─────────────────────────────────────────────────────
@@ -345,6 +422,9 @@ pr_review::run() {
   pr_review::discover_pr_context
   ai_review::parse_args "${REMAINING_FOR_LIB[@]+"${REMAINING_FOR_LIB[@]}"}"
 
+  # The PR review always diffs base→HEAD; a missing/unfetchable base is a
+  # config error (the shared has_changes would fall back to the staged diff).
+  ai_review::require_against
   if ! ai_review::has_changes; then
     ai_review::ok "No changes to review ($(ai_review::diff_command_description)) — skipping."
     exit 0
@@ -469,7 +549,7 @@ pr_review::run() {
       [[ -n "${_jf}" && "${_jf}" != "-" ]] && _json_files+=("${_jf}")
     done <<<"${AI_REVIEW_BATCH_SENTINELS}"
 
-    review_json="$(python3 "${ENGINE_HOME}/lib/fold_review_json.py" "${_json_files[@]}")"
+    review_json="$(python3 "${AI_COMMON_HOME}/harness/fold_review_json.py" "${_json_files[@]}")"
     result="$(printf '%s' "${review_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
   else
     # ── Single-call path (full diff in one review) ───────────────────────

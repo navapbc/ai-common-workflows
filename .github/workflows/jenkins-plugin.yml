@@ -5,14 +5,14 @@ on:
     branches: [main]
     paths:
       - "jenkins-plugin/**"
-      - "engine/**"
+      - "engines/**"
       - ".github/workflows/jenkins-plugin.yml"
     tags:
       - "jenkins-plugin-v*"
   pull_request:
     paths:
       - "jenkins-plugin/**"
-      - "engine/**"
+      - "engines/**"
       - ".github/workflows/jenkins-plugin.yml"
 
 permissions:

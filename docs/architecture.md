@@ -1,39 +1,50 @@
 # Architecture
 
-One shared engine, thin per-workflow front ends, plus a set of Copilot
-instruction files. The AI security & compliance review is the first workflow;
-the layout is built so more can be added (see
+Three shippable layers: portable **skills** (per workflow), a mostly-shared
+**harness** that runs them (`engines/_common` + a thin per-workflow
+entrypoint), and thin **adapters** per CI (GitHub Action, Jenkins plugin,
+Copilot instructions). Adding a workflow adds skills + a thin entrypoint +
+adapters; the generic harness is written once and never copied (see
 [adding-workflows.md](adding-workflows.md)).
 
 ```
-   GitHub Action                        ┌───────────────────────────┐
-   workflows/security-compliance-review │      engine/  (bash)      │
-      /action.yml ─────────────────────▶│  bin/ai-pr-review         │──▶ AI CLI (claude/codex/copilot)
-      (sources workflows/_shared/lib)   │  lib/core.sh              │      via api / bedrock / vertex / azure / gateway
-                                        │  lib/endpoints.sh         │
-   Jenkins plugin ─────────────────────▶│  lib/scm/github.sh        │──▶ SCM (gh api) — post phase only
-   security-compliance-review (.hpi)    │  skills/*.md   (base)     │
-     depends on ai-common-core (.hpi)   │  profiles/<name>/  (rubric)│
-   (bundles engine zip)                  └───────────────────────────┘
-   (lib/sandbox/ is experimental and not wired into either front end)
+   ADAPTERS (per workflow × CI)          ENGINES (skills + harness)
+   workflows/<name>/action.yml ────────▶ engines/<name>/            (per workflow)
+      (sources workflows/_shared/lib)      harness/<entrypoint>  ── thin runner
+   Jenkins plugin <name> (.hpi) ───────▶   skills/base/*.md      ── the rubric
+     depends on ai-common-core (.hpi),     skills/profiles/<p>/  ── framework overrides
+     bundles the engine zip                      │ sources
+   copilot-instructions/ (skills          engines/_common/           (shared, once)
+     re-expressed; can't run the           harness/core.sh  ──▶ AI CLI (claude/codex/copilot)
+     harness)                              endpoints.sh          via api/bedrock/vertex/azure/gateway
+                                           scm/github.sh    ──▶ SCM (gh api) — post phase only
+                                           sandbox/  (experimental, not shipped)
 ```
 
+Workflows today: **security-compliance-review** (`harness/ai-pr-review`) and
+**test-classifier** (`harness/ai-test-classifier`).
+
 The **compliance profile** (`AI_REVIEW_PROFILE`, default `cms-ars`) selects the
-rubric under `engine/profiles/`; rubric files resolve from the profile first,
-then fall back to the shared `skills/` base. See [profiles.md](profiles.md).
+review rubric under the engine's `skills/profiles/`; rubric files resolve from
+the profile first, then fall back to `skills/base/`. See
+[profiles.md](profiles.md).
 
 ## The engine is the single source of truth
 
-All review logic lives in [`engine/`](../engine/README.md). The composite
-action references it in place; the Jenkins plugin zips it into the `.hpi` at
-build time and unpacks it onto the agent. Neither front end reaches into engine
-internals — they call `bin/ai-pr-review` with flags and environment, per the
-contract in the engine README. Changing review behavior means changing the
-engine, once.
+All of a workflow's logic lives in `engines/<name>/` plus the shared runtime
+in [`engines/_common/`](../engines/_common/CONTRACT.md). The composite action
+references it in place; the Jenkins plugin zips the workflow engine together
+with `_common` into the `.hpi` at build time and unpacks it onto the agent.
+No front end reaches into engine internals — they call the entrypoint with
+flags and environment, per the engine README. Changing workflow behavior
+means changing its engine, once; changing runtime behavior (dispatch,
+markers, fan-out, endpoints) means changing `_common`, once, for every
+workflow.
 
-The engine is **relocatable**: it resolves its own paths from `ENGINE_HOME`
-(its own location), never from the working directory, so it runs identically
-whether checked out or extracted from a plugin.
+The engines are **relocatable**: every script resolves its paths from
+`ENGINE_HOME` (its own location), never from the working directory, so the
+`engines/` tree runs identically whether checked out or extracted from a
+plugin — as long as `_common` stays a sibling of the workflow engines.
 
 ## Phases and the trust boundary
 
@@ -56,7 +67,7 @@ the AI phase; and if `actions/checkout` persisted credentials, a token is in
 `.git/config` regardless — check out with `persist-credentials: false` for the
 strongest isolation (see [security.md](../docs/security.md)).
 
-The experimental egress sandbox lives in `engine/lib/sandbox/` (see its
+The experimental egress sandbox lives in `engines/_common/sandbox/` (see its
 README) and is not shipped.
 
 ## The SCM seam

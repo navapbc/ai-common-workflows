@@ -50,7 +50,7 @@ start_proxy() {  # $1 = allowlist spec
   docker run -d --name "${PROXY}" \
     -v "${REPO_ROOT}/engine:/opt/engine:ro" \
     -e ALLOWED_HOSTS="$1" \
-    ai-pr-review:batstest python3 /opt/engine/lib/sandbox/allowlist_proxy.py >/dev/null
+    ai-pr-review:batstest python3 /opt/engines/_common/sandbox/allowlist_proxy.py >/dev/null
   docker network connect "${NET}" "${PROXY}"
   docker inspect -f "{{(index .NetworkSettings.Networks \"${NET}\").IPAddress}}" "${PROXY}"
 }
@@ -94,7 +94,7 @@ start_proxy() {  # $1 = allowlist spec
   run env -C "${work}" \
     AI_REVIEW_TOOL=claude ANTHROPIC_API_KEY=stub \
     AI_REVIEW_SANDBOX_IMAGE=ai-pr-review:batsstub CI=true NO_COLOR=1 \
-    bash "${REPO_ROOT}/engine/lib/sandbox/sandbox.sh" --against origin/main
+    bash "${REPO_ROOT}/engines/_common/sandbox/sandbox.sh" --against origin/main
   rm -rf "${work}"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Review result: COMMENT"* ]]

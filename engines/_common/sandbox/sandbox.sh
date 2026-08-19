@@ -36,7 +36,8 @@
 set -euo pipefail
 
 SANDBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENGINE_HOME="$(cd "${SANDBOX_DIR}/../.." && pwd)"
+# The engines/ tree (this sandbox lives at engines/_common/sandbox).
+ENGINES_HOME="$(cd "${SANDBOX_DIR}/../.." && pwd)"
 
 log() { printf '[sandbox] %s\n' "$*" >&2; }
 err() { printf '[sandbox] ERROR: %s\n' "$*" >&2; }
@@ -216,10 +217,10 @@ docker network create --internal "${NET}" >/dev/null
 # The sidecar starts on the default bridge (its way out), then attaches to
 # the internal network (its face toward the review container).
 docker run -d --name "${PROXY}" \
-  --volume "${ENGINE_HOME}:/opt/engine:ro" \
+  --volume "${ENGINES_HOME}:/opt/engines:ro" \
   --env ALLOWED_HOSTS="${ALLOWED_HOSTS}" \
   --cap-drop ALL --security-opt no-new-privileges --read-only \
-  "${IMAGE}" python3 /opt/engine/lib/sandbox/allowlist_proxy.py >/dev/null
+  "${IMAGE}" python3 /opt/engines/_common/sandbox/allowlist_proxy.py >/dev/null
 docker network connect "${NET}" "${PROXY}"
 
 PROXY_IP="$(docker inspect -f "{{(index .NetworkSettings.Networks \"${NET}\").IPAddress}}" "${PROXY}")"
@@ -234,7 +235,7 @@ log "Running the AI review phase (internal network; allowlist above; checkout re
 REVIEW_ENV_ARGS=()
 while IFS= read -r line; do REVIEW_ENV_ARGS+=("${line}"); done < <(review_env_args)
 
-ENGINE_CMD=(bash /opt/engine/bin/ai-pr-review --against "${AGAINST}" --json-out /out/review.json)
+ENGINE_CMD=(bash /opt/engines/security-compliance-review/harness/ai-pr-review --against "${AGAINST}" --json-out /out/review.json)
 ((NO_BLOCK == 1)) && ENGINE_CMD+=(--no-block)
 ENGINE_CMD+=("${ENGINE_ARGS[@]+"${ENGINE_ARGS[@]}"}")
 
@@ -242,7 +243,7 @@ review_rc=0
 docker run --rm --name "${RUN_ID}-review" \
   --network "${NET}" \
   --volume "$(pwd):/workspace:ro" \
-  --volume "${ENGINE_HOME}:/opt/engine:ro" \
+  --volume "${ENGINES_HOME}:/opt/engines:ro" \
   --volume "${OUT_DIR}:/out" \
   --workdir /workspace \
   --cap-drop ALL --security-opt no-new-privileges \
@@ -289,7 +290,7 @@ if ((POST_COMMENTS == 1)); then
   done
   docker run --rm --name "${RUN_ID}-post" \
     --volume "$(pwd):/workspace:ro" \
-    --volume "${ENGINE_HOME}:/opt/engine:ro" \
+    --volume "${ENGINES_HOME}:/opt/engines:ro" \
     --volume "${OUT_DIR}:/out:ro" \
     --workdir /workspace \
     --cap-drop ALL --security-opt no-new-privileges \
@@ -298,7 +299,7 @@ if ((POST_COMMENTS == 1)); then
     --env GIT_OPTIONAL_LOCKS=0 \
     "${POST_ENV_ARGS[@]+"${POST_ENV_ARGS[@]}"}" \
     "${IMAGE}" \
-    bash /opt/engine/bin/ai-pr-review --post-only --pr "${PR_NUMBER}" --json-in /out/review.json
+    bash /opt/engines/security-compliance-review/harness/ai-pr-review --post-only --pr "${PR_NUMBER}" --json-in /out/review.json
 fi
 
 # ── Gate ────────────────────────────────────────────────────────────────────

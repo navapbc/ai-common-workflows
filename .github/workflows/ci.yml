@@ -18,20 +18,21 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
           shellcheck -x -P SCRIPTDIR \
-            engine/bin/ai-pr-review \
-            engine/lib/core.sh engine/lib/endpoints.sh \
-            engine/lib/scm/github.sh engine/lib/sandbox/sandbox.sh \
+            engines/security-compliance-review/harness/ai-pr-review \
+            engines/test-classifier/harness/ai-test-classifier \
+            engines/_common/harness/core.sh engines/_common/endpoints.sh \
+            engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \
             workflows/_shared/lib/ci.sh \
             tests/stubs/* tests/run.sh
       - name: shfmt
         run: |
           curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
           chmod +x /usr/local/bin/shfmt
-          shfmt -d -i 2 -ci engine/bin engine/lib
+          shfmt -d -i 2 -ci engines
       - name: actionlint
         uses: reviewdog/action-actionlint@v1
         with:
-          fail_on_error: true
+          fail_level: error
 
   python:
     name: pytest
@@ -50,8 +51,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y bats
-      - name: core + e2e
-        run: bats tests/bats/core.bats tests/bats/e2e.bats
+      - name: core + e2e + test_classifier
+        run: bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/test_classifier.bats
 
   action-self-test:
     name: Action self-test (dry-run, no keys)
@@ -71,4 +72,10 @@ jobs:
           ai-tool: claude
           dry-run: true
           post-comments: false
+          install-cli: false
+      - uses: ./workflows/test-classifier
+        with:
+          ai-tool: claude
+          dry-run: true
+          post-comment: false
           install-cli: false

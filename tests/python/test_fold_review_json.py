@@ -1,11 +1,11 @@
-"""Tests for engine/lib/fold_review_json.py — merging per-batch findings."""
+"""Tests for engines/_common/harness/fold_review_json.py — merging per-batch findings."""
 
 import importlib.util
 import pathlib
 
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[2]
-    / "engine" / "lib" / "fold_review_json.py"
+    / "engines" / "_common" / "harness" / "fold_review_json.py"
 )
 _spec = importlib.util.spec_from_file_location("fold_review_json", _MODULE_PATH)
 fold = importlib.util.module_from_spec(_spec)

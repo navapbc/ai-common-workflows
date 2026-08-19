@@ -1,13 +1,14 @@
-name: "AI Security & Compliance Review"
+name: "AI Test Classifier"
 description: >-
-  AI-assisted security and compliance review of a pull request. Supports
+  AI triage of failing tests on a pull request: classifies each failure as an
+  APPLICATION_BUG, TEST_BUG, FLAKY_FAILURE, or ENVIRONMENT_ISSUE and posts one
+  advisory PR comment with the verdicts and a 👍/👎 feedback ask. Supports
   Claude, Codex, and Copilot, on the public API or a private endpoint
-  (Bedrock, Vertex, Azure OpenAI, or a custom gateway). Selectable compliance
-  profile (CMS ARS by default).
+  (Bedrock, Vertex, Azure OpenAI, or a custom gateway).
 author: "Nava PBC"
 
 branding:
-  icon: "shield"
+  icon: "check-circle"
   color: "purple"
 
 inputs:
@@ -25,17 +26,17 @@ inputs:
     default: ""
   github-token:
     description: >-
-      Token used to post the review. Needs 'pull-requests: write'. Defaults to
-      the workflow token.
+      Token used to post the PR comment. Needs 'pull-requests: write'.
+      Defaults to the workflow token.
     required: false
     default: ${{ github.token }}
 
-  post-comments:
-    description: "Post the review with inline comments to the PR."
+  post-comment:
+    description: "Post the one classification comment to the PR."
     required: false
     default: "true"
   gate:
-    description: "Fail the job (exit 1) on any non-APPROVE result. Default: advisory."
+    description: "Fail the job (exit 1) when any failing test was classified. Default: advisory."
     required: false
     default: "false"
   dry-run:
@@ -47,13 +48,22 @@ inputs:
     required: false
     default: ""
 
-  # ── Compliance profile ────────────────────────────────────────────────────
-  profile:
+  # ── Suite execution (OBSERVED vs INFERRED) ──────────────────────────────────
+  run-suite:
     description: >-
-      Compliance profile selecting the rubric: cms-ars (default) | baseline, a
-      name under the engine's skills/profiles/, or a path to a custom profile directory.
+      Run the repository's test suite for OBSERVED verdicts (default). Set
+      false for a read-only INFERRED pass that predicts from the diff without
+      executing the change — use this on PRs from untrusted forks.
     required: false
-    default: "cms-ars"
+    default: "true"
+  max-turns:
+    description: "Agentic turn budget for the suite run (default 80)."
+    required: false
+    default: "80"
+  suite-timeout-seconds:
+    description: "Hard wall-clock ceiling on the AI call in seconds (default 1500)."
+    required: false
+    default: "1500"
 
   # ── LLM endpoint ──────────────────────────────────────────────────────────
   provider:
@@ -123,32 +133,6 @@ inputs:
     required: false
     default: ""
 
-  # ── Adjudication and fan-out ────────────────────────────────────────────────
-  adjudication:
-    description: "False-positive reduction: self (default) | independent | off."
-    required: false
-    default: "self"
-  adjudication-model:
-    description: "Model for the independent adjudication pass only."
-    required: false
-    default: ""
-  jobs:
-    description: "Concurrent fan-out workers for large diffs (default 4)."
-    required: false
-    default: "4"
-  batch-by:
-    description: "Fan-out batching key: dir (default) | file."
-    required: false
-    default: "dir"
-  batch-min-files:
-    description: "Minimum changed files before fanning out (default 10)."
-    required: false
-    default: "10"
-  context-budget:
-    description: "Ceiling on context files loaded per AI call (default 15)."
-    required: false
-    default: "15"
-
   # ── AI CLI installation ─────────────────────────────────────────────────────
   install-cli:
     description: "npm-install the chosen AI CLI on the runner (default true; set false if pre-baked)."
@@ -161,11 +145,11 @@ inputs:
 
 outputs:
   result:
-    description: "APPROVE | COMMENT | REQUEST_CHANGES."
+    description: "CLASSIFIED | NO_ACTION."
     value: ${{ steps.result.outputs.result }}
-  review-json:
-    description: "Path to the findings JSON written by the review."
-    value: ${{ steps.review.outputs.review-json }}
+  classification-json:
+    description: "Path to the classifications JSON written by the run."
+    value: ${{ steps.classify.outputs.classification-json }}
 
 runs:
   using: "composite"
@@ -217,24 +201,27 @@ runs:
         source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
         ci::install_ai_cli
 
-    # ── AI phase — runs the review with NO SCM token in scope ────────────────
-    # The AI CLI reads untrusted PR content, so the token that can write to your
-    # repo is deliberately absent from this step's environment (and thus from
-    # the CLI's process tree). Posting happens in the separate step below, which
-    # is the only place the token exists. Exception: ai-tool=copilot, whose
-    # model auth *is* a GitHub token, so it receives one here.
-    - name: AI review
-      id: review
+    # ── AI phase — classifies with NO SCM token in scope ─────────────────────
+    # In OBSERVED mode (the default) the AI agent installs and RUNS the PR's
+    # test suite — executing the PR's code — so the token that can write to
+    # your repo is deliberately absent from this step's environment. Posting
+    # happens in the separate step below, the only place the token exists.
+    # Exception: ai-tool=copilot, whose model auth *is* a GitHub token.
+    - name: Classify failing tests
+      id: classify
       if: steps.ctx.outputs.skip == 'false'
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
+        PR_NUMBER: ${{ steps.ctx.outputs.pr }}
         BASE: ${{ steps.ctx.outputs.base }}
         DRY_RUN: ${{ inputs.dry-run }}
         AI_REVIEW_TOOL: ${{ inputs.ai-tool }}
         AI_REVIEW_PROVIDER: ${{ inputs.provider }}
-        AI_REVIEW_PROFILE: ${{ inputs.profile }}
         AI_REVIEW_MODEL: ${{ inputs.model }}
+        AI_RUN_SUITE: ${{ inputs.run-suite == 'false' && '0' || '1' }}
+        AI_SUITE_MAX_TURNS: ${{ inputs.max-turns }}
+        AI_SUITE_TIMEOUT_SECS: ${{ inputs.suite-timeout-seconds }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
@@ -250,12 +237,6 @@ runs:
         COPILOT_PROVIDER_TYPE: ${{ inputs.copilot-provider-type }}
         COPILOT_PROVIDER_API_KEY: ${{ inputs.copilot-provider-api-key }}
         COPILOT_MODEL: ${{ inputs.copilot-model }}
-        AI_ADJUDICATION: ${{ inputs.adjudication }}
-        AI_ADJUDICATION_MODEL: ${{ inputs.adjudication-model }}
-        AI_REVIEW_JOBS: ${{ inputs.jobs }}
-        AI_REVIEW_BATCH_BY: ${{ inputs.batch-by }}
-        AI_REVIEW_BATCH_MIN_FILES: ${{ inputs.batch-min-files }}
-        AI_REVIEW_CONTEXT_BUDGET: ${{ inputs.context-budget }}
         # Copilot only: its model credential is a GitHub token. Every other
         # tool runs with no SCM token in scope.
         GITHUB_TOKEN: ${{ inputs.ai-tool == 'copilot' && inputs.github-token || '' }}
@@ -263,41 +244,50 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
-        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-pr-review"
-        review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
-        echo "review-json=${review_json}" >> "${GITHUB_OUTPUT}"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/test-classifier/harness/ai-test-classifier"
+        classification_json="${RUNNER_TEMP:-/tmp}/ai-test-classifier.json"
+        echo "classification-json=${classification_json}" >> "${GITHUB_OUTPUT}"
 
-        args=(--against "origin/${BASE}" --json-out "${review_json}")
+        args=(--pr "${PR_NUMBER}" --against "origin/${BASE}" --json-out "${classification_json}")
         [[ "${DRY_RUN}" == "true" ]] && args+=(--dry-run)
 
         bash "${engine}" "${args[@]}"
 
     # ── Post phase — the only step that holds the SCM token ──────────────────
-    - name: Post review
-      if: steps.ctx.outputs.skip == 'false' && inputs.post-comments == 'true' && inputs.dry-run != 'true'
+    - name: Post PR comment
+      if: steps.ctx.outputs.skip == 'false' && inputs.post-comment == 'true' && inputs.dry-run != 'true'
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
         PR_NUMBER: ${{ steps.ctx.outputs.pr }}
-        REVIEW_JSON: ${{ steps.review.outputs.review-json }}
+        BASE: ${{ steps.ctx.outputs.base }}
+        CLASSIFICATION_JSON: ${{ steps.classify.outputs.classification-json }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
         CI: "true"
       run: |
         set -euo pipefail
-        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-pr-review"
-        bash "${engine}" --post-only --pr "${PR_NUMBER}" --json-in "${REVIEW_JSON}"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/test-classifier/harness/ai-test-classifier"
+        bash "${engine}" --post-only --pr "${PR_NUMBER}" \
+          --json-in "${CLASSIFICATION_JSON}" --against "origin/${BASE}"
 
     # ── Result + gate ────────────────────────────────────────────────────────
+    # Evaluated AFTER posting so a gated red build still carries the comment
+    # explaining why.
     - name: Result and gate
       id: result
       if: steps.ctx.outputs.skip == 'false' && inputs.dry-run != 'true'
       shell: bash
       env:
-        ACTION_PATH: ${{ github.action_path }}
-        REVIEW_JSON: ${{ steps.review.outputs.review-json }}
+        CLASSIFICATION_JSON: ${{ steps.classify.outputs.classification-json }}
         GATE: ${{ inputs.gate }}
       run: |
         set -euo pipefail
-        source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
-        ci::gate_result
+        [[ -f "${CLASSIFICATION_JSON}" ]] || exit 0
+        result="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("CLASSIFIED" if d.get("classifications") else "NO_ACTION")' "${CLASSIFICATION_JSON}")"
+        echo "result=${result}" >> "${GITHUB_OUTPUT}"
+        echo "[test-classifier] result: ${result}"
+        if [[ "${GATE}" == "true" && "${result}" == "CLASSIFIED" ]]; then
+          echo "::error::AI test classifier triaged failing tests and gate is enabled."
+          exit 1
+        fi

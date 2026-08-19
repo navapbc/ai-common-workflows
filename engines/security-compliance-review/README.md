@@ -4,12 +4,14 @@ This directory is the single source of truth for the AI PR review. The
 composite GitHub Action references it in place, and the Jenkins plugin bundles
 a zip of it at build time and extracts it onto the agent. Both consume it
 through the contract on this page and nothing else. (The experimental sandbox
-image under `lib/sandbox/` also copies it in, but is not shipped — see
-`lib/sandbox/README.md`.)
+image under `../_common/sandbox/` also copies it in, but is not shipped — see
+its README.)
 
 ## Relocatability guarantee
 
-The `engine/` directory may be copied anywhere **as a unit**. Every script
+This engine may be copied anywhere as long as the copy keeps `_common/` a
+sibling of `security-compliance-review/` (copy the `engines/` tree as a
+unit). Every script
 resolves internal paths from its own location (`ENGINE_HOME`), never from
 the working directory or `git rev-parse`. At runtime the working directory
 is the repository being reviewed. The engine writes nothing outside stdout,
@@ -19,7 +21,7 @@ temporary directories.
 ## Entrypoint
 
 ```
-bash <engine>/bin/ai-pr-review [flags]      # run from the reviewed repo's root
+bash <engines>/security-compliance-review/harness/ai-pr-review [flags]   # run from the reviewed repo's root
 ```
 
 | Flag | Meaning |
@@ -48,7 +50,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 |---|---|---|
 | `AI_REVIEW_TOOL` | yes | `claude` \| `codex` \| `copilot` |
 | `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` (claude or codex) \| `vertex` (claude) \| `azure` (codex) |
-| `AI_REVIEW_PROFILE` | no | Compliance profile: `cms-ars` (default) \| `baseline` \| a `profiles/` name or a directory path |
+| `AI_REVIEW_PROFILE` | no | Compliance profile: `cms-ars` (default) \| `baseline` \| a `skills/profiles/` name or a directory path |
 | `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `ANTHROPIC_API_KEY` | claude+api | Public Anthropic API key |
 | `OPENAI_API_KEY` | codex | Public OpenAI API key |
@@ -64,7 +66,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `AI_REVIEW_BATCH_BY` | no | `dir` (default) \| `file` |
 | `AI_REVIEW_BATCH_MIN_FILES` | no | Fan-out threshold (default 10) |
 | `AI_REVIEW_CONTEXT_BUDGET` | no | Context-file ceiling per AI call (default 15) |
-| `AI_REVIEW_SCM` | no | SCM backend under `lib/scm/` (default `github`) |
+| `AI_REVIEW_SCM` | no | SCM backend under `../_common/scm/` (default `github`) |
 | `GITHUB_TOKEN` / `GH_TOKEN` | posting | Auth for `gh`; `GH_HOST` for GitHub Enterprise |
 | `CI`, `NO_COLOR` | no | Output plumbing |
 
@@ -86,13 +88,15 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 ## Layout
 
 ```
-bin/ai-pr-review            entrypoint (also the fan-out worker entry)
-lib/core.sh                 flags, tool invocation, markers, adjudication, fan-out
-lib/endpoints.sh            provider → CLI env mapping + validation + audit line
-lib/fold_review_json.py     merges per-batch findings JSON (fan-out)
-lib/scm/github.sh           PR discovery + review posting via gh (SCM seam)
-lib/scm/github_payload.py   review JSON → GitHub API payload (idempotency, 422 guards)
-lib/sandbox/                EXPERIMENTAL Docker sandbox — not shipped (see lib/sandbox/README.md)
-skills/*.md                 framework-neutral review rubric base, inlined at dispatch time
-profiles/<name>/*.md        per-compliance-framework rubric overrides (AI_REVIEW_PROFILE)
+harness/ai-pr-review        thin entrypoint (prompt, profiles, posting; also the
+                            fan-out worker entry) — sources ../_common
+skills/base/*.md            framework-neutral review rubric base, inlined at dispatch time
+skills/profiles/<name>/     per-compliance-framework rubric overrides (AI_REVIEW_PROFILE)
+
+../_common/                 the shared runtime (see ../_common/CONTRACT.md):
+  harness/core.sh           flags, tool invocation, markers, adjudication, fan-out
+  harness/fold_review_json.py  merges per-batch findings JSON (fan-out)
+  endpoints.sh              provider → CLI env mapping + validation + audit line
+  scm/github.sh + github_payload.py  PR discovery + review posting (SCM seam)
+  sandbox/                  EXPERIMENTAL Docker sandbox — not shipped
 ```

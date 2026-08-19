@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# engine/lib/scm/github.sh
+# engines/_common/scm/github.sh
 #
 # GitHub SCM backend for the AI PR-review engine: PR discovery and review
 # posting via the `gh` CLI. This file is the ONLY place the engine talks to
@@ -24,6 +24,8 @@ if [[ "${_AI_REVIEW_SCM_GITHUB_LOADED:-0}" == "1" ]]; then
   return 0
 fi
 _AI_REVIEW_SCM_GITHUB_LOADED=1
+# Captured at source time (BASH_SOURCE inside a function reports the caller).
+_AI_REVIEW_SCM_GITHUB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 scm::require_cli() {
   local why="$1"
@@ -138,7 +140,9 @@ scm::post_review() {
   export AI_REVIEW_PR_FILES="${pr_files}"
 
   local api_payload
-  api_payload="$(echo "${review_json}" | python3 "${ENGINE_HOME}/lib/scm/github_payload.py")"
+  # The payload builder lives next to this backend; resolve from this file's
+  # own location so the SCM seam stays relocatable with _common.
+  api_payload="$(echo "${review_json}" | python3 "${_AI_REVIEW_SCM_GITHUB_DIR}/github_payload.py")"
 
   if [[ "${api_payload}" == "__AI_REVIEW_SKIP_POST__" ]]; then
     ai_review::info "No new findings to post (all already commented on unchanged lines)."

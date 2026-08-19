@@ -1,16 +1,20 @@
 #!/usr/bin/env bats
-# Unit tests for engine/lib/core.sh — marker parsing, JSON extraction, batch
+# Unit tests for engines/_common/harness/core.sh — marker parsing, JSON
+# extraction, batch
 # planning/packing/folding, and the endpoint matrix.
 
 setup() {
-  ENGINE_HOME="$(cd "${BATS_TEST_DIRNAME}/../../engine" && pwd)"
+  # ENGINE_HOME = the workflow engine; the shared runtime is its _common sibling.
+  ENGINE_HOME="$(cd "${BATS_TEST_DIRNAME}/../../engines/security-compliance-review" && pwd)"
+  AI_COMMON_HOME="$(cd "${BATS_TEST_DIRNAME}/../../engines/_common" && pwd)"
+  export AI_COMMON_HOME
   export ENGINE_HOME
   SKILL_NAME="test"
   CI=true
   # shellcheck disable=SC1091
-  source "${ENGINE_HOME}/lib/core.sh"
+  source "${AI_COMMON_HOME}/harness/core.sh"
   # shellcheck disable=SC1091
-  source "${ENGINE_HOME}/lib/endpoints.sh"
+  source "${AI_COMMON_HOME}/endpoints.sh"
 }
 
 # ── parse_result: last marker wins (transcript-echo hazard) ─────────────────
@@ -100,12 +104,12 @@ report
 # ── pack_batches: bins to at most N ─────────────────────────────────────────
 
 @test "pack_batches coalesces to at most N bins" {
-  run bash -c 'source "'"${ENGINE_HOME}"'/lib/core.sh"; printf "d1\ta|b\nd2\tc\nd3\td\nd4\te\nd5\tf\n" | ai_review::pack_batches 3 | wc -l'
+  run bash -c 'source "'"${AI_COMMON_HOME}"'/harness/core.sh"; printf "d1\ta|b\nd2\tc\nd3\td\nd4\te\nd5\tf\n" | ai_review::pack_batches 3 | wc -l'
   [ "$output" -le 3 ]
 }
 
 @test "pack_batches passes through when already within cap" {
-  run bash -c 'source "'"${ENGINE_HOME}"'/lib/core.sh"; printf "d1\ta\nd2\tb\n" | ai_review::pack_batches 4 | wc -l'
+  run bash -c 'source "'"${AI_COMMON_HOME}"'/harness/core.sh"; printf "d1\ta\nd2\tb\n" | ai_review::pack_batches 4 | wc -l'
   [ "$output" -eq 2 ]
 }
 

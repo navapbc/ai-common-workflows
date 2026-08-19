@@ -1,27 +1,30 @@
 #!/usr/bin/env bash
-# engine/lib/core.sh
+# engines/_common/harness/core.sh
 #
-# Core dispatch library for the AI PR-review engine. Sourced by
-# engine/bin/ai-pr-review; never executed directly.
+# Shared, workflow-agnostic harness runtime. Sourced by each workflow's thin
+# entrypoint (engines/<workflow>/harness/*); never executed directly.
 #
 # Responsibilities:
-#   - CLI flag parsing shared with the entrypoint
-#   - AI_REVIEW_TOOL resolution (claude | codex | copilot) and invocation
+#   - CLI flag parsing shared with the entrypoints
+#   - AI_REVIEW_TOOL resolution (claude | codex | copilot) and invocation,
+#     in two postures: read-only (the default) and suite-running
+#     (AI_RUN_SUITE=1 — agentic; executes the repo's own test suite)
 #   - Diff collection against a base ref (AI_REVIEW_AGAINST)
-#   - Result-marker parsing (APPROVE | COMMENT | REQUEST_CHANGES)
+#   - Result-marker parsing (vocabulary set per workflow via
+#     AI_REVIEW_MARKER_VOCAB) and JSON-block extraction (AI_REVIEW_JSON_MARKER)
 #   - Adjudication (self-critique prompt block; independent second pass)
 #   - Parallel fan-out for large diffs (batch planning, packing, folding)
 #
-# The library expects the sourcing script to have set ENGINE_HOME (the
-# engine's own root directory) and SKILL_NAME before calling any function.
-# All paths are resolved from ENGINE_HOME, never from the repository being
-# reviewed — the engine may be copied anywhere as a unit (composite action
-# checkout, Jenkins plugin extraction, container image) and must not assume
-# it lives inside the reviewed repo.
+# The library expects the sourcing entrypoint to have set ENGINE_HOME (the
+# WORKFLOW engine's root, engines/<workflow>) and SKILL_NAME before calling
+# any function. All paths resolve from ENGINE_HOME or this file's own
+# location, never from the repository being reviewed — engines/ may be copied
+# anywhere as a unit (action checkout, Jenkins plugin extraction, container
+# image) as long as _common stays a sibling of the workflow engines.
 #
-# Exit codes (uniform across the engine):
-#   0  — review completed; APPROVE, or findings in advisory (non-gate) mode
-#   1  — gate failure (--gate with non-APPROVE) or unrecoverable runtime error
+# Exit codes (uniform across every workflow):
+#   0  — completed; clean result, or findings in advisory (non-gate) mode
+#   1  — gate failure or unrecoverable runtime error
 #   2  — configuration error (bad flags; AI_REVIEW_TOOL unset/invalid)
 #
 # shellcheck disable=SC2034  # AI_REVIEW_* globals are this library's public
@@ -34,6 +37,23 @@ if [[ "${_AI_REVIEW_CORE_LOADED:-0}" == "1" ]]; then
   return 0
 fi
 _AI_REVIEW_CORE_LOADED=1
+
+# ── Per-workflow parameterization ───────────────────────────────────────────
+# Each entrypoint sets these before (or instead of) relying on the defaults,
+# which preserve the security-compliance-review contract.
+#   AI_REVIEW_MARKER_VOCAB  result-marker vocabulary (regex alternation)
+#   AI_REVIEW_JSON_MARKER   HTML-comment marker prefix around the JSON block
+#   AI_RUN_SUITE            0 (default) read-only posture; 1 = agentic posture
+#                           that installs deps and RUNS the repo's test suite
+AI_REVIEW_MARKER_VOCAB="${AI_REVIEW_MARKER_VOCAB:-APPROVE|COMMENT|REQUEST_CHANGES}"
+AI_REVIEW_JSON_MARKER="${AI_REVIEW_JSON_MARKER:-AI_REVIEW_JSON}"
+AI_RUN_SUITE="${AI_RUN_SUITE:-0}"
+
+# Bounds for the agent loop in suite mode (AI_RUN_SUITE=1). The timeout wraps
+# the whole CLI call; --max-turns caps agentic iterations. Overflow is a soft
+# outcome (see ai_review::is_max_turns), not a hard failure.
+AI_SUITE_TIMEOUT_SECS="${AI_SUITE_TIMEOUT_SECS:-1500}" # 25 min hard ceiling
+AI_SUITE_MAX_TURNS="${AI_SUITE_MAX_TURNS:-80}"
 
 # ── Color helpers (suppressed in CI / non-TTY) ──────────────────────────────
 if [[ -t 2 ]] && [[ "${CI:-}" != "true" ]] && [[ "${NO_COLOR:-}" == "" ]]; then
@@ -71,13 +91,40 @@ ai_review::err() { printf '%s[%s] ERROR: %s%s\n' "${AI_C_RED}" "${SKILL_NAME}" "
 #   AI_REVIEW_AGAINST       (string)     — git base ref to diff against (required)
 #   AI_REVIEW_JOBS          (int)        — concurrent workers (1 = serial; default 4)
 #   AI_REVIEW_LIST_BATCHES  ("1" or "0") — print the batch plan and exit
+#   AI_REVIEW_INCLUDE_STAGED ("1"/"0")   — diff base→index (committed + staged)
+#                                          instead of base→HEAD; set by --unpushed
 #   AI_REVIEW_REMAINING     (array)      — any unparsed args
+
+# ── Base resolution for --unpushed ──────────────────────────────────────────
+# Resolves the "last pushed" point so --unpushed can cover everything not yet
+# pushed (committed + staged). Order: the branch's upstream; else the merge-base
+# with the remote default branch. Prints the base ref; non-zero if none found.
+ai_review::resolve_unpushed_base() {
+  local base def
+  base="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  if [[ -z "${base}" ]]; then
+    # `git rev-parse --abbrev-ref origin/HEAD` echoes the literal "origin/HEAD"
+    # when the symref is unset — use symbolic-ref, which fails cleanly.
+    def="$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+    if [[ -z "${def}" ]] && git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+      def="origin/main"
+    fi
+    if [[ -z "${def}" ]] && git rev-parse --verify --quiet origin/master >/dev/null 2>&1; then
+      def="origin/master"
+    fi
+    [[ -n "${def}" ]] && base="$(git merge-base HEAD "${def}" 2>/dev/null || true)"
+  fi
+  [[ -n "${base}" ]] || return 1
+  printf '%s' "${base}"
+}
+
 ai_review::parse_args() {
   AI_REVIEW_DRY_RUN=0
   AI_REVIEW_NO_BLOCK=0
   AI_REVIEW_NO_ADJUDICATE=0
   AI_REVIEW_AGAINST="${AI_REVIEW_AGAINST:-}"
   AI_REVIEW_LIST_BATCHES=0
+  AI_REVIEW_INCLUDE_STAGED=0
   # Concurrency: env default (validated below), overridable by --jobs.
   AI_REVIEW_JOBS="${AI_REVIEW_JOBS:-4}"
   AI_REVIEW_REMAINING=()
@@ -106,6 +153,16 @@ ai_review::parse_args() {
         ;;
       --against=*)
         AI_REVIEW_AGAINST="${1#*=}"
+        shift
+        ;;
+      --unpushed)
+        # Cover everything not yet pushed: committed + staged (base→index).
+        if ! AI_REVIEW_AGAINST="$(ai_review::resolve_unpushed_base)"; then
+          ai_review::err "--unpushed: couldn't determine what's been pushed (no upstream and no remote default branch)."
+          ai_review::log "  Re-run with an explicit base, e.g.  --against main"
+          exit 2
+        fi
+        AI_REVIEW_INCLUDE_STAGED=1
         shift
         ;;
       --jobs)
@@ -143,72 +200,24 @@ ai_review::parse_args() {
   fi
 }
 
+# Generic fallback help. Each workflow entrypoint overrides this function
+# (defined after sourcing, so the override wins) with its full reference text.
 ai_review::print_help() {
   cat <<EOF
-AI-assisted PR review (security + compliance)
+${SKILL_HUMAN_NAME:-AI workflow}
 
-Usage:
-  ai-pr-review [options]
-
-Options:
-  --pr <number>        Explicit PR number (overrides auto-discovery).
-  --against <ref>      Base ref to diff against (e.g. origin/main). When set,
-                       PR discovery is skipped; required unless a PR can be
-                       discovered via the SCM CLI.
-  --post-comments      Post the review with inline comments to the SCM
-                       (default SCM: GitHub via the gh CLI).
-  --gate               Exit 1 on any non-APPROVE result (CI-blocking mode).
-                       Default is advisory: findings never fail the build.
-  --json-only          Print only the machine-readable JSON block.
-  --json-out <file>    Also write the JSON block to <file> (lets a caller run
-                       the AI phase and the post phase as separate processes).
-  --post-only          Skip the AI entirely: post a previously produced JSON
-                       block (requires --pr and --json-in). The trusted post
-                       phase of a split run.
-  --json-in <file>     JSON block to post in --post-only mode.
-  -n, --dry-run        Print the resolved tool, plan, and prompt; no AI call.
+Shared options (see the workflow's engine README for the full reference):
+  --against <ref>      Base ref to diff against (e.g. origin/main).
+  --unpushed           Diff committed + staged work against the last push.
+  -n, --dry-run        Print the resolved tool and plan; no AI call.
   --no-block           Always exit 0 regardless of findings or gate mode.
-  --no-adjudicate      Disable adjudication (same as AI_ADJUDICATION=off).
-  --jobs <N>           Concurrent workers when the diff is large enough to
-                       fan out (default 4; also AI_REVIEW_JOBS). 1 = serial.
+  --jobs <N>           Concurrent fan-out workers (default 4). 1 = serial.
   --list-batches       Print how the diff would be batched; no AI call.
+  --no-adjudicate      Disable adjudication (same as AI_ADJUDICATION=off).
   -h, --help           Show this help and exit.
 
-Environment variables:
-  AI_REVIEW_TOOL           Required. One of: claude | codex | copilot.
-  AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
-                           bedrock: claude or codex; vertex: claude only;
-                           azure: codex only. (copilot uses BYOK env vars —
-                           COPILOT_PROVIDER_BASE_URL etc. — on the api path.)
-  AI_REVIEW_MODEL          Model override passed to the CLI's --model flag.
-                           For bedrock this is the Bedrock model ID (required
-                           for codex); for azure it is the Azure deployment name.
-  ANTHROPIC_API_KEY        Claude on the public API (provider=api).
-  OPENAI_API_KEY           Codex on the public API.
-  ANTHROPIC_BASE_URL       Custom Anthropic-compatible endpoint (gateways).
-  OPENAI_BASE_URL          Custom OpenAI-compatible endpoint (gateways).
-  AWS_REGION               Required for provider=bedrock.
-  ANTHROPIC_VERTEX_PROJECT_ID, CLOUD_ML_REGION
-                           Required for provider=vertex.
-  AZURE_OPENAI_ENDPOINT    Required for provider=azure (resource endpoint).
-  AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_VERSION
-                           Key and REST API version for provider=azure.
-  AI_ADJUDICATION          self (default) | independent | off.
-  AI_ADJUDICATION_MODEL    Model for the independent adjudication pass only.
-  AI_REVIEW_JOBS           Concurrent fan-out workers (default 4).
-  AI_REVIEW_BATCH_BY       dir (default) | file — fan-out batching key.
-  AI_REVIEW_BATCH_MIN_FILES
-                           Minimum changed files before fanning out (default 10).
-  AI_REVIEW_CONTEXT_BUDGET Ceiling on context files per AI call (default 15).
-  AI_REVIEW_SCM            SCM backend for discovery/posting (default github).
-  GITHUB_TOKEN / GH_TOKEN  Auth for the gh CLI when posting.
-  CI                       "true" suppresses color output.
-  NO_COLOR                 Suppress ANSI color codes.
-
-Exit codes:
-  0   APPROVE, or findings in advisory mode (or --dry-run / --no-block)
-  1   --gate with non-APPROVE result, or unrecoverable runtime error
-  2   Configuration error (AI_REVIEW_TOOL unset/invalid; bad flags)
+Environment: AI_REVIEW_TOOL (claude | codex | copilot) is required;
+AI_REVIEW_PROVIDER selects api (default) | bedrock | vertex | azure.
 EOF
 }
 
@@ -273,17 +282,50 @@ ai_review::require_against() {
   fi
 }
 
+# has_changes/changed_files support three postures: base→HEAD (the default),
+# base→index under --unpushed (AI_REVIEW_INCLUDE_STAGED=1), and the staged
+# diff when no base is set at all (local, no-PR use). Entrypoints that require
+# a base (the PR review) call ai_review::require_against first.
 ai_review::has_changes() {
-  ai_review::require_against
-  ! git diff --quiet "${AI_REVIEW_AGAINST}" HEAD --
+  # The negated `git diff --quiet` IS the function's return value.
+  # shellcheck disable=SC2251
+  if [[ -n "${AI_REVIEW_AGAINST:-}" ]]; then
+    if ! git rev-parse --verify --quiet "${AI_REVIEW_AGAINST}^{commit}" >/dev/null; then
+      ai_review::err "Git ref not found: ${AI_REVIEW_AGAINST}"
+      exit 1
+    fi
+    if [[ "${AI_REVIEW_INCLUDE_STAGED:-0}" == "1" ]]; then
+      ! git diff --cached --quiet "${AI_REVIEW_AGAINST}" --
+    else
+      ! git diff --quiet "${AI_REVIEW_AGAINST}" HEAD --
+    fi
+  else
+    ! git diff --cached --quiet
+  fi
 }
 
 ai_review::changed_files() {
-  git diff --name-only "${AI_REVIEW_AGAINST}" HEAD --
+  if [[ -n "${AI_REVIEW_AGAINST:-}" ]]; then
+    if [[ "${AI_REVIEW_INCLUDE_STAGED:-0}" == "1" ]]; then
+      git diff --cached --name-only "${AI_REVIEW_AGAINST}" --
+    else
+      git diff --name-only "${AI_REVIEW_AGAINST}" HEAD --
+    fi
+  else
+    git diff --cached --name-only
+  fi
 }
 
 ai_review::diff_command_description() {
-  echo "git diff ${AI_REVIEW_AGAINST} HEAD"
+  if [[ -n "${AI_REVIEW_AGAINST:-}" ]]; then
+    if [[ "${AI_REVIEW_INCLUDE_STAGED:-0}" == "1" ]]; then
+      echo "git diff --cached ${AI_REVIEW_AGAINST} (committed + staged, unpushed)"
+    else
+      echo "git diff ${AI_REVIEW_AGAINST} HEAD"
+    fi
+  else
+    echo "git diff --cached"
+  fi
 }
 
 # ai_review::diff_has_iac
@@ -321,31 +363,171 @@ ai_review::diff_has_iac() {
   return 1
 }
 
+# ── Suite-mode plumbing (AI_RUN_SUITE=1 only) ───────────────────────────────
+# Prefix the CLI call with `timeout` only in suite mode AND when a timeout
+# binary is present (GNU coreutils, or gtimeout on macOS). In read-only mode
+# we add no wrapper — there is no long-running shell loop to bound.
+ai_review::timeout_prefix() {
+  if ((AI_RUN_SUITE != 1)); then
+    return 0
+  fi
+  if command -v timeout &>/dev/null; then
+    printf 'timeout %s' "${AI_SUITE_TIMEOUT_SECS}"
+  elif command -v gtimeout &>/dev/null; then
+    printf 'gtimeout %s' "${AI_SUITE_TIMEOUT_SECS}"
+  fi
+}
+
+# Live progress streaming (local interactive suite runs only). We test STDERR
+# (-t 2), not stdout: invoke_ai's stdout is captured via $(...), so inside
+# these functions stdout is always a pipe; stderr flowing to a terminal is the
+# "a human is watching" signal, and stderr is where the narration goes.
+ai_review::should_stream() {
+  [[ "${AI_REVIEW_STREAM:-1}" != "0" ]] || return 1
+  [[ -t 2 ]] || return 1
+  [[ "${CI:-}" != "true" ]] || return 1
+  command -v python3 &>/dev/null || return 1
+  return 0
+}
+
+# Reads claude stream-json (NDJSON) on stdin. Narrates assistant text + tool
+# calls to STDERR; prints ONLY the final result text to STDOUT so the captured
+# output (markers + JSON) is byte-identical to the non-streaming path.
+ai_review::stream_split() {
+  python3 -c '
+import sys, json
+def w(s):  # progress → stderr, flushed so it appears live
+    sys.stderr.write(s + "\n"); sys.stderr.flush()
+final = ""
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        e = json.loads(line)
+    except Exception:
+        continue
+    t = e.get("type")
+    if t == "assistant":
+        for blk in e.get("message", {}).get("content", []):
+            bt = blk.get("type")
+            if bt == "text":
+                txt = (blk.get("text") or "").strip()
+                if txt:
+                    w("  ⏺ " + txt)
+            elif bt == "tool_use":
+                inp = blk.get("input", {}) or {}
+                arg = inp.get("command") or inp.get("file_path") or inp.get("pattern") or inp.get("description") or ""
+                arg = str(arg).replace("\n", " ")
+                if len(arg) > 80:
+                    arg = arg[:77] + "..."
+                w("  ⏎ " + str(blk.get("name")) + ("  " + arg if arg else ""))
+    elif t == "result":
+        final = e.get("result") or ""
+sys.stdout.write(final)
+'
+}
+
+# Reads `codex exec --json` JSONL events on stdin. Same contract as
+# stream_split: narrate to STDERR, emit ONLY the final agent message to STDOUT.
+ai_review::codex_stream_split() {
+  python3 -c '
+import sys, json
+def w(s):
+    sys.stderr.write(s + "\n"); sys.stderr.flush()
+final = ""
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        e = json.loads(line)
+    except Exception:
+        continue
+    item = e.get("item") or e
+    it = item.get("item_type") or item.get("type") or e.get("type") or ""
+    if it in ("agent_message", "assistant_message", "message"):
+        txt = (item.get("text") or item.get("message") or "").strip()
+        if txt:
+            w("  ⏺ " + (txt if len(txt) <= 200 else txt[:197] + "..."))
+            final = txt
+    elif it == "reasoning":
+        txt = (item.get("text") or "").strip()
+        if txt:
+            w("  ⏺ " + (txt if len(txt) <= 200 else txt[:197] + "..."))
+    elif it in ("command_execution", "command", "exec"):
+        cmd = (item.get("command") or item.get("cmd") or "").replace("\n", " ")
+        if len(cmd) > 80:
+            cmd = cmd[:77] + "..."
+        if cmd:
+            w("  ⏎ command  " + cmd)
+    elif it == "file_change":
+        path = item.get("path") or item.get("file") or ""
+        if path:
+            w("  ⏎ file_change  " + str(path))
+sys.stdout.write(final)
+'
+}
+
+# Turn-budget overflow detection (suite mode). When the agent exhausts
+# --max-turns it exits non-zero with a recognizable banner instead of a
+# marker; callers degrade that to a non-blocking soft outcome.
+ai_review::is_max_turns() {
+  local output="$1"
+  grep -qiE 'reached max turns|max[ _-]?turns|turn limit' <<<"${output}"
+}
+
 # ── Tool-specific invocation ────────────────────────────────────────────────
 # ai_review::invoke_tool <prompt> [model]
 # Invokes the resolved AI CLI in non-interactive mode with the given prompt,
 # printing the raw response to stdout. When [model] is non-empty it is passed
-# to the CLI's model-selection flag — this is how AI_REVIEW_MODEL selects a
-# Bedrock model ID and how the adjudication pass can run on a different model
-# of the same CLI. Any non-zero exit from the underlying CLI propagates.
+# to the CLI's model-selection flag. Any non-zero CLI exit propagates.
 #
-# Consumer repos have no per-repo CLI permission settings, so each CLI gets
-# explicit non-interactive permission flags scoped to read-only review work.
+# Two postures, selected by AI_RUN_SUITE:
+#   0 (default)  read-only: explicit permission flags scoped to inspection +
+#                git diff/log/show. The PR-review posture.
+#   1            suite mode: the agent may install dependencies and RUN the
+#                repo's test suite — write grants, a turn budget, a hard
+#                timeout, and (on local interactive runs) live streaming.
 ai_review::invoke_tool() {
   local prompt="$1"
   local model="${2:-}"
+  local stream="${AI_REVIEW_DO_STREAM:-0}"
 
   case "${AI_REVIEW_TOOL_RESOLVED}" in
     claude)
       ai_review::require_cli "claude" \
         "Install Claude Code:  npm install -g @anthropic-ai/claude-code"
-      # -p = non-interactive (print) mode. --allowed-tools grants read-only
-      # inspection plus the git commands the skill instructions rely on;
-      # nothing else (no writes, no network tools, no gh).
-      claude -p "${prompt}" \
-        ${model:+--model "${model}"} \
-        --allowed-tools "Read Grep Glob Bash(git diff:*) Bash(git log:*) Bash(git show:*)" \
-        2>&1
+      if ((AI_RUN_SUITE == 1)); then
+        # Headless `claude -p` HANGS on any Bash call without a permission
+        # grant, so suite mode requires these flags. --allowedTools scopes the
+        # grant; --max-turns bounds the loop. No 2>&1: stderr diagnostics must
+        # not corrupt the parsed stdout.
+        if ((stream == 1)); then
+          # < /dev/null: `-p` otherwise waits on stdin (the pipe keeps it open).
+          $(ai_review::timeout_prefix) claude -p "${prompt}" \
+            ${model:+--model "${model}"} \
+            --permission-mode bypassPermissions \
+            --allowedTools "Bash,Read,Edit,Grep,Glob,Task,Agent" \
+            --max-turns "${AI_SUITE_MAX_TURNS}" \
+            --output-format stream-json --verbose </dev/null |
+            ai_review::stream_split
+        else
+          $(ai_review::timeout_prefix) claude -p "${prompt}" \
+            ${model:+--model "${model}"} \
+            --permission-mode bypassPermissions \
+            --allowedTools "Bash,Read,Edit,Grep,Glob,Task,Agent" \
+            --max-turns "${AI_SUITE_MAX_TURNS}"
+        fi
+      else
+        # -p = non-interactive (print) mode. --allowed-tools grants read-only
+        # inspection plus the git commands the skill instructions rely on;
+        # nothing else (no writes, no network tools, no gh).
+        claude -p "${prompt}" \
+          ${model:+--model "${model}"} \
+          --allowed-tools "Read Grep Glob Bash(git diff:*) Bash(git log:*) Bash(git show:*)" \
+          2>&1
+      fi
       ;;
     codex)
       ai_review::require_cli "codex" \
@@ -358,22 +540,92 @@ ai_review::invoke_tool() {
         [[ -n "${AWS_REGION:-}" ]] &&
           codex_cfg+=(-c "model_providers.amazon-bedrock.aws.region=${AWS_REGION}")
       fi
-      # --sandbox read-only = filesystem read access (git diff / file reads)
-      # with no write/network side effects.
-      codex exec --sandbox read-only --skip-git-repo-check \
-        "${codex_cfg[@]+"${codex_cfg[@]}"}" \
-        ${model:+--model "${model}"} \
-        "${prompt}" 2>&1
+      if ((AI_RUN_SUITE == 1)); then
+        # workspace-write allows file writes but not network by default, so
+        # dep installs fail without the explicit network grant.
+        codex_cfg+=(-c sandbox_workspace_write.network_access=true)
+        if ((stream == 1)); then
+          $(ai_review::timeout_prefix) codex exec --json --sandbox workspace-write \
+            "${codex_cfg[@]+"${codex_cfg[@]}"}" \
+            ${model:+--model "${model}"} \
+            --skip-git-repo-check "${prompt}" |
+            ai_review::codex_stream_split
+        else
+          $(ai_review::timeout_prefix) codex exec --sandbox workspace-write \
+            "${codex_cfg[@]+"${codex_cfg[@]}"}" \
+            ${model:+--model "${model}"} \
+            --skip-git-repo-check "${prompt}" 2>&1
+        fi
+      else
+        # --sandbox read-only = filesystem read access (git diff / file reads)
+        # with no write/network side effects.
+        codex exec --sandbox read-only --skip-git-repo-check \
+          "${codex_cfg[@]+"${codex_cfg[@]}"}" \
+          ${model:+--model "${model}"} \
+          "${prompt}" 2>&1
+      fi
       ;;
     copilot)
       ai_review::require_cli "copilot" \
         "Install GitHub Copilot CLI:  npm install -g @github/copilot"
-      # copilot -p = non-interactive single-prompt mode. Tool-permission
-      # flags vary across copilot CLI releases; the skill instructions only
-      # require read access and git diff, which the default posture allows.
-      copilot -p "${prompt}" \
-        ${model:+--model "${model}"} \
-        2>&1
+      if ((AI_RUN_SUITE == 1)); then
+        # --allow-all-tools lets it run install/test commands headlessly; -s
+        # suppresses stats for clean scriptable output. Copilot has no
+        # turn/timeout cap of its own, so the timeout wrapper is the bound.
+        # No structured event output exists for -p mode, so streaming uses the
+        # supported preToolUse hook under a throwaway COPILOT_HOME.
+        if ((stream == 1)); then
+          local cphome
+          cphome="$(mktemp -d "${TMPDIR:-/tmp}/ai-copilot-home.XXXXXX")"
+          mkdir -p "${cphome}/hooks"
+          cat >"${cphome}/hooks/stream.sh" <<'HOOK'
+#!/usr/bin/env bash
+# preToolUse hook: narrate the call payload to stderr; return {} unchanged.
+payload="$(cat)"
+python3 -c '
+import sys, json
+try:
+    e = json.loads(sys.argv[1] or "{}")
+    name = e.get("toolName") or "tool"
+    args = e.get("toolArgs") or ""
+    if not isinstance(args, str):
+        args = json.dumps(args)
+    args = args.replace("\n", " ")
+    if len(args) > 80:
+        args = args[:77] + "..."
+    sys.stderr.write("  ⏎ " + str(name) + (("  " + args) if args else "") + "\n")
+    sys.stderr.flush()
+except Exception:
+    pass
+' "$payload" || true
+printf '{}'
+HOOK
+          chmod +x "${cphome}/hooks/stream.sh"
+          cat >"${cphome}/hooks/hooks.json" <<HOOKCFG
+{
+  "preToolUse": [
+    { "type": "command", "bash": "${cphome}/hooks/stream.sh", "timeoutSec": 10 }
+  ]
+}
+HOOKCFG
+          local rc=0
+          COPILOT_HOME="${cphome}" $(ai_review::timeout_prefix) \
+            copilot -p "${prompt}" --allow-all-tools \
+            ${model:+--model "${model}"} -s || rc=$?
+          rm -rf "${cphome}"
+          return $rc
+        else
+          $(ai_review::timeout_prefix) copilot -p "${prompt}" --allow-all-tools \
+            ${model:+--model "${model}"} -s 2>&1
+        fi
+      else
+        # copilot -p = non-interactive single-prompt mode. Tool-permission
+        # flags vary across copilot CLI releases; the skill instructions only
+        # require read access and git diff, which the default posture allows.
+        copilot -p "${prompt}" \
+          ${model:+--model "${model}"} \
+          2>&1
+      fi
       ;;
     *)
       ai_review::err "Internal error: unknown resolved tool '${AI_REVIEW_TOOL_RESOLVED}'"
@@ -383,33 +635,46 @@ ai_review::invoke_tool() {
 }
 
 # First-pass invocation: the configured tool, the AI_REVIEW_MODEL override (if
-# any), the dispatcher's SKILL_PROMPT.
+# any), the dispatcher's SKILL_PROMPT. In suite mode this also decides
+# streaming (BEFORE exporting CI, which should_stream gates on) and exports
+# CI=true so the repo's own test runners do a single headless non-watch run.
+# Safe: callers capture via $(...), a subshell, so the export never escapes.
 ai_review::invoke_ai() {
+  if ((AI_RUN_SUITE == 1)); then
+    if ai_review::should_stream; then
+      AI_REVIEW_DO_STREAM=1
+      ai_review::info "Streaming the agent's steps below (set AI_REVIEW_STREAM=0 to silence)…"
+    else
+      AI_REVIEW_DO_STREAM=0
+    fi
+    export CI=true
+  fi
   ai_review::invoke_tool "${SKILL_PROMPT}" "${AI_REVIEW_MODEL:-}"
 }
 
 # ── Result marker parsing ───────────────────────────────────────────────────
-# The canonical marker is:  <<<AI_REVIEW_RESULT:APPROVE|COMMENT|REQUEST_CHANGES>>>
-# The AI emits its verdict as the LAST marker in its response. We must take the
-# last occurrence, not the first match, because the captured output can contain
+# The canonical marker is:  <<<AI_REVIEW_RESULT:<word>>>>  where <word> is one
+# of the workflow's AI_REVIEW_MARKER_VOCAB alternation. The AI emits its
+# verdict as the LAST marker in its response. We must take the last
+# occurrence, not the first match, because the captured output can contain
 # earlier *echoes* of the marker list: the prompt itself shows the markers, and
 # CLIs that stream the full agent transcript (e.g. `codex exec`) replay them.
 # A naive first-match grep would read the instructions, not the verdict.
 ai_review::parse_result() {
   local output="$1"
   local marker
-  marker="$(grep -oE '<<<AI_REVIEW_RESULT:(APPROVE|COMMENT|REQUEST_CHANGES)>>>' <<<"${output}" | tail -n 1)"
+  marker="$(grep -oE "<<<AI_REVIEW_RESULT:(${AI_REVIEW_MARKER_VOCAB})>>>" <<<"${output}" | tail -n 1)"
 
-  case "${marker}" in
-    *REQUEST_CHANGES*) echo "REQUEST_CHANGES" ;;
-    *COMMENT*) echo "COMMENT" ;;
-    *APPROVE*) echo "APPROVE" ;;
-    *) echo "UNPARSEABLE" ;;
-  esac
+  if [[ -n "${marker}" ]]; then
+    marker="${marker#<<<AI_REVIEW_RESULT:}"
+    printf '%s\n' "${marker%>>>}"
+  else
+    echo "UNPARSEABLE"
+  fi
 }
 
-# Pull the JSON block between AI_REVIEW_JSON_BEGIN/END markers out of the
-# given text.
+# Pull the JSON block between <!-- ${AI_REVIEW_JSON_MARKER}_BEGIN/END -->
+# markers out of the given text.
 #
 # We deliberately return only the LAST closed marker pair. Some CLIs (notably
 # `codex exec`, whose stdout we capture via 2>&1) echo the dispatcher's own
@@ -421,11 +686,11 @@ ai_review::parse_result() {
 # is the authoritative one.
 ai_review::extract_review_json() {
   local input="$1"
-  echo "${input}" | awk '
-    /<!-- AI_REVIEW_JSON_BEGIN -->/ { capturing=1; block=""; next }
-    /<!-- AI_REVIEW_JSON_END -->/   { if (capturing) { last=block; have=1 } capturing=0; next }
-    capturing                       { block = block $0 "\n" }
-    END                             { if (have) printf "%s", last }
+  echo "${input}" | awk -v m="${AI_REVIEW_JSON_MARKER}" '
+    index($0, "<!-- " m "_BEGIN -->") { capturing=1; block=""; next }
+    index($0, "<!-- " m "_END -->")   { if (capturing) { last=block; have=1 } capturing=0; next }
+    capturing                         { block = block $0 "\n" }
+    END                               { if (have) printf "%s", last }
   '
 }
 
@@ -508,7 +773,7 @@ first-pass automated PR review. You did not perform the first pass and must
 not assume it was correct. Your full instructions:
 
 ──────────────────── ADJUDICATION INSTRUCTIONS ────────────────────
-$(cat "${ENGINE_HOME}/skills/finding-adjudication.md")
+$(cat "${ENGINE_HOME}/skills/base/finding-adjudication.md")
 ────────────────────────────────────────────────────────────────────
 
 The code under review is the PR diff:

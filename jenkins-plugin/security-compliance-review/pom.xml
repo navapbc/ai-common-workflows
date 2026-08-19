@@ -96,8 +96,10 @@
             <configuration>
               <target>
                 <mkdir dir="${project.build.outputDirectory}/io/jenkins/plugins/aipreview"/>
-                <zip destfile="${project.build.outputDirectory}/io/jenkins/plugins/aipreview/ai-review-engine.zip"
-                     basedir="${project.basedir}/../../engine"/>
+                <zip destfile="${project.build.outputDirectory}/io/jenkins/plugins/aipreview/ai-review-engine.zip">
+                  <zipfileset dir="${project.basedir}/../../engines/_common" prefix="_common"/>
+                  <zipfileset dir="${project.basedir}/../../engines/security-compliance-review" prefix="security-compliance-review"/>
+                </zip>
                 <echo file="${project.build.outputDirectory}/io/jenkins/plugins/aipreview/engine-version.txt">${project.version}</echo>
               </target>
             </configuration>
