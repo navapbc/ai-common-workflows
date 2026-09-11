@@ -70,17 +70,33 @@ teardown() {
   [[ "$output" == *"DRY-RUN"* ]]
 }
 
-@test "profile: defaults to cms-ars" {
+@test "profile: defaults to baseline" {
   run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"Profile:"* ]]
-  [[ "$output" == *"cms-ars"* ]]
+  [[ "$output" == *"baseline"* ]]
 }
 
-@test "profile: baseline selected via AI_REVIEW_PROFILE" {
-  AI_REVIEW_PROFILE=baseline run bash "${ENGINE}" --against origin/main --dry-run
+@test "profile: cms-ars selected via AI_REVIEW_PROFILE" {
+  AI_REVIEW_PROFILE=cms-ars run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"baseline"* ]]
+  [[ "$output" == *"Profile:"*"cms-ars"* ]]
+}
+
+@test "profile: baseline compliance floor always applies; cms-ars only adds to it" {
+  local log_baseline="${WORK}/prompt-baseline.log"
+  STUB_PROMPT_LOG="${log_baseline}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+    run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  grep -q -- "COMPLIANCE PERSPECTIVE ────" "${log_baseline}"
+  ! grep -q -- "ADDITIONS" "${log_baseline}"
+
+  local log_cms="${WORK}/prompt-cms.log"
+  AI_REVIEW_PROFILE=cms-ars STUB_PROMPT_LOG="${log_cms}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+    run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  grep -q -- "COMPLIANCE PERSPECTIVE ────" "${log_cms}"
+  grep -q -- "COMPLIANCE PERSPECTIVE — cms-ars ADDITIONS" "${log_cms}"
 }
 
 @test "profile: unknown name is a config error (exit 2)" {

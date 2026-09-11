@@ -43,8 +43,8 @@ permissions:
   pull-requests: write # open the PR
 
 env:
-  # Compliance profile to track: cms-ars (default) | baseline | <your profile>.
-  PROFILE: cms-ars
+  # Compliance profile to track: baseline (default) | cms-ars | <your profile>.
+  PROFILE: baseline
   # Pin ai-common-workflows to a commit SHA (preferred) or a release tag.
   ACW_REPO: navapbc/ai-common-workflows
   ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char SHA, or v1.0.0

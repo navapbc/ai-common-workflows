@@ -24,9 +24,10 @@ adapters; the generic harness is written once and never copied (see
 Workflows today: **security-compliance-review** (`harness/ai-pr-review`) and
 **test-classifier** (`harness/ai-test-classifier`).
 
-The **compliance profile** (`AI_REVIEW_PROFILE`, default `cms-ars`) selects the
-review rubric under the engine's `skills/profiles/`; rubric files resolve from
-the profile first, then fall back to `skills/base/`. See
+The **compliance profile** (`AI_REVIEW_PROFILE`, default `baseline`) selects
+additions under the engine's `skills/profiles/` to the always-applied
+compliance floor in `skills/base/iac-compliance.md`; other rubric files
+resolve from the profile first, then fall back to `skills/base/`. See
 [profiles.md](profiles.md).
 
 ## The engine is the single source of truth

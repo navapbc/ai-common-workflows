@@ -11,8 +11,8 @@ action gives you a second independent reviewer.
 Instructions are organized by **compliance profile**, mirroring the engine:
 
 ```
-profiles/cms-ars/instructions/    # CMS ARS 5.1 / NIST 800-53 (default)
-profiles/baseline/instructions/   # generic CIS / NIST CSF / OWASP
+profiles/baseline/instructions/   # generic CIS / NIST CSF / OWASP (default)
+profiles/cms-ars/instructions/    # CMS ARS 5.1 / NIST 800-53
 ```
 
 Copilot code review reads any `*.instructions.md` file in a repo's
@@ -35,7 +35,7 @@ Your existing `.github/copilot-instructions.md`, if any, is never touched.
 Copy [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
 into your repo's `.github/workflows/`, set two values, and merge:
 
-- `PROFILE` — the compliance profile to track (`cms-ars` default, `baseline`, …).
+- `PROFILE` — the compliance profile to track (`baseline` default, `cms-ars`, …).
 - `ACW_REF` — pin `ai-common-workflows` to a commit SHA or release tag.
 
 On its schedule (and on demand), the workflow fetches that profile's
@@ -63,7 +63,7 @@ copy the files in once:
 
 ```bash
 mkdir -p .github/instructions
-profile="cms-ars"   # or: baseline
+profile="baseline"   # or: cms-ars
 base="https://raw.githubusercontent.com/navapbc/ai-common-workflows/v1.0.0/copilot-instructions/profiles/${profile}/instructions"
 for f in security iac auth scripts; do
   curl -fsSL "${base}/ai-review-${f}.instructions.md" \

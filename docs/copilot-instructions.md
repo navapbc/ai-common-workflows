@@ -8,8 +8,9 @@ them in sync. For the consumer-facing quickstart, see
 
 The `ai-review-*.instructions.md` files under
 `copilot-instructions/profiles/<profile>/instructions/` are the source of truth
-(one set per compliance profile; `cms-ars` is the default, `baseline` is the
-framework-neutral set). Consumer repos receive their chosen profile's files in
+(one set per compliance profile; `baseline` is the default, framework-neutral
+set, and `cms-ars` is the CMS ARS 5.1 / NIST 800-53 variant). Consumer repos
+receive their chosen profile's files in
 `.github/instructions/`, where GitHub Copilot's code review reads any
 `*.instructions.md` that carries an `applyTo:` frontmatter glob.
 

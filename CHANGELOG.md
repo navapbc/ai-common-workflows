@@ -66,10 +66,14 @@ follow [Semantic Versioning](https://semver.org/).
   global params flow to the copilot CLI as `COPILOT_PROVIDER_*` / `COPILOT_MODEL`,
   which the CLI sends directly to your endpoint. copilot has no native Bedrock
   type — front Bedrock with an in-boundary Anthropic/OpenAI-compatible gateway.
-- **Compliance profiles** (`AI_REVIEW_PROFILE`, default `cms-ars`): the
-  compliance rubric is now selectable. Ships `cms-ars` (CMS ARS 5.1 /
-  NIST 800-53) and a framework-neutral `baseline` (CIS / NIST CSF / OWASP) under
-  `engine/profiles/`, plus a bring-your-own directory path. Surfaced as the
+- **Compliance profiles** (`AI_REVIEW_PROFILE`, default `baseline`): the
+  compliance perspective always applies a framework-neutral floor (CIS /
+  NIST CSF / OWASP); a selectable profile can *add* framework-specific
+  citations and checks on top without replacing or weakening it. Ships
+  `baseline` (the floor, no additions) and `cms-ars` (adds CMS ARS 5.1 /
+  NIST 800-53 control-ID citations plus CMS/HIPAA-specific checks) under
+  `engines/security-compliance-review/skills/profiles/`, plus a
+  bring-your-own directory path (also additive). Surfaced as the
   `profile` input (Action), the `profile` step/global param (Jenkins), and the
   `PROFILE` in the Copilot-instructions sync workflow. See
   [docs/profiles.md](docs/profiles.md).

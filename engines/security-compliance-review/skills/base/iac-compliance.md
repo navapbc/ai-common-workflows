@@ -1,11 +1,16 @@
-# IaC Compliance Perspective — Baseline
+# IaC Compliance Perspective
 
 A framework-neutral infrastructure-as-code security review. It applies
 widely-recognized cloud security best practices — **CIS Benchmarks**, the
 **NIST Cybersecurity Framework (CSF)**, and **OWASP** guidance — to the changes
-in a pull request, without tailoring to any specific agency control catalog.
-Use this profile when you want a solid security baseline and are **not** bound
-to CMS ARS / NIST 800-53 (for that, use the `cms-ars` profile, or add your own).
+in a pull request. This is the compliance floor: it always applies,
+regardless of which `profile` is selected.
+
+A profile may layer additional, framework-specific checks on top of this
+(e.g. `cms-ars` adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations
+and CMS/HIPAA-specific checks). When it does, that addition is included
+immediately after this perspective in the prompt and takes precedence over
+this file on any conflict — see [docs/profiles.md](../../../../docs/profiles.md).
 
 Apply it to the PR diff; the output contract (report format, JSON block, result
 marker) is defined in the PR-review instructions that accompany this perspective
@@ -141,5 +146,5 @@ which categories were skipped as not applicable to this diff, and why.
 - **Not a tool replacement:** complements but does not replace `checkov`,
   `tfsec`, `cfn-lint`, `kube-score`, or a CSPM. Run those in CI too.
 - **Bound to a specific framework?** Use the `cms-ars` profile for CMS ARS 5.1 /
-  NIST 800-53 Rev 5 control mapping, or add a profile under `engine/profiles/`
-  (see docs/profiles.md).
+  NIST 800-53 Rev 5 control mapping (layered on top of this file, not instead
+  of it), or add a profile under `skills/profiles/` (see docs/profiles.md).

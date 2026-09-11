@@ -58,11 +58,15 @@ fi
 source "${AI_COMMON_HOME}/scm/${AI_REVIEW_SCM}.sh"
 
 # ── Compliance profile resolution ───────────────────────────────────────────
-# A profile supplies the compliance rubric (and may override any base skill).
-# AI_REVIEW_PROFILE is a bundled name under profiles/ (cms-ars is the default),
-# or a path to a custom profile directory (bring-your-own). Rubric files resolve
-# from the active profile first, then fall back to the shared skills/ base.
-AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-cms-ars}"
+# A profile supplies additions to the compliance rubric (and may override any
+# base skill outright). AI_REVIEW_PROFILE is a bundled name under profiles/
+# (baseline is the default — the framework-neutral CIS/NIST-CSF/OWASP floor),
+# or a path to a custom profile directory (bring-your-own). For pr-review.md
+# and code-security.md, the active profile's copy replaces the shared base
+# entirely if present. For iac-compliance.md specifically, the shared base is
+# ALWAYS applied and the profile's copy (if any) is layered on top as an
+# addition, not a replacement — see build_prompt() and docs/profiles.md.
+AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-baseline}"
 if [[ -d "${AI_REVIEW_PROFILE}" ]]; then
   PROFILE_DIR="$(cd "${AI_REVIEW_PROFILE}" && pwd)"
 elif [[ -d "${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}" ]]; then
@@ -75,7 +79,9 @@ else
 fi
 
 # pr_review::rubric <file> — echo the path to a rubric file, preferring the
-# active profile's override, else the shared base in skills/base/.
+# active profile's override, else the shared base in skills/base/. Used for
+# pr-review.md and code-security.md (whole-file override semantics). NOT used
+# for iac-compliance.md — see pr_review::build_prompt's compliance_block.
 pr_review::rubric() {
   if [[ -f "${PROFILE_DIR}/$1" ]]; then
     printf '%s' "${PROFILE_DIR}/$1"
@@ -118,6 +124,10 @@ Options:
 
 Environment variables:
   AI_REVIEW_TOOL           Required. One of: claude | codex | copilot.
+  AI_REVIEW_PROFILE        Compliance profile: baseline (default) | cms-ars |
+                           a skills/profiles/ name or a directory path. The
+                           compliance rubric always includes the baseline; a
+                           profile only adds to it (see docs/profiles.md).
   AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
                            bedrock: claude or codex; vertex: claude only;
                            azure: codex only. (copilot uses BYOK env vars —
@@ -177,13 +187,30 @@ SCOPE
 
   local compliance_block=""
   if ai_review::diff_has_iac; then
+    # The base compliance rubric ALWAYS applies (the compliance floor). If the
+    # active profile supplies its own iac-compliance.md, it is an ADDITION —
+    # appended, not substituted — and takes precedence over the base on any
+    # conflict. See docs/profiles.md.
     compliance_block="$(
       cat <<COMPLIANCE
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
-$(cat "$(pr_review::rubric iac-compliance.md)")
+$(cat "${ENGINE_HOME}/skills/base/iac-compliance.md")
 COMPLIANCE
     )"
+    if [[ -f "${PROFILE_DIR}/iac-compliance.md" ]]; then
+      compliance_block="${compliance_block}$(
+        cat <<COMPLIANCE_ADD
+
+──────────── COMPLIANCE PERSPECTIVE — ${AI_REVIEW_PROFILE} ADDITIONS ────────────
+The following supplements the compliance perspective above for the
+'${AI_REVIEW_PROFILE}' profile. On any conflict with the perspective above
+(severity, citation, guidance), this section takes precedence.
+
+$(cat "${PROFILE_DIR}/iac-compliance.md")
+COMPLIANCE_ADD
+      )"
+    fi
   fi
 
   local self_adjudication_block=""

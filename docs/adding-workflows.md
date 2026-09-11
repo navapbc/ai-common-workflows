@@ -120,7 +120,11 @@ If your workflow judges code against a control framework, make the framework a
 **profile** rather than hardcoding it — the same pattern the review uses
 (`AI_REVIEW_PROFILE`, resolved from the engine's `skills/profiles/<name>/` with
 fallback to `skills/base/`, or a bring-your-own directory path). This lets one workflow
-serve several agencies without forks. See [profiles.md](profiles.md).
+serve several agencies without forks. Consider whether a profile should fully
+override a rubric file or only *add* to a shared floor — the review's
+compliance perspective does the latter, so a generic baseline always applies
+and no profile can accidentally weaken it (see
+[profiles.md](profiles.md#how-resolution-works)).
 
 ## Checklist before you open the PR
 

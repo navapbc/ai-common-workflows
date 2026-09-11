@@ -81,14 +81,16 @@ yet, so egress control is your infrastructure's responsibility — see
 
 ## Compliance profiles
 
-The security perspective is universal; the **compliance** perspective is a
-selectable `profile`:
+The security perspective is universal. The **compliance** perspective always
+includes a framework-neutral floor (CIS / NIST CSF / OWASP); a selectable
+`profile` may *add* agency-specific checks and control-ID citations on top —
+it never replaces or weakens the floor:
 
 ```yaml
         with:
-          profile: cms-ars   # default — CMS ARS 5.1 / NIST SP 800-53 Rev 5
-        # profile: baseline  # generic CIS / NIST CSF / OWASP, no agency controls
-        # profile: ./my-org-profile   # bring your own rubric directory
+          profile: baseline   # default — floor only, no agency overlay
+        # profile: cms-ars    # adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 citations + CMS/HIPAA checks
+        # profile: ./my-org-profile   # bring your own — additions only, layered the same way
 ```
 
 Same knob on the Jenkins step (`profile:`) and per-subscriber for the Copilot

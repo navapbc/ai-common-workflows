@@ -50,10 +50,13 @@ inputs:
   # ── Compliance profile ────────────────────────────────────────────────────
   profile:
     description: >-
-      Compliance profile selecting the rubric: cms-ars (default) | baseline, a
-      name under the engine's skills/profiles/, or a path to a custom profile directory.
+      Compliance profile: baseline (default, no agency overlay) | cms-ars
+      (adds CMS ARS 5.1 / NIST 800-53 citations + CMS/HIPAA checks), a name
+      under the engine's skills/profiles/, or a path to a custom profile
+      directory. The compliance floor always applies; a profile only adds
+      to it.
     required: false
-    default: "cms-ars"
+    default: "baseline"
 
   # ── LLM endpoint ──────────────────────────────────────────────────────────
   provider:
