@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# engine/lib/sandbox/sandbox.sh
+# engines/_common/sandbox/sandbox.sh
 #
 # Runs the AI PR review inside a Docker sandbox with default-deny egress.
 #

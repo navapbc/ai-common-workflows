@@ -54,7 +54,7 @@ phase can be isolated:
 1. **Collect** (trusted): PR context from CI env; diff from local git.
 2. **Review** (untrusted input): the AI reads the diff and emits findings JSON.
    **The SCM token is not in this phase's environment.**
-3. **Post** (trusted, deterministic): `lib/scm/github.sh` turns findings JSON
+3. **Post** (trusted, deterministic): `engines/_common/scm/github.sh` turns findings JSON
    into a GitHub review via `gh api`. The only phase that holds the SCM token.
 
 Both front ends implement this split with the engine's `--json-out` /
@@ -72,7 +72,7 @@ README) and is not shipped.
 
 ## The SCM seam
 
-Everything SCM-specific is behind `lib/scm/<name>.sh`, selected by
+Everything SCM-specific is behind `engines/_common/scm/<name>.sh`, selected by
 `AI_REVIEW_SCM` (default `github`). A new backend (Bitbucket, GitLab)
 implements the same three functions — `scm::pr_base_ref`, `scm::discover_pr`,
 `scm::post_review` — and nothing else in the engine changes.
@@ -80,8 +80,8 @@ implements the same three functions — `scm::pr_base_ref`, `scm::discover_pr`,
 ## Fan-out and adjudication
 
 For large diffs the engine splits the changed files into batches
-(`lib/core.sh` planning/packing), reviews them concurrently, and merges the
-per-batch findings JSON (`lib/fold_review_json.py`, deduplicating by
+(`engines/_common/harness/core.sh` planning/packing), reviews them concurrently, and merges the
+per-batch findings JSON (`engines/_common/harness/fold_review_json.py`, deduplicating by
 path/line/perspective and taking the worst-case action). Adjudication is an
 optional extra pass — self-critique folded into the prompt, or an independent
 fresh-agent review of the merged findings — that can only confirm, downgrade,

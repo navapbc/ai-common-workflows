@@ -1,6 +1,6 @@
 """Build the GitHub review-API payload from the AI's review JSON.
 
-Invoked by engine/lib/scm/github.sh as:
+Invoked by engines/_common/scm/github.sh as:
 
     python3 github_payload.py < review.json
 

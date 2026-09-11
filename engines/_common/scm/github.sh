@@ -4,7 +4,7 @@
 # GitHub SCM backend for the AI PR-review engine: PR discovery and review
 # posting via the `gh` CLI. This file is the ONLY place the engine talks to
 # an SCM — swapping in another backend later means providing a sibling file
-# (e.g. lib/scm/bitbucket.sh) that implements the same three functions and
+# (e.g. scm/bitbucket.sh) that implements the same three functions and
 # selecting it with AI_REVIEW_SCM.
 #
 #   scm::pr_base_ref <pr>       print the PR's base branch name

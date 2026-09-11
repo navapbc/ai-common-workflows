@@ -125,7 +125,7 @@ follow [Semantic Versioning](https://semver.org/).
   can't reach a repo-write credential. Exception: the `copilot` backend, whose
   model auth is itself a GitHub token.
 - Egress control is the consumer's infrastructure responsibility; a built-in
-  Docker egress sandbox exists under `engine/lib/sandbox/` but is
+  Docker egress sandbox exists under `engines/_common/sandbox/` but is
   **experimental and not wired into the shipped Action/plugin** (see its
   README). Least-privilege credentials and SHA/checksum pinning are documented
   as imperative in `docs/security.md`.

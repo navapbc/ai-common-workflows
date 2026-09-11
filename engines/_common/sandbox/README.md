@@ -37,5 +37,5 @@ egress control is the **consumer's infrastructure responsibility** — see
 - `../../../tests/bats/sandbox.bats` — live egress tests (run manually with
   Docker; not part of the default suite or CI).
 
-The engine's `--json-out` / `--post-only` flags remain in `bin/ai-pr-review`
+The engine's `--json-out` / `--post-only` flags remain in `harness/ai-pr-review`
 as the seam a future sandbox needs; they are harmless when unused.

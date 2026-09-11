@@ -1167,7 +1167,7 @@ test_classifier::run() {
     exit 0
   fi
 
-  # Endpoint config + audit line (lib/endpoints.sh). After the dry-run exit on
+  # Endpoint config + audit line (../_common/endpoints.sh). After the dry-run exit on
   # purpose — a dry run must work with no keys configured.
   if ((SIMULATE == 0)); then
     ai_review::configure_endpoint
