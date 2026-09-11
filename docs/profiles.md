@@ -89,8 +89,11 @@ engines/security-compliance-review/skills/base/<other-file>                 ← 
    checks into your file — that duplicates content that already always
    applies and risks the two drifting apart.
 2. (Optional) add matching Copilot instructions under
-   `copilot-instructions/profiles/<name>/instructions/ai-review-*.instructions.md`
-   so Copilot's native review agrees with the action/plugin.
+   `copilot-instructions/profiles/<name>/instructions/ai-review-*-additions.instructions.md`
+   so Copilot's native review agrees with the action/plugin. These are
+   additive in the same way: the base set in `copilot-instructions/base/`
+   always syncs, and your `*-additions` files layer on top. See
+   [copilot-instructions.md](copilot-instructions.md).
 3. Reference it: `profile: <name>` (Action/Jenkins) or `AI_REVIEW_PROFILE=<name>`.
 
 **Bring-your-own without committing to this repo:** point `profile` at a

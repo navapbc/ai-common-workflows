@@ -6,17 +6,37 @@ them in sync. For the consumer-facing quickstart, see
 
 ## The model
 
-The `ai-review-*.instructions.md` files under
-`copilot-instructions/profiles/<profile>/instructions/` are the source of truth
-(one set per compliance profile; `baseline` is the default, framework-neutral
-set, and `cms-ars` is the CMS ARS 5.1 / NIST 800-53 variant). Consumer repos
-receive their chosen profile's files in
-`.github/instructions/`, where GitHub Copilot's code review reads any
-`*.instructions.md` that carries an `applyTo:` frontmatter glob.
+The source of truth is split the same way the engine's rubric is (see
+[profiles.md](profiles.md)) — a base that always applies, plus optional
+per-profile additions:
+
+- `copilot-instructions/base/instructions/ai-review-*.instructions.md` — the
+  framework-neutral floor (OWASP / CIS / NIST CSF). **Every** consumer gets
+  these, whatever profile they track.
+- `copilot-instructions/profiles/<profile>/instructions/ai-review-*-additions.instructions.md`
+  — that profile's *additions*, layered on top. `baseline` (the default) has
+  none; `cms-ars` has three, adding NIST/ARS control-ID citations, PHI
+  severity items, the FIPS algorithm posture, and CMS-specific checks.
+
+Consumer repos receive the base files plus their profile's additions (if any)
+in `.github/instructions/`, where GitHub Copilot's code review reads any
+`*.instructions.md` that carries an `applyTo:` frontmatter glob. Each
+additions file is scoped to the same `applyTo` paths as the base file it
+supplements, and says so in its own text — including which of its points
+override the base on conflict — since Copilot has no notion of file
+precedence and only sees a flat directory.
 
 The `ai-review-` prefix keeps them collision-free with a consumer's own files
-and makes upgrades a whole-file replacement. Org-level Copilot instructions are
-deliberately **not** used — programs don't control org settings.
+and makes upgrades a whole-file replacement; the `-additions` suffix is what
+lets the sync workflow tell an overlay apart from a base file (and clean up a
+stale overlay when a consumer switches profiles). Org-level Copilot
+instructions are deliberately **not** used — programs don't control org
+settings.
+
+**Why additive:** a profile can then only ever *add* review coverage. Before
+this split, each profile shipped a full standalone set, so the same generic
+checks were maintained twice and were free to drift apart — and selecting an
+agency profile silently replaced, rather than extended, the generic floor.
 
 ## Distribution: a pull model
 
@@ -26,10 +46,12 @@ runs a small sync workflow in its own repo that *pulls* the files:
 
 [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
 — copied into a consumer's `.github/workflows/`, it checks out this repo at a
-pinned `ACW_REF`, copies the chosen `PROFILE`'s `ai-review-*.instructions.md`
-into `.github/instructions/`, and opens (or updates) a PR on the branch
-`ai-review/instructions-sync`. It never pushes to the default branch — every
-change is a reviewable PR. It is idempotent: no diff → no PR.
+pinned `ACW_REF`, copies the base `ai-review-*.instructions.md` plus the chosen
+`PROFILE`'s `*-additions` files (if it has any) into `.github/instructions/`,
+removes any `*-additions` left over from a profile the repo no longer tracks,
+and opens (or updates) a PR on the branch `ai-review/instructions-sync`. It
+never pushes to the default branch — every change is a reviewable PR. It is
+idempotent: no diff → no PR.
 
 ### Auth
 
@@ -56,10 +78,18 @@ workflow's header comment):
 
 ### Maintainer responsibilities
 
-Just keep the source files correct: edit the profile's
-`ai-review-*.instructions.md`, and consumers pick the change up the next time
-their sync workflow runs against a ref they've pinned to. Cut a tag/release so
-consumers have a stable `ACW_REF` to move to.
+Just keep the source files correct: edit the base
+`ai-review-*.instructions.md` for a change everyone should get, or a profile's
+`ai-review-*-additions.instructions.md` for one only that profile should get.
+Consumers pick the change up the next time their sync workflow runs against a
+ref they've pinned to. Cut a tag/release so consumers have a stable `ACW_REF`
+to move to.
+
+When adding a profile, write only the deltas — don't restate base checks in an
+additions file, or the two copies will drift the way the old per-profile
+standalone sets did. Give an additions file the same `applyTo` glob as the
+base file it supplements, and state in its body that it supplements rather
+than replaces (Copilot sees a flat directory with no precedence rules).
 
 ## Validating a change
 

@@ -1,10 +1,16 @@
 # Keep this repo's AI-review Copilot instructions in sync with ai-common-workflows.
 #
 # PULL model: copy this file into your repo's .github/workflows/. It fetches the
-# ai-review-*.instructions.md files for your chosen compliance profile from
-# ai-common-workflows (pinned to a ref you control) and opens a PR that updates
-# .github/instructions/. It uses only this repo's own GITHUB_TOKEN — no central
-# distributor, and ai-common-workflows needs no knowledge of your repo.
+# ai-review-*.instructions.md files from ai-common-workflows (pinned to a ref you
+# control) and opens a PR that updates .github/instructions/. It uses only this
+# repo's own GITHUB_TOKEN — no central distributor, and ai-common-workflows needs
+# no knowledge of your repo.
+#
+# What gets synced: the BASE instruction set always, plus — if PROFILE names a
+# profile that has them — that profile's `*-additions` files layered on top. The
+# base is the review floor; a profile only ever adds to it. `baseline` has no
+# additions, so it syncs the base alone. Switching PROFILE later removes the
+# previous profile's additions automatically.
 #
 # Setup: set PROFILE and pin ACW_REF below, then merge.
 #
@@ -64,16 +70,34 @@ jobs:
           path: .acw-src
           persist-credentials: false
 
-      - name: Copy the chosen profile into .github/instructions/
+      - name: Copy the base instructions (+ any profile additions) into .github/instructions/
         run: |
           set -euo pipefail
-          src=".acw-src/copilot-instructions/profiles/${PROFILE}/instructions"
-          if [[ ! -d "${src}" ]]; then
-            echo "::error::profile '${PROFILE}' not found at ${src} in ${ACW_REPO}@${ACW_REF}"
+          base=".acw-src/copilot-instructions/base/instructions"
+          profile_dir=".acw-src/copilot-instructions/profiles/${PROFILE}"
+          if [[ ! -d "${profile_dir}" ]]; then
+            echo "::error::profile '${PROFILE}' not found at ${profile_dir} in ${ACW_REPO}@${ACW_REF}"
             exit 1
           fi
           mkdir -p .github/instructions
-          cp "${src}"/ai-review-*.instructions.md .github/instructions/
+          # The base set always applies — it is the review floor.
+          cp "${base}"/ai-review-*.instructions.md .github/instructions/
+          # A profile contributes *-additions files layered on top of the base,
+          # never replacing it. 'baseline' has none, so it syncs the base alone.
+          if compgen -G "${profile_dir}/instructions/ai-review-*-additions.instructions.md" > /dev/null; then
+            cp "${profile_dir}"/instructions/ai-review-*-additions.instructions.md .github/instructions/
+          fi
+          # Drop additions from a previously-synced profile the repo no longer
+          # tracks, so switching PROFILE (e.g. cms-ars -> baseline) removes the
+          # stale overlay instead of silently leaving it applied.
+          # Plain rm; the commit step stages deletions with `git add -A`.
+          for f in .github/instructions/ai-review-*-additions.instructions.md; do
+            [[ -e "${f}" ]] || continue
+            if [[ ! -e "${profile_dir}/instructions/$(basename "${f}")" ]]; then
+              echo "Removing stale overlay from a previous profile: ${f}"
+              rm -f "${f}"
+            fi
+          done
           rm -rf .acw-src
 
       - name: Open or update the sync PR
@@ -92,7 +116,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "${branch}"
-          git add .github/instructions/ai-review-*.instructions.md
+          # -A so a removed stale overlay (see the copy step) is staged too.
+          git add -A -- .github/instructions
           git commit -q -m "Sync AI-review Copilot instructions (${PROFILE})"
           # Pushing the branch is always permitted (contents: write); only PR
           # creation is gated by the create-and-approve toggle.

@@ -21,6 +21,23 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Compliance profiles are now additive, and `baseline` is the default**
+  (was `cms-ars`). The framework-neutral rubric (CIS / NIST CSF / OWASP) moved
+  to `engines/security-compliance-review/skills/base/iac-compliance.md` and
+  **always** applies; a profile's `iac-compliance.md` is appended on top as an
+  addition that takes precedence on conflict, rather than replacing it.
+  `cms-ars` was rewritten to hold only its deltas — NIST/ARS control-ID
+  citations for the base findings, plus the CMS/HIPAA-specific checks the base
+  lacks (MFA, vulnerability/posture monitoring, WAF/DoS, malware & image
+  provenance, pipeline integrity, and the detailed PHI/PII log-content
+  review). The same split was applied to the **Copilot instructions**:
+  `copilot-instructions/base/instructions/` always syncs, and a profile
+  contributes `ai-review-*-additions.instructions.md` layered on top (the sync
+  workflow also removes a stale overlay when `PROFILE` changes).
+  **Breaking-ish:** a consumer who relied on the old `cms-ars` default must now
+  set `profile: cms-ars` explicitly to keep the agency overlay; a custom
+  bring-your-own profile directory now only needs to contain its deltas, not a
+  full standalone rubric. See [docs/profiles.md](docs/profiles.md).
 - **Repo restructured into three shippable layers** (skills · harness ·
   adapters). The engine tree is now `engines/`: the workflow-agnostic runtime
   lives once in `engines/_common/` (dispatch, result markers, JSON extraction,
@@ -88,7 +105,8 @@ follow [Semantic Versioning](https://semver.org/).
 - **Shared review engine** (`engine/`): relocatable bash engine with parallel
   fan-out, self / independent adjudication, and an SCM seam.
 - **Copilot instruction files** (`copilot-instructions/`): four prefixed,
-  `applyTo`-scoped files per profile, distributed by a **self-serve pull**
+  `applyTo`-scoped base files that always sync, plus optional per-profile
+  `*-additions` files layered on top, distributed by a **self-serve pull**
   workflow ([`examples/workflows/copilot-instructions-sync.yml`](examples/workflows/copilot-instructions-sync.yml))
   that each consumer runs in its own repo with its own token — `ai-common-workflows`
   keeps no subscriber list and needs no cross-repo credential.

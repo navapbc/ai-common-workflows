@@ -8,17 +8,22 @@ action gives you a second independent reviewer.
 
 ## What's here
 
-Instructions are organized by **compliance profile**, mirroring the engine:
+A **base** instruction set that everyone gets, plus optional per-profile
+**additions** layered on top — mirroring how the engine composes its rubric
+(see [docs/profiles.md](../docs/profiles.md)):
 
 ```
-profiles/baseline/instructions/   # generic CIS / NIST CSF / OWASP (default)
-profiles/cms-ars/instructions/    # CMS ARS 5.1 / NIST 800-53
+base/instructions/                # generic OWASP / CIS / NIST CSF — ALWAYS synced
+profiles/baseline/                # no additions (the base alone) — the default
+profiles/cms-ars/instructions/    # CMS ARS 5.1 / NIST 800-53 additions, layered on the base
 ```
 
 Copilot code review reads any `*.instructions.md` file in a repo's
 `.github/instructions/` directory that carries an `applyTo:` frontmatter glob.
-Each profile ships the same four files, prefixed `ai-review-` so they never
-collide with your own instructions and are trivial to identify and upgrade:
+All files are prefixed `ai-review-` so they never collide with your own
+instructions and are trivial to identify and upgrade.
+
+**Base (always synced):**
 
 | File | Applies to |
 |---|---|
@@ -26,6 +31,18 @@ collide with your own instructions and are trivial to identify and upgrade:
 | `ai-review-iac.instructions.md` | Terraform / CloudFormation / Bicep / Pulumi / Helm / K8s / CDK |
 | `ai-review-auth.instructions.md` | auth / session / authz / middleware paths |
 | `ai-review-scripts.instructions.md` | shell scripts |
+
+**Profile additions (synced only when you select that profile)** — named
+`*-additions.instructions.md`, each scoped to the same paths as the base file
+it supplements. `cms-ars` ships three: `ai-review-security-additions`,
+`ai-review-iac-additions`, and `ai-review-auth-additions`, adding NIST/ARS
+control-ID citations, PHI severity items, the FIPS algorithm posture, and
+CMS-specific checks. Each states plainly that it supplements — never replaces
+— its base file, and which of its points override the base on conflict.
+
+This means a profile can only ever *add* review coverage: selecting `cms-ars`
+never drops a generic OWASP/CIS check, and selecting `baseline` (or nothing)
+still gets the full framework-neutral floor.
 
 They are self-contained — no repository-specific files or tooling required.
 Your existing `.github/copilot-instructions.md`, if any, is never touched.
@@ -38,10 +55,12 @@ into your repo's `.github/workflows/`, set two values, and merge:
 - `PROFILE` — the compliance profile to track (`baseline` default, `cms-ars`, …).
 - `ACW_REF` — pin `ai-common-workflows` to a commit SHA or release tag.
 
-On its schedule (and on demand), the workflow fetches that profile's
-`ai-review-*.instructions.md` from `ai-common-workflows@<ACW_REF>` and opens a PR
-in **your** repo updating `.github/instructions/`. You review and merge it like
-any other PR.
+On its schedule (and on demand), the workflow fetches the base
+`ai-review-*.instructions.md` files from `ai-common-workflows@<ACW_REF>` — plus
+your profile's `*-additions` files, if it has any — and opens a PR in **your**
+repo updating `.github/instructions/`. You review and merge it like any other
+PR. Changing `PROFILE` later also removes the previous profile's additions, so
+you never silently keep an overlay you've switched away from.
 
 This is a **pull** model: it runs entirely in your repo with your own
 credentials (`contents: write` + `pull-requests: write` on your repo only).
@@ -63,13 +82,26 @@ copy the files in once:
 
 ```bash
 mkdir -p .github/instructions
-profile="baseline"   # or: cms-ars
-base="https://raw.githubusercontent.com/navapbc/ai-common-workflows/v1.0.0/copilot-instructions/profiles/${profile}/instructions"
+root="https://raw.githubusercontent.com/navapbc/ai-common-workflows/v1.0.0/copilot-instructions"
+
+# 1. The base set — always, regardless of profile.
 for f in security iac auth scripts; do
-  curl -fsSL "${base}/ai-review-${f}.instructions.md" \
+  curl -fsSL "${root}/base/instructions/ai-review-${f}.instructions.md" \
     -o ".github/instructions/ai-review-${f}.instructions.md"
 done
+
+# 2. Profile additions, layered on top. Skip this block for `baseline`
+#    (it has none — the base set above is the whole thing).
+profile="cms-ars"
+for f in security iac auth; do
+  curl -fsSL "${root}/profiles/${profile}/instructions/ai-review-${f}-additions.instructions.md" \
+    -o ".github/instructions/ai-review-${f}-additions.instructions.md"
+done
 ```
+
+If you later switch profiles, delete the old
+`.github/instructions/ai-review-*-additions.instructions.md` files before
+copying the new ones in — the sync workflow does this for you automatically.
 
 Pin the tag/SHA in that URL deliberately (see [`docs/security.md`](../docs/security.md)),
 and re-run to upgrade — the `ai-review-` prefix means it only ever overwrites

@@ -36,7 +36,9 @@ workflows/
 jenkins-plugin/                      # Maven reactor (Jenkins front ends)
   core/                              #   ai-common-core: shared library plugin
   security-compliance-review/        #   the workflow's thin plugin (depends on core)
-copilot-instructions/profiles/<name>/instructions/   # Copilot-native variant, per profile
+copilot-instructions/
+  base/instructions/                 # Copilot-native variant — always synced
+  profiles/<name>/instructions/      #   per-profile *-additions, layered on the base
 docs/  tests/  examples/workflows/
 ```
 
