@@ -44,9 +44,9 @@ that materially affect the security assessment of the changed code.
 **Do NOT load** test fixture files, migrations, documentation, or any file not
 directly relevant to the changed code's security posture.
 
-Limit context loading to the `AI_REVIEW_CONTEXT_BUDGET` ceiling (default 15
-additional files). If more would be needed, note the limitation in the report
-and focus on what is available.
+Limit context loading to the ceiling stated in the **CONTEXT BUDGET** section
+of this prompt. If more would be needed, note the limitation in the report and
+focus on what is available.
 
 ---
 

@@ -180,9 +180,24 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
     comments_out = []
     suppressed = 0
     out_of_diff = []
+    unanchorable = []
     for c in comments_in:
-        if not all(k in c for k in ("path", "line", "perspective", "severity", "title", "description")):
-            messages.append(f"WARN: skipping malformed comment: {c}")
+        if not isinstance(c, dict):
+            messages.append(f"WARN: ignoring non-object entry in comments: {c!r}")
+            continue
+        missing = [
+            k for k in ("path", "line", "perspective", "severity", "title", "description")
+            if c.get(k) is None
+        ]
+        if missing:
+            # Cannot be inline-anchored, but it IS a finding. Surface it in the
+            # review body rather than dropping it — a dropped finding is
+            # invisible to the PR author and to anyone reading the review.
+            messages.append(
+                f"WARN: finding missing {'/'.join(missing)}; moving it into the "
+                f"review body instead of dropping it: {c!r}"
+            )
+            unanchorable.append(c)
             continue
         key = (c["path"], c["line"], (c.get("perspective") or "security").lower())
         if key in anchored:
@@ -204,32 +219,56 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             f"[pr-review] Suppressed {suppressed} finding(s) already posted on unchanged lines."
         )
 
-    # Findings whose line is not in the diff cannot be inline-anchored (GitHub
-    # would 422 the whole review). Surface them in the review body instead.
+    # Findings that cannot be inline-anchored — either their line is not in the
+    # diff (GitHub would 422 the whole review) or they are missing the fields
+    # needed to anchor them. Surface both in the review body instead.
+    def _md(c, with_line=True):
+        persp = (c.get("perspective") or "security").lower()
+        sev = str(c.get("severity", "LOW")).lower()
+        loc = c.get("path") or "(no path)"
+        if with_line and c.get("line") is not None:
+            loc = f"{loc}:{c.get('line')}"
+        return f"- **{persp}({sev})** `{loc}` - {c.get('title', 'Finding')}"
+
     if out_of_diff:
         messages.append(
             f"[pr-review] {len(out_of_diff)} finding(s) reference lines outside the "
             f"PR diff; moving them into the review body."
         )
-        md = []
-        for c in out_of_diff:
-            persp = (c.get("perspective") or "security").lower()
-            sev = str(c.get("severity", "LOW")).lower()
-            md.append(f"- **{persp}({sev})** `{c.get('path')}:{c.get('line')}` - {c.get('title', 'Finding')}")
         summary = (
             summary.rstrip()
             + "\n\n---\n\n#### Findings outside the diff (not inline-anchored)\n\n"
-            + "\n".join(md)
+            + "\n".join(_md(c) for c in out_of_diff)
+        )
+
+    if unanchorable:
+        messages.append(
+            f"[pr-review] {len(unanchorable)} finding(s) lack the fields needed to "
+            f"anchor an inline comment; moving them into the review body."
+        )
+        summary = (
+            summary.rstrip()
+            + "\n\n---\n\n#### Findings without a line anchor\n\n"
+            + "\n".join(_md(c) for c in unanchorable)
         )
 
     # If there is genuinely nothing new to post — everything already commented
     # on unchanged lines, and nothing was moved to the body — skip the redundant
     # empty COMMENT review. APPROVE is left alone: it carries no inline comments
     # and re-approving is harmless.
-    if action == "COMMENT" and not comments_out and not out_of_diff:
-        messages.append(
-            "[pr-review] All findings already posted on unchanged lines; nothing new to comment."
-        )
+    if action == "COMMENT" and not comments_out and not out_of_diff and not unanchorable:
+        if suppressed:
+            messages.append(
+                "[pr-review] All findings already posted on unchanged lines; nothing new to comment."
+            )
+        else:
+            # Don't claim findings were "already posted" when there were none
+            # to post — that sends an operator looking for comments that never
+            # existed.
+            messages.append(
+                "[pr-review] The review reported COMMENT but carried no postable "
+                "findings; nothing to post."
+            )
         return None, messages
 
     payload = {

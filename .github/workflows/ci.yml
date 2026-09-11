@@ -28,7 +28,7 @@ jobs:
         run: |
           curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
           chmod +x /usr/local/bin/shfmt
-          shfmt -d -i 2 -ci engines
+          shfmt -d -i 2 -ci engines workflows/_shared/lib
       - name: actionlint
         uses: reviewdog/action-actionlint@v1
         with:
@@ -51,8 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y bats
-      - name: core + e2e + test_classifier
-        run: bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/test_classifier.bats
+      - name: core + e2e + ci_shared + test_classifier
+        run: |
+          bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \
+            tests/bats/test_classifier.bats
 
   action-self-test:
     name: Action self-test (dry-run, no keys)

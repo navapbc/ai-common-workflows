@@ -28,6 +28,7 @@ bash <engines>/security-compliance-review/harness/ai-pr-review [flags]   # run f
 |---|---|
 | `--pr <n>` | Explicit PR number (otherwise discovered via the SCM CLI) |
 | `--against <ref>` | Base ref for the diff (skips PR discovery) |
+| `--unpushed` | Diff committed + staged work against the last push (local use; skips PR discovery) |
 | `--post-comments` | Post the review with inline comments to the SCM |
 | `--gate` | Exit 1 on any non-APPROVE result |
 | `--json-only` | Print only the machine-readable findings JSON |
@@ -65,7 +66,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `AI_REVIEW_JOBS` | no | Fan-out concurrency (default 4) |
 | `AI_REVIEW_BATCH_BY` | no | `dir` (default) \| `file` |
 | `AI_REVIEW_BATCH_MIN_FILES` | no | Fan-out threshold (default 10) |
-| `AI_REVIEW_CONTEXT_BUDGET` | no | Context-file ceiling per AI call (default 15) |
+| `AI_REVIEW_CONTEXT_BUDGET` | no | Ceiling on context files the model may load beyond the diff (default 15). Stated to the model in a CONTEXT BUDGET prompt block; fan-out workers narrow it per batch |
 | `AI_REVIEW_SCM` | no | SCM backend under `../_common/scm/` (default `github`) |
 | `GITHUB_TOKEN` / `GH_TOKEN` | posting | Auth for `gh`; `GH_HOST` for GitHub Enterprise |
 | `CI`, `NO_COLOR` | no | Output plumbing |

@@ -172,8 +172,17 @@ scm::post_review() {
   printf '%s\n' "${resp}" | sed "s/^/    /" >&2
 
   # Fallback: if the payload carried inline comments, retry body-only so the
-  # summary review still lands instead of failing the build outright.
-  if ! printf '%s' "${api_payload}" | grep -q '"comments": \[\]'; then
+  # summary review still lands instead of failing the build outright. Ask
+  # python whether the array is non-empty rather than grepping for a literal
+  # `"comments": []`, which silently depends on json.dumps' separator spacing.
+  local had_comments
+  had_comments="$(printf '%s' "${api_payload}" |
+    python3 -c 'import json,sys
+try:
+    print("1" if json.load(sys.stdin).get("comments") else "0")
+except Exception:
+    print("0")')"
+  if [[ "${had_comments}" == "1" ]]; then
     ai_review::warn "Retrying as a summary-only review (dropping inline comments)..."
     local body_only rc2=0 resp2
     body_only="$(printf '%s' "${api_payload}" | python3 -c 'import json,sys; d=json.load(sys.stdin); d["comments"]=[]; print(json.dumps(d))')" || body_only=""

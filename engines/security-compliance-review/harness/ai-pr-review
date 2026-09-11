@@ -171,6 +171,23 @@ EOF
 # included only when the diff actually contains IaC files (it is the largest
 # rubric, and inlining it on a pure-application diff wastes tokens).
 pr_review::build_prompt() {
+  # The context ceiling has to be STATED, not named: the review runs with a
+  # read-only tool grant (no shell env access), so a prompt that says
+  # "respect $AI_REVIEW_CONTEXT_BUDGET" tells the model nothing it can act on.
+  # Fan-out workers narrow this per batch before calling us, so reading the
+  # variable here picks up the per-worker value automatically.
+  local budget_block
+  budget_block="$(
+    cat <<BUDGET
+
+──────────────────────── CONTEXT BUDGET ────────────────────────
+Load at most ${AI_REVIEW_CONTEXT_BUDGET:-15} additional context file(s) beyond the diff itself,
+across all perspectives combined. This is the ceiling every perspective in
+this prompt refers to. If accurate assessment would need more, stop at the
+ceiling and note the limitation in the report rather than loading more.
+BUDGET
+  )"
+
   local scope_block=""
   if [[ -n "${AI_REVIEW_SCOPE_PATHS:-}" ]]; then
     scope_block="$(
@@ -236,6 +253,7 @@ $(cat "$(pr_review::rubric pr-review.md)")
 ──────────────────── SECURITY PERSPECTIVE ────────────────────
 $(cat "$(pr_review::rubric code-security.md)")
 ${compliance_block}
+${budget_block}
 ${scope_block}
 ${self_adjudication_block}
 PROMPT
@@ -417,11 +435,17 @@ if ((POST_ONLY == 1)); then
 fi
 
 # ── Discover PR and base ref ────────────────────────────────────────────────
-# An explicit --against wins. Otherwise --pr looks up the PR's base branch;
-# otherwise the SCM backend discovers the PR for the current branch.
+# An explicit --against (or --unpushed, which resolves its own base) wins.
+# Otherwise --pr looks up the PR's base branch; otherwise the SCM backend
+# discovers the PR for the current branch.
 pr_review::discover_pr_context() {
   for arg in "${REMAINING_FOR_LIB[@]+"${REMAINING_FOR_LIB[@]}"}"; do
-    if [[ "${arg}" == "--against" ]] || [[ "${arg}" == --against=* ]]; then
+    # --unpushed derives its own base in the shared parser. Appending an
+    # --against here would both overwrite that base and force needless PR
+    # discovery, leaving --unpushed diffing against the PR base with the
+    # staged-diff flag still on.
+    if [[ "${arg}" == "--against" ]] || [[ "${arg}" == --against=* ]] ||
+      [[ "${arg}" == "--unpushed" ]]; then
       return 0
     fi
   done

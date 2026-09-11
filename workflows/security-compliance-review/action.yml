@@ -197,12 +197,18 @@ runs:
         source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"
         ci::resolve_pr_context
 
+    # Fetching the base ref is a TRUSTED read — no AI runs here — so this step
+    # may hold the SCM token. It needs one on a private repository, especially
+    # when the checkout used `persist-credentials: false` (which docs/security.md
+    # recommends, and which removes the credential this fetch would inherit).
+    # The token is scoped to this step only; the AI step below still has none.
     - name: Ensure base ref is available for the diff
       if: steps.ctx.outputs.skip == 'false'
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
         BASE: ${{ steps.ctx.outputs.base }}
+        BASE_REF_TOKEN: ${{ inputs.github-token }}
       run: |
         set -euo pipefail
         source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"

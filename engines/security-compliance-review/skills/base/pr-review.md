@@ -88,9 +88,9 @@ comment for each.
 ## Step 3 — Load Targeted Context
 
 Apply the context-loading rules from each perspective's instructions. The
-ceiling on additional context files per perspective is the
-`AI_REVIEW_CONTEXT_BUDGET` environment variable (default 15). Do **not**
-load:
+ceiling on additional context files is stated in the **CONTEXT BUDGET**
+section of this prompt, and applies across all perspectives combined. Do
+**not** load:
 
 - The full source tree
 - Lock files, generated artifacts, vendor directories

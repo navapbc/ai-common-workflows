@@ -29,8 +29,9 @@ in scope. Before adopting, three things are imperative:
   `pull-requests: write` (Action) or a fine-grained PAT / GitHub App (Jenkins);
   scope Bedrock/Vertex/Azure to invoking the one model or deployment. Details in
   [docs/security.md](docs/security.md).
-- **Review the engine** — it's deliberately small (a few hundred lines of bash
-  plus two short Python files) — and **pin to a commit SHA**, not a mutable tag.
+- **Review the engine** — it is deliberately small and readable (~2k lines of
+  bash plus two short Python files, and the rubric markdown it inlines) — and
+  **pin to a commit SHA**, not a mutable tag.
 - **Control egress** at the runner/infrastructure layer; there is no built-in
   sandbox in this release.
 

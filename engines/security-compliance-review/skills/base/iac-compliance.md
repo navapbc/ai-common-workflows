@@ -50,10 +50,11 @@ apply — note that in the report and move on.
 
 Identify which IaC tool(s) and cloud(s) are in use from file extensions and
 directory structure; that determines which checks apply. Load only what you
-need to assess the diff (limit: the `AI_REVIEW_CONTEXT_BUDGET` ceiling, default
-15 files): variable/values files, backend/provider config, referenced modules,
-and existing IAM/security-group/network rules the diff modifies. Do **not** load
-lock files, provider plugins, generated plans, or documentation.
+need to assess the diff (limit: the ceiling stated in the **CONTEXT BUDGET**
+section of this prompt): variable/values files, backend/provider config,
+referenced modules, and existing IAM/security-group/network rules the diff
+modifies. Do **not** load lock files, provider plugins, generated plans, or
+documentation.
 
 ---
 
