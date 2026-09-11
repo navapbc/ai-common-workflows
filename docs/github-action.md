@@ -11,8 +11,12 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
   - uses: actions/checkout@v4
     with: { ref: "${{ github.event.pull_request.head.sha }}" }
   ```
-  The action runs `git fetch` for the base ref itself; `fetch-depth: 0` is a
-  belt-and-suspenders option for very large PRs. For the strongest token
+  The action runs `git fetch` for the base ref itself, then deepens history
+  as needed to locate the branch point — the review diffs `base...HEAD` (only
+  what this branch changed), which needs the merge base present.
+  `fetch-depth: 0` skips that and is a belt-and-suspenders option for very
+  large or long-lived branches; without a reachable merge base the action
+  warns and falls back to a direct `base`→`HEAD` diff. For the strongest token
   isolation, add `persist-credentials: false` to the checkout so no token is
   left in `.git/config` during the AI phase (see [security.md](security.md)) —
   the base-ref fetch is a separate, AI-free step that authenticates with the

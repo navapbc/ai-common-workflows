@@ -52,7 +52,10 @@ plugin — as long as `_common` stays a sibling of the workflow engines.
 A review is three phases, split as a process boundary so the untrusted middle
 phase can be isolated:
 
-1. **Collect** (trusted): PR context from CI env; diff from local git.
+1. **Collect** (trusted): PR context from CI env; diff from local git —
+   `base...HEAD` via the resolved merge base, so only what this branch
+   changed is reviewed. This step fetches the base ref and may hold the
+   SCM token; no AI runs in it.
 2. **Review** (untrusted input): the AI reads the diff and emits findings JSON.
    **The SCM token is not in this phase's environment.**
 3. **Post** (trusted, deterministic): `engines/_common/scm/github.sh` turns findings JSON

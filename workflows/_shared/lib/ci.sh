@@ -117,6 +117,21 @@ ci::ensure_base_ref() {
   if ((rc != 0)); then
     printf '%s\n' "${out}"
     echo "::warning::Could not fetch the base ref '${BASE}' (git exit ${rc}). The review needs it to build the diff. On a private repository, either let the action use the workflow token (the default) or check out with 'fetch-depth: 0' so the base ref is already present."
+    return 0
+  fi
+
+  # The engine reviews BASE...HEAD (what this branch changed), which needs the
+  # branch point in local history. actions/checkout defaults to fetch-depth: 1,
+  # so it usually is not there — deepen once, bounded, rather than pulling the
+  # full history of a large repository. If this still isn't enough the engine
+  # warns and falls back to a direct BASE→HEAD diff.
+  if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]] &&
+    ! git merge-base "refs/remotes/origin/${BASE}" HEAD >/dev/null 2>&1; then
+    git "${cred[@]+"${cred[@]}"}" fetch --no-tags \
+      --deepen="${BASE_REF_DEEPEN:-500}" origin >/dev/null 2>&1 || true
+    if ! git merge-base "refs/remotes/origin/${BASE}" HEAD >/dev/null 2>&1; then
+      echo "::warning::No common ancestor with '${BASE}' within ${BASE_REF_DEEPEN:-500} commits of history. The review will diff ${BASE}→HEAD directly, which can attribute commits made on ${BASE} since this branch diverged to this PR. Check out with 'fetch-depth: 0' for an exact PR diff."
+    fi
   fi
 }
 

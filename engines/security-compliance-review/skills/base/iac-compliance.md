@@ -20,7 +20,9 @@ in the same prompt.
 
 ## Step 1 — Collect Changes
 
-Review the PR diff between the base ref and HEAD:
+Review the PR diff. `AI_REVIEW_AGAINST` is already the merge base of the
+PR's base branch and HEAD, so this is the PR's own diff — only what this
+branch changed:
 
 ```bash
 git diff "$AI_REVIEW_AGAINST" HEAD --unified=5      # full content

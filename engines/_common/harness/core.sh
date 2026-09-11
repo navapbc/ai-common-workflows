@@ -198,6 +198,42 @@ ai_review::parse_args() {
     ai_review::err "--jobs / AI_REVIEW_JOBS must be a positive integer (got '${AI_REVIEW_JOBS}')."
     exit 2
   fi
+
+  ai_review::resolve_diff_base
+}
+
+# ── Diff base resolution (three-dot / merge-base semantics) ─────────────────
+# A pull request's diff is BASE...HEAD — what this branch changed since it
+# diverged — not BASE..HEAD. The two-dot form additionally reports, INVERTED,
+# every commit landed on BASE since the branch forked. On a branch whose base
+# has moved (the common case) that means other people's work is attributed to
+# this change: files the PR never touched show up as deletions, they get
+# batched and reviewed at full token cost, findings on them flip review_action
+# to COMMENT, and --gate fails the build on somebody else's commit.
+#
+# Resolving BASE to its merge base with HEAD and keeping the two-dot form makes
+# `git diff <merge-base> HEAD` exactly equivalent to `git diff BASE...HEAD`. We
+# rewrite AI_REVIEW_AGAINST in place so every consumer is corrected at once —
+# these helpers, the classifier's own AI_REVIEW_DIFF_RANGE, the fan-out
+# workers that inherit it, and the literal `git diff "$AI_REVIEW_AGAINST" HEAD`
+# the skill instructions tell the model to run. The original ref is kept in
+# AI_REVIEW_AGAINST_REF for human-readable output.
+#
+# A shallow clone may not contain the common ancestor; then we warn and keep
+# the two-dot behavior rather than failing the review.
+ai_review::resolve_diff_base() {
+  [[ -n "${AI_REVIEW_AGAINST:-}" ]] || return 0
+  AI_REVIEW_AGAINST_REF="${AI_REVIEW_AGAINST_REF:-${AI_REVIEW_AGAINST}}"
+  # A nonexistent ref is not diagnosed here — require_against reports it with
+  # better guidance, and warning about a merge base first would mislead.
+  git rev-parse --verify --quiet "${AI_REVIEW_AGAINST}^{commit}" >/dev/null || return 0
+  local mb
+  if mb="$(git merge-base "${AI_REVIEW_AGAINST}" HEAD 2>/dev/null)" && [[ -n "${mb}" ]]; then
+    AI_REVIEW_AGAINST="${mb}"
+  else
+    ai_review::warn "No merge base found with '${AI_REVIEW_AGAINST_REF}' (shallow clone?). Falling back to a direct ${AI_REVIEW_AGAINST_REF}→HEAD diff, which can attribute commits made on ${AI_REVIEW_AGAINST_REF} since this branch diverged to this change. Check out with 'fetch-depth: 0' for an exact PR diff."
+  fi
+  export AI_REVIEW_AGAINST AI_REVIEW_AGAINST_REF
 }
 
 # Generic fallback help. Each workflow entrypoint overrides this function
@@ -318,10 +354,15 @@ ai_review::changed_files() {
 
 ai_review::diff_command_description() {
   if [[ -n "${AI_REVIEW_AGAINST:-}" ]]; then
+    # Name the ref the user asked for; note the merge base it resolved to so
+    # the three-dot equivalence is visible in the log.
+    local ref="${AI_REVIEW_AGAINST_REF:-${AI_REVIEW_AGAINST}}" via=""
+    [[ "${AI_REVIEW_AGAINST}" != "${ref}" ]] &&
+      via=" [merge-base ${AI_REVIEW_AGAINST:0:12}, i.e. ${ref}...HEAD]"
     if [[ "${AI_REVIEW_INCLUDE_STAGED:-0}" == "1" ]]; then
-      echo "git diff --cached ${AI_REVIEW_AGAINST} (committed + staged, unpushed)"
+      echo "git diff --cached ${ref}${via} (committed + staged, unpushed)"
     else
-      echo "git diff ${AI_REVIEW_AGAINST} HEAD"
+      echo "git diff ${ref} HEAD${via}"
     fi
   else
     echo "git diff --cached"

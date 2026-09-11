@@ -5,6 +5,7 @@
 #   STUB_PROMPT_LOG         append each prompt (delimited) for assertions
 #   STUB_EXIT               exit with this code instead of responding
 #   STUB_RESPONSE_FILE      response body for review prompts (required)
+#   STUB_ENV_LOG            append review-relevant env (AI_REVIEW_AGAINST)
 #   STUB_ADJ_RESPONSE_FILE  response body when the prompt is an adjudication
 set -euo pipefail
 
@@ -16,6 +17,11 @@ for arg in "$@"; do
 done
 
 [[ -n "${STUB_CALLS:-}" ]] && printf 'claude\n' >> "${STUB_CALLS}"
+# Record review-relevant env the engine is expected to hand the model, so tests
+# can assert on it (e.g. that AI_REVIEW_AGAINST is already the merge base).
+if [[ -n "${STUB_ENV_LOG:-}" ]]; then
+  printf 'AI_REVIEW_AGAINST=%s\n' "${AI_REVIEW_AGAINST:-}" >> "${STUB_ENV_LOG}"
+fi
 if [[ -n "${STUB_PROMPT_LOG:-}" ]]; then
   { printf '%s\n' "${prompt}"; printf -- '---PROMPT-END---\n'; } >> "${STUB_PROMPT_LOG}"
 fi

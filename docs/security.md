@@ -11,7 +11,7 @@ phases:
 
 | Phase | What runs | Network it needs | Credentials in scope |
 |---|---|---|---|
-| Collect | `git diff` against the base ref | none (base ref fetched at checkout) | none |
+| Collect | `git diff` of `base...HEAD` (merge-base, i.e. only what this branch changed) | the SCM, to fetch the base ref | the SCM token (trusted step, no AI) |
 | Review | the AI CLI reads the diff, emits findings | the LLM endpoint | the LLM key **only** |
 | Post | `gh` turns findings into a PR review | the SCM API | the SCM token |
 

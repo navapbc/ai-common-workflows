@@ -57,6 +57,46 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The review now diffs `base...HEAD`, not `base..HEAD`.** A pull request's
+  diff is what the branch changed since it diverged; the two-dot form
+  additionally reported, inverted, every commit landed on the base branch
+  since the fork. On a branch whose base had moved — the common case — other
+  people's work was attributed to the PR: files it never touched appeared as
+  deletions, were batched and reviewed at full token cost, and their findings
+  could fail a `--gate` build on somebody else's commit. `AI_REVIEW_AGAINST`
+  is now resolved to the merge base, which corrects every consumer at once
+  (the diff helpers, the classifier's diff range, the fan-out workers, and the
+  `git diff "$AI_REVIEW_AGAINST" HEAD` the rubric tells the model to run). The
+  Action deepens history as needed to find the branch point, since
+  `actions/checkout` defaults to `fetch-depth: 1`; where no merge base is
+  reachable the engine warns and falls back to the old behavior rather than
+  failing.
+- **The gate can no longer fail open.** Three paths could report `APPROVE`
+  for a review that had found something: `fold_review_json.py` silently
+  dropped findings missing `path`/`line` and then hard-coded `APPROVE`;
+  `github_payload.py` dropped the same findings instead of moving them into
+  the review body; and the Jenkins plugin's `readReviewAction` returned
+  `APPROVE` whenever its regex missed in a findings file that existed. All
+  three now surface the finding and keep the non-clean verdict, and an
+  unparseable findings file fails the step instead of passing it.
+- **`persist-credentials: false` no longer breaks private repositories.** The
+  base-ref fetch ran without a token and swallowed failure, so the hardening
+  `docs/security.md` recommends made the review die later with a misleading
+  "Git ref not found". That fetch is a trusted, AI-free step and now
+  authenticates via a per-invocation credential helper — the token stays out
+  of argv and is never written to `.git/config`, so the AI phase still sees a
+  credential-free repository.
+- **`context-budget` now actually does something.** Its value was never
+  interpolated into the prompt — the rubric only *named*
+  `$AI_REVIEW_CONTEXT_BUDGET`, which the read-only tool grant gives the model
+  no way to read. The resolved ceiling is now stated in a CONTEXT BUDGET
+  prompt block, and fan-out workers' per-batch narrowing reaches the model.
+- **`--unpushed`** forced needless PR discovery and then had its resolved base
+  overwritten, leaving it diffing against the PR base with the staged-diff
+  flag still set.
+- The GitHub Action's `result` output is now always set (an empty diff reports
+  `APPROVE`), matching the Jenkins plugin; `ci_shared.bats` and
+  `workflows/_shared/lib` are covered by CI, not just `tests/run.sh`.
 - **Copilot-instructions sync: works without granting Actions approve rights.**
   The sync workflow now degrades gracefully when GitHub's default-off "Allow
   GitHub Actions to create and approve pull requests" toggle is disabled: the
