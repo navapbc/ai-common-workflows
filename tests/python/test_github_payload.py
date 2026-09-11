@@ -134,11 +134,45 @@ def test_no_diff_info_disables_filtering():
 
 # ── malformed input tolerance ───────────────────────────────────────────────
 
-def test_malformed_comment_skipped_with_warning():
-    bad = {"path": "x", "line": 1}  # missing required keys
+def test_unanchorable_comment_moved_to_body_not_dropped():
+    """A finding missing the fields needed to anchor an inline comment must
+    still reach the PR. Dropping it makes a real finding invisible."""
+    bad = {"path": "x", "line": 1, "severity": "CRITICAL", "title": "Vulnerable dep"}
     payload, msgs = gp.build_payload(_review(comments=[bad]), "", "")
-    assert payload is None  # nothing postable
-    assert any("malformed" in m for m in msgs)
+    assert payload is not None, "a finding must never be silently dropped"
+    assert payload["comments"] == []  # cannot be inline-anchored
+    assert "Findings without a line anchor" in payload["body"]
+    assert "Vulnerable dep" in payload["body"]
+    assert any("moving it into the review body" in m for m in msgs)
+
+
+def test_finding_with_no_line_still_reaches_the_body():
+    bad = {"path": "requirements.txt", "perspective": "security",
+           "severity": "CRITICAL", "title": "CVE-2024-x", "description": "d"}
+    payload, _ = gp.build_payload(_review(comments=[bad]), "", "")
+    assert payload is not None
+    assert "requirements.txt" in payload["body"]
+
+
+def test_non_dict_comment_entry_ignored():
+    payload, msgs = gp.build_payload(_review(comments=["oops"]), "", "")
+    assert payload is None  # nothing postable at all
+    assert any("non-object" in m for m in msgs)
+
+
+def test_skip_message_does_not_claim_already_posted_when_nothing_was():
+    """The 'already posted on unchanged lines' explanation must only appear
+    when findings were actually suppressed by an existing comment."""
+    _, msgs = gp.build_payload(_review(action="COMMENT", comments=[]), "", "")
+    joined = " ".join(msgs)
+    assert "already posted" not in joined
+    assert "no postable findings" in joined
+
+
+def test_skip_message_says_already_posted_when_suppressed():
+    existing = _existing("src/app.py", 3, "security")
+    _, msgs = gp.build_payload(_review(comments=[_finding(line=3)]), existing, "")
+    assert any("already posted on unchanged lines" in m for m in msgs)
 
 
 def test_malformed_existing_comment_ndjson_ignored():

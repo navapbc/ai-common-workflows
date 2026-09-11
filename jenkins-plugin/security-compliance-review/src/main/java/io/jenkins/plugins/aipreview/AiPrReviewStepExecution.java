@@ -17,8 +17,6 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.SynchronousNonBlockingStepExecution;
@@ -271,16 +269,41 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         }
     }
 
-    private static final Pattern REVIEW_ACTION =
-            Pattern.compile("\"review_action\"\\s*:\\s*\"([A-Z_]+)\"");
-
-    /** Read the {@code review_action} verdict from the engine's findings JSON. */
-    private String readReviewAction(FilePath findings) throws IOException, InterruptedException {
+    /**
+     * Read the {@code review_action} verdict from the engine's findings JSON.
+     *
+     * <p>This is a safety-critical read: the verdict drives the gate, so it
+     * must never fail open. A findings file that exists but cannot be parsed
+     * (truncated write, engine malfunction) aborts the step rather than
+     * reporting APPROVE. Only a genuinely absent file — the engine exits 0
+     * without writing when the diff is empty — counts as APPROVE, matching
+     * what {@code ci::gate_result} reports on the GitHub Actions side.
+     *
+     * <p>Parsed as JSON rather than regex-matched: a regex would take the
+     * first {@code "review_action"} occurrence anywhere in the document,
+     * including inside a finding's own description text.
+     */
+    private String readReviewAction(FilePath findings) throws IOException, InterruptedException, AbortException {
         if (!findings.exists()) {
-            return "APPROVE"; // nothing written (e.g. no changes) → nothing to gate on
+            return "APPROVE"; // no diff to review → nothing to gate on
         }
-        Matcher m = REVIEW_ACTION.matcher(findings.readToString());
-        return m.find() ? m.group(1) : "APPROVE";
+        String raw = findings.readToString();
+        String action;
+        try {
+            action = net.sf.json.JSONObject.fromObject(raw).optString("review_action", null);
+        } catch (RuntimeException e) {
+            throw new AbortException("aiPrReview: the findings JSON at " + findings.getRemote()
+                    + " is not parseable (" + e.getMessage() + "). Refusing to assume APPROVE.");
+        }
+        if (action == null || action.isEmpty()) {
+            throw new AbortException("aiPrReview: the findings JSON at " + findings.getRemote()
+                    + " has no 'review_action'. Refusing to assume APPROVE.");
+        }
+        if (!"APPROVE".equals(action) && !"COMMENT".equals(action) && !"REQUEST_CHANGES".equals(action)) {
+            throw new AbortException("aiPrReview: unrecognized review_action '" + action
+                    + "' in the findings JSON. Refusing to assume APPROVE.");
+        }
+        return action;
     }
 
     /**

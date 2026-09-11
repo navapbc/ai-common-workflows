@@ -7,7 +7,14 @@ applyTo: "**/auth/**,**/authn/**,**/authz/**,**/middleware/**,**/sessions/**,**/
 When reviewing changes to authentication, session, authorization, or
 access-control code, apply the `security` perspective (see
 `ai-review-security.instructions.md` for the comment format and severity
-ladder) with heightened attention to the OWASP Top 10 categories below.
+ladder) with heightened attention to the OWASP Top 10 categories below. This
+is the framework-neutral floor and it always applies; it recommends strong
+modern defaults without mandating a specific agency's FIPS posture.
+
+If your repo also syncs `ai-review-auth-additions.instructions.md` (a
+compliance-profile overlay, e.g. `cms-ars`), read it together with this file.
+It supplements this file and, for the specific points it names — notably
+FIPS-approved algorithm choices — its guidance takes precedence.
 
 ## High-yield checks for auth code
 
@@ -29,8 +36,8 @@ ladder) with heightened attention to the OWASP Top 10 categories below.
   - New routes that check authentication but not authorization — they verify
     the user is logged in but not that the user may access the specific
     resource. Look for missing ownership/role checks.
-  - Direct object references that take an ID from the request and look up a
-    resource without verifying the caller owns it.
+  - Insecure direct object references: taking an ID from the request and
+    looking up a resource without verifying the caller owns it.
   - Changes to role / permission logic that broaden access.
   - CORS policy changes that broaden allowed origins, especially to `*` on
     credentialed endpoints.
@@ -41,19 +48,16 @@ ladder) with heightened attention to the OWASP Top 10 categories below.
     change.
   - Password policies weakened; "remember me" tokens stored insecurely.
 - **Cryptographic Failures (OWASP A02:2021):**
-  - Password hashing using MD5, SHA-1, raw SHA-2, or any unsalted hash. For
-    federal / FedRAMP / FISMA / HIPAA workloads, password hashing must use
-    **PBKDF2 with HMAC-SHA-256 (or stronger)** per NIST SP 800-132 — the only
-    FIPS 140-3-approved password-based KDF. `bcrypt`, `scrypt`, and `argon2`
-    are **not** FIPS-approved and must not be recommended for these systems.
-    Require a random per-credential salt (≥ 128 bits). **NIST IA-5(1), SC-13.**
+  - Password hashing using MD5, SHA-1, or any raw/unsalted hash. Use a strong
+    password KDF — **argon2id**, **scrypt**, **bcrypt**, or **PBKDF2-HMAC-SHA-256**
+    — with a random per-credential salt (≥ 128 bits).
   - JWT signing with the `none` algorithm allowed, or verification that
-    doesn't check the signature. Use a FIPS 186-5-approved algorithm
-    (RS/PS/ES 256/384/512 or EdDSA). **NIST SC-13.**
-  - Symmetric encryption with non-FIPS modes (ECB, CBC-without-MAC) or
-    algorithms (RC4, DES, 3DES, Blowfish). Use AES-GCM or AES-CCM. **NIST SC-13.**
+    doesn't check the signature. Use a strong asymmetric or HMAC algorithm
+    (RS/PS/ES 256+ or EdDSA / HS256+).
+  - Symmetric encryption with weak modes (ECB, CBC-without-MAC) or algorithms
+    (RC4, DES, 3DES, Blowfish). Prefer AES-GCM or ChaCha20-Poly1305.
   - TLS certificate verification disabled (`verify=False`,
-    `rejectUnauthorized: false`), or TLS < 1.2. **NIST SC-8, SC-13.**
+    `rejectUnauthorized: false`), or TLS < 1.2.
 
 ### Medium-severity flags
 
@@ -65,16 +69,14 @@ ladder) with heightened attention to the OWASP Top 10 categories below.
   password" (enables enumeration).
 - Sensitive values (tokens, passwords, MFA codes) passed to logging calls.
   **OWASP A09:2021.**
-- **CMS-specific identifiers (MBI, HICN, CCN, NPI) appearing in JWT claims,
-  session payloads, audit logs, error messages, or URL paths.** Auth code is
-  a common leak path: beneficiary identifiers get embedded in `sub` /
-  `preferred_username` / custom claims rather than an opaque internal ID;
-  audit middleware logs full request/response bodies; URL paths like
-  `/api/beneficiary/{mbi}/claims` expose the identifier in access logs,
-  browser history, referrer headers, and APM traces. Use opaque internal IDs
-  in URLs; resolve to MBI server-side. Severity follows the PHI ladder
-  (Critical when real, Medium when likely synthetic). **NIST AU-3, AU-9,
-  IA-4, SI-11; HIPAA § 164.312(b).**
+- **Sensitive identifiers or PII (SSN, national ID, email, account number)
+  embedded in JWT claims, session payloads, audit logs, error messages, or URL
+  paths.** Auth code is a common leak path: identifiers get put in `sub` /
+  `preferred_username` / custom claims rather than an opaque internal ID; audit
+  middleware logs full request/response bodies; URL paths like
+  `/api/users/{ssn}/orders` expose the identifier in access logs, browser
+  history, referrer headers, and traces. Use opaque internal IDs in URLs and
+  resolve server-side.
 
 ### Low-severity flags
 

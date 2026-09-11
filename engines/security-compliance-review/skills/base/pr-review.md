@@ -13,7 +13,7 @@ assume any earlier hook or scanner has already run on these changes.
 
 ## Execution Overview
 
-1. **Collect the PR diff** — full diff between the base ref and HEAD
+1. **Collect the PR diff** — full diff of the PR (base merge-base → HEAD)
 2. **Identify perspectives that apply** — security always; compliance if IaC files present
 3. **Load targeted context** — pull in the minimum files needed for accurate assessment
 4. **Run the composed review** — security + compliance perspectives, unified findings
@@ -39,13 +39,19 @@ assume any earlier hook or scanner has already run on these changes.
 
 ## Step 1 — Collect the PR Diff
 
-The dispatcher passes the base ref via the `AI_REVIEW_AGAINST` environment
+The dispatcher passes the diff base via the `AI_REVIEW_AGAINST` environment
 variable. If unset, the dispatcher will have refused to run.
 
 ```bash
 git diff "$AI_REVIEW_AGAINST" HEAD --unified=5      # full content
 git diff "$AI_REVIEW_AGAINST" HEAD --name-only      # list of changed paths
 ```
+
+`AI_REVIEW_AGAINST` is already resolved to the **merge base** of the PR's base
+branch and HEAD, so the two-dot diff above is the PR's own diff — exactly what
+GitHub shows. It therefore contains only what this branch changed; commits
+landed on the base branch since this branch diverged are correctly absent.
+Review every change in it as this PR's work.
 
 **Scoped (batch) mode:** when the `AI_REVIEW_SCOPE_PATHS` environment
 variable is set, it contains a newline-separated list of files. Restrict
@@ -88,9 +94,9 @@ comment for each.
 ## Step 3 — Load Targeted Context
 
 Apply the context-loading rules from each perspective's instructions. The
-ceiling on additional context files per perspective is the
-`AI_REVIEW_CONTEXT_BUDGET` environment variable (default 15). Do **not**
-load:
+ceiling on additional context files is stated in the **CONTEXT BUDGET**
+section of this prompt, and applies across all perspectives combined. Do
+**not** load:
 
 - The full source tree
 - Lock files, generated artifacts, vendor directories

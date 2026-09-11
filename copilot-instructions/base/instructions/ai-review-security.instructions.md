@@ -2,17 +2,22 @@
 applyTo: "**"
 ---
 
-# AI Review — Security & Compliance (Copilot code review, baseline profile)
+# AI Review — Security & Compliance (Copilot code review)
 
 These instructions configure GitHub Copilot's automatic PR review to apply the
-same security checks as the AI Security & Compliance Review action/plugin
-running the **baseline** profile — a framework-neutral security review using
-widely-recognized best practices (**OWASP**, **CIS Benchmarks**, **NIST
-Cybersecurity Framework**), with no tailoring to a specific agency control
-catalog. (For CMS ARS 5.1 / NIST 800-53 mapping, use the `cms-ars` profile.)
+same security checks as the AI Security & Compliance Review action/plugin's
+framework-neutral security perspective — widely-recognized best practices
+(**OWASP**, **CIS Benchmarks**, **NIST Cybersecurity Framework**), with no
+tailoring to a specific agency control catalog.
 
-They are self-contained: everything Copilot needs is in this file and the
-path-scoped `ai-review-*.instructions.md` files alongside it.
+This file, and the other `ai-review-*.instructions.md` files alongside it,
+always apply — they are self-contained: everything Copilot needs for the
+framework-neutral review is here. If your repo also syncs a compliance-profile
+overlay (files named `ai-review-*-additions.instructions.md`, e.g. for
+`cms-ars`), treat those as **supplements** to this file, never replacements —
+read both together. Where an overlay's guidance differs from this file (a
+stricter severity, a mandatory citation format), the **overlay's guidance
+wins** for that point; everything else here still applies.
 
 ## When you review a pull request
 
@@ -100,7 +105,8 @@ _Reviewed by AI, was this helpful? Please react with 👍 or 👎._
   `` ```suggestion `` fence.
 - Reference control themes generically (CIS control area, NIST CSF Function);
   do not invent specific catalog IDs. If unsure, describe the risk in plain
-  terms instead of citing an ID.
+  terms instead of citing an ID. (A compliance-profile overlay may require a
+  specific control-ID citation instead — see the note at the top of this file.)
 - Do not use `praise`, `nitpick`, `thought`, or any other Conventional
   Comments label. Only `security` and `compliance` are in scope.
 - The attribution line is mandatory on every comment; place it last.

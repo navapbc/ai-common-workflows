@@ -105,7 +105,54 @@ setup() {
   grep -qx "result=APPROVE" "${GITHUB_OUTPUT}"
 }
 
-@test "gate_result no-ops when the findings file is absent" {
+@test "gate_result reports APPROVE when the findings file is absent (empty diff)" {
+  # The engine exits 0 without writing a findings file only when there is no
+  # diff. `result` must still be set: docs tell consumers to gate on it, and an
+  # empty output silently breaks their condition. Matches the Jenkins plugin.
   REVIEW_JSON="${BATS_TEST_TMPDIR}/nope.json" GATE=true run ci::gate_result
   [ "$status" -eq 0 ]
+  grep -qx "result=APPROVE" "${GITHUB_OUTPUT}"
+}
+
+@test "gate_result FAILS on an unparseable findings file (never assumes APPROVE)" {
+  local json="${BATS_TEST_TMPDIR}/truncated.json"
+  printf '{"review_action": "COMM' >"${json}"
+  REVIEW_JSON="${json}" GATE=false run ci::gate_result
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Refusing to assume APPROVE"* ]]
+  ! grep -q "result=" "${GITHUB_OUTPUT}"
+}
+
+@test "gate_result FAILS on an unrecognized review_action" {
+  local json="${BATS_TEST_TMPDIR}/weird.json"
+  echo '{"review_action":"LGTM"}' >"${json}"
+  REVIEW_JSON="${json}" GATE=false run ci::gate_result
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Refusing to assume APPROVE"* ]]
+}
+
+@test "ensure_base_ref warns (not silently) when the base ref cannot be fetched" {
+  cd "${BATS_TEST_TMPDIR}"
+  git init -q norepo && cd norepo
+  git config user.email t@t && git config user.name t
+  git commit -q --allow-empty -m x
+  git remote add origin "${BATS_TEST_TMPDIR}/does-not-exist.git"
+  BASE=main run ci::ensure_base_ref
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"* ]]
+  [[ "$output" == *"Could not fetch the base ref"* ]]
+}
+
+@test "ensure_base_ref does not persist the token into .git/config" {
+  cd "${BATS_TEST_TMPDIR}"
+  git init -q --bare up.git
+  git init -q src && cd src
+  git config user.email t@t && git config user.name t
+  git checkout -qb main && echo a >f && git add -A && git commit -qm base
+  git remote add origin "${BATS_TEST_TMPDIR}/up.git" && git push -q origin main
+  BASE=main BASE_REF_TOKEN=super-secret-value run ci::ensure_base_ref
+  [ "$status" -eq 0 ]
+  run git rev-parse --verify --quiet origin/main
+  [ "$status" -eq 0 ]
+  ! grep -q "super-secret-value" .git/config
 }

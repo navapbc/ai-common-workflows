@@ -2,15 +2,19 @@
 applyTo: "**/*.tf,**/*.tfvars,**/*.tf.json,**/*.bicep,**/*.bicepparam,**/*.hcl,**/*.template.json,**/*.template.yaml,**/*.template.yml,**/Pulumi.yaml,**/Chart.yaml,**/values.yaml,**/cdk.json,**/kustomization.yaml"
 ---
 
-# AI Review — Infrastructure-as-Code (Copilot code review, baseline)
+# AI Review — Infrastructure-as-Code (Copilot code review)
 
 When reviewing changes to infrastructure-as-code files, apply the `compliance`
 perspective (see `ai-review-security.instructions.md` for the comment format
 and severity ladder) with heightened attention to the cloud-security
-best-practice areas below. This is the framework-neutral baseline: reference
-control *themes* (CIS Benchmarks, NIST CSF Functions) rather than a specific
-agency catalog. (For CMS ARS 5.1 / NIST 800-53 control IDs, use the `cms-ars`
-profile.)
+best-practice areas below. This is the framework-neutral floor and it always
+applies: reference control *themes* (CIS Benchmarks, NIST CSF Functions)
+rather than a specific agency catalog.
+
+If your repo also syncs `ai-review-iac-additions.instructions.md` (a
+compliance-profile overlay, e.g. `cms-ars`), read it together with this file:
+it adds control-ID citations for these same checks and may add checks this
+file doesn't have. It supplements this file, never replaces it.
 
 ## High-yield checks for IaC
 
@@ -82,7 +86,8 @@ All comments on IaC files must:
 
 1. Use the `compliance(<severity>):` Conventional Comments label.
 2. Reference the control theme (CIS area or NIST CSF Function) in plain terms;
-   do not invent a specific catalog control ID.
+   do not invent a specific catalog control ID. (A profile overlay may require
+   a specific control ID instead — see the note at the top of this file.)
 3. Provide a `` ```suggestion `` block when the fix replaces lines at the
    comment's location, OR a `` ```hcl `` / `` ```yaml `` block when the fix
    requires adding a new resource. Never put non-applicable code into a

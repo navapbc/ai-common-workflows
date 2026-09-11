@@ -11,7 +11,7 @@ phases:
 
 | Phase | What runs | Network it needs | Credentials in scope |
 |---|---|---|---|
-| Collect | `git diff` against the base ref | none (base ref fetched at checkout) | none |
+| Collect | `git diff` of `base...HEAD` (merge-base, i.e. only what this branch changed) | the SCM, to fetch the base ref | the SCM token (trusted step, no AI) |
 | Review | the AI CLI reads the diff, emits findings | the LLM endpoint | the LLM key **only** |
 | Post | `gh` turns findings into a PR review | the SCM API | the SCM token |
 
@@ -29,8 +29,13 @@ credentials, or to abuse the SCM token. Three things bound that:
      matters, and scope the token tightly regardless.
    - If `actions/checkout` **persisted credentials** (its default), a token
      sits in `.git/config` and the read-only diff phase can read it. Check out
-     with `persist-credentials: false` for full isolation; the action fetches
-     the base ref itself, so this generally just works.
+     with `persist-credentials: false` for full isolation. The action's
+     base-ref fetch still works: that fetch is a trusted step with no AI in
+     it, so it authenticates with the `github-token` input via a
+     per-invocation credential helper (the token stays out of argv and is
+     never written to `.git/config`, so the AI phase still sees a
+     credential-free repo). Alternatively check out with `fetch-depth: 0`,
+     which makes the base ref present up front and needs no fetch at all.
 2. **Least-privilege credentials** (below) — so even a fully subverted CLI
    can do little with what it *can* reach.
 3. **Egress control on the runner** (below) — so data can't leave to an
@@ -117,8 +122,11 @@ layer around the runner/agent:
 ## Supply-chain: review and pin
 
 1. **Review the code before adopting.** The engine is deliberately small and
-   readable — [`engines/`](../docs/architecture.md) is a few hundred lines of bash
-   plus `github_payload.py` and `fold_review_json.py`. Read it, the
+   readable — [`engines/`](../docs/architecture.md) is roughly 2,000 lines of
+   bash on the review path plus `github_payload.py` and `fold_review_json.py`,
+   and about 1,200 lines of rubric markdown that the engine inlines into the
+   prompt (worth reading too: it is what the model is actually told to do).
+   Read it, the
    [action](../workflows/security-compliance-review/action.yml), and (for
    Jenkins) the plugin, the way you'd review any dependency that runs in your
    pipeline. Re-review on upgrade by diffing tags.

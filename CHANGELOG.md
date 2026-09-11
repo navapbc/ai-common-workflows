@@ -21,6 +21,23 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Compliance profiles are now additive, and `baseline` is the default**
+  (was `cms-ars`). The framework-neutral rubric (CIS / NIST CSF / OWASP) moved
+  to `engines/security-compliance-review/skills/base/iac-compliance.md` and
+  **always** applies; a profile's `iac-compliance.md` is appended on top as an
+  addition that takes precedence on conflict, rather than replacing it.
+  `cms-ars` was rewritten to hold only its deltas — NIST/ARS control-ID
+  citations for the base findings, plus the CMS/HIPAA-specific checks the base
+  lacks (MFA, vulnerability/posture monitoring, WAF/DoS, malware & image
+  provenance, pipeline integrity, and the detailed PHI/PII log-content
+  review). The same split was applied to the **Copilot instructions**:
+  `copilot-instructions/base/instructions/` always syncs, and a profile
+  contributes `ai-review-*-additions.instructions.md` layered on top (the sync
+  workflow also removes a stale overlay when `PROFILE` changes).
+  **Breaking-ish:** a consumer who relied on the old `cms-ars` default must now
+  set `profile: cms-ars` explicitly to keep the agency overlay; a custom
+  bring-your-own profile directory now only needs to contain its deltas, not a
+  full standalone rubric. See [docs/profiles.md](docs/profiles.md).
 - **Repo restructured into three shippable layers** (skills · harness ·
   adapters). The engine tree is now `engines/`: the workflow-agnostic runtime
   lives once in `engines/_common/` (dispatch, result markers, JSON extraction,
@@ -40,6 +57,46 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The review now diffs `base...HEAD`, not `base..HEAD`.** A pull request's
+  diff is what the branch changed since it diverged; the two-dot form
+  additionally reported, inverted, every commit landed on the base branch
+  since the fork. On a branch whose base had moved — the common case — other
+  people's work was attributed to the PR: files it never touched appeared as
+  deletions, were batched and reviewed at full token cost, and their findings
+  could fail a `--gate` build on somebody else's commit. `AI_REVIEW_AGAINST`
+  is now resolved to the merge base, which corrects every consumer at once
+  (the diff helpers, the classifier's diff range, the fan-out workers, and the
+  `git diff "$AI_REVIEW_AGAINST" HEAD` the rubric tells the model to run). The
+  Action deepens history as needed to find the branch point, since
+  `actions/checkout` defaults to `fetch-depth: 1`; where no merge base is
+  reachable the engine warns and falls back to the old behavior rather than
+  failing.
+- **The gate can no longer fail open.** Three paths could report `APPROVE`
+  for a review that had found something: `fold_review_json.py` silently
+  dropped findings missing `path`/`line` and then hard-coded `APPROVE`;
+  `github_payload.py` dropped the same findings instead of moving them into
+  the review body; and the Jenkins plugin's `readReviewAction` returned
+  `APPROVE` whenever its regex missed in a findings file that existed. All
+  three now surface the finding and keep the non-clean verdict, and an
+  unparseable findings file fails the step instead of passing it.
+- **`persist-credentials: false` no longer breaks private repositories.** The
+  base-ref fetch ran without a token and swallowed failure, so the hardening
+  `docs/security.md` recommends made the review die later with a misleading
+  "Git ref not found". That fetch is a trusted, AI-free step and now
+  authenticates via a per-invocation credential helper — the token stays out
+  of argv and is never written to `.git/config`, so the AI phase still sees a
+  credential-free repository.
+- **`context-budget` now actually does something.** Its value was never
+  interpolated into the prompt — the rubric only *named*
+  `$AI_REVIEW_CONTEXT_BUDGET`, which the read-only tool grant gives the model
+  no way to read. The resolved ceiling is now stated in a CONTEXT BUDGET
+  prompt block, and fan-out workers' per-batch narrowing reaches the model.
+- **`--unpushed`** forced needless PR discovery and then had its resolved base
+  overwritten, leaving it diffing against the PR base with the staged-diff
+  flag still set.
+- The GitHub Action's `result` output is now always set (an empty diff reports
+  `APPROVE`), matching the Jenkins plugin; `ci_shared.bats` and
+  `workflows/_shared/lib` are covered by CI, not just `tests/run.sh`.
 - **Copilot-instructions sync: works without granting Actions approve rights.**
   The sync workflow now degrades gracefully when GitHub's default-off "Allow
   GitHub Actions to create and approve pull requests" toggle is disabled: the
@@ -66,10 +123,14 @@ follow [Semantic Versioning](https://semver.org/).
   global params flow to the copilot CLI as `COPILOT_PROVIDER_*` / `COPILOT_MODEL`,
   which the CLI sends directly to your endpoint. copilot has no native Bedrock
   type — front Bedrock with an in-boundary Anthropic/OpenAI-compatible gateway.
-- **Compliance profiles** (`AI_REVIEW_PROFILE`, default `cms-ars`): the
-  compliance rubric is now selectable. Ships `cms-ars` (CMS ARS 5.1 /
-  NIST 800-53) and a framework-neutral `baseline` (CIS / NIST CSF / OWASP) under
-  `engine/profiles/`, plus a bring-your-own directory path. Surfaced as the
+- **Compliance profiles** (`AI_REVIEW_PROFILE`, default `baseline`): the
+  compliance perspective always applies a framework-neutral floor (CIS /
+  NIST CSF / OWASP); a selectable profile can *add* framework-specific
+  citations and checks on top without replacing or weakening it. Ships
+  `baseline` (the floor, no additions) and `cms-ars` (adds CMS ARS 5.1 /
+  NIST 800-53 control-ID citations plus CMS/HIPAA-specific checks) under
+  `engines/security-compliance-review/skills/profiles/`, plus a
+  bring-your-own directory path (also additive). Surfaced as the
   `profile` input (Action), the `profile` step/global param (Jenkins), and the
   `PROFILE` in the Copilot-instructions sync workflow. See
   [docs/profiles.md](docs/profiles.md).
@@ -84,7 +145,8 @@ follow [Semantic Versioning](https://semver.org/).
 - **Shared review engine** (`engine/`): relocatable bash engine with parallel
   fan-out, self / independent adjudication, and an SCM seam.
 - **Copilot instruction files** (`copilot-instructions/`): four prefixed,
-  `applyTo`-scoped files per profile, distributed by a **self-serve pull**
+  `applyTo`-scoped base files that always sync, plus optional per-profile
+  `*-additions` files layered on top, distributed by a **self-serve pull**
   workflow ([`examples/workflows/copilot-instructions-sync.yml`](examples/workflows/copilot-instructions-sync.yml))
   that each consumer runs in its own repo with its own token — `ai-common-workflows`
   keeps no subscriber list and needs no cross-repo credential.
@@ -125,7 +187,7 @@ follow [Semantic Versioning](https://semver.org/).
   can't reach a repo-write credential. Exception: the `copilot` backend, whose
   model auth is itself a GitHub token.
 - Egress control is the consumer's infrastructure responsibility; a built-in
-  Docker egress sandbox exists under `engine/lib/sandbox/` but is
+  Docker egress sandbox exists under `engines/_common/sandbox/` but is
   **experimental and not wired into the shipped Action/plugin** (see its
   README). Least-privilege credentials and SHA/checksum pinning are documented
   as imperative in `docs/security.md`.

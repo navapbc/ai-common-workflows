@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# engine/lib/endpoints.sh
+# engines/_common/endpoints.sh
 #
 # LLM endpoint configuration for the AI PR-review engine. Maps the
 # AI_REVIEW_PROVIDER selection onto the environment variables each AI CLI

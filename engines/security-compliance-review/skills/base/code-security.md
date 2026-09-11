@@ -10,7 +10,9 @@ same prompt.
 
 ## Step 1 — Collect Changes
 
-Review the PR diff between the base ref and HEAD:
+Review the PR diff. `AI_REVIEW_AGAINST` is already the merge base of the
+PR's base branch and HEAD, so this is the PR's own diff — only what this
+branch changed:
 
 ```bash
 git diff "$AI_REVIEW_AGAINST" HEAD --unified=5      # full content
@@ -44,9 +46,9 @@ that materially affect the security assessment of the changed code.
 **Do NOT load** test fixture files, migrations, documentation, or any file not
 directly relevant to the changed code's security posture.
 
-Limit context loading to the `AI_REVIEW_CONTEXT_BUDGET` ceiling (default 15
-additional files). If more would be needed, note the limitation in the report
-and focus on what is available.
+Limit context loading to the ceiling stated in the **CONTEXT BUDGET** section
+of this prompt. If more would be needed, note the limitation in the report and
+focus on what is available.
 
 ---
 

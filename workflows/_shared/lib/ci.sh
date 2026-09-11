@@ -81,12 +81,58 @@ ci::resolve_pr_context() {
 
 # ci::ensure_base_ref — make origin/<base> resolvable locally for `git diff`.
 # actions/checkout fetches the PR head; consumers who set fetch-depth: 0 already
-# have the base. Reads: BASE.
+# have the base. Reads: BASE, BASE_REF_TOKEN (optional).
+#
+# On a PRIVATE repo this fetch needs credentials. `actions/checkout` leaves a
+# token in .git/config by default, but docs/security.md recommends
+# `persist-credentials: false` so the AI phase cannot read one — which also
+# strips the credential this fetch would have used. So when BASE_REF_TOKEN is
+# provided we authenticate explicitly, via a per-invocation credential helper
+# that reads the token from the ENVIRONMENT when git calls it. That keeps the
+# secret out of argv (and therefore out of the process list and the log) and
+# writes nothing to .git/config, so the later AI phase still runs against a
+# credential-free repository.
+#
+# Failure is a warning, not silence: without the base ref the review cannot
+# produce a diff, and "Git ref not found" several steps later is a confusing
+# way to learn that a fetch was refused.
+# BASE is an env var set by the calling step; the lowercase `base` in
+# resolve_pr_context is unrelated (SC2153 misfires on the pair).
+# shellcheck disable=SC2153
 ci::ensure_base_ref() {
-  # BASE is an env var set by the calling step; the lowercase `base` in
-  # resolve_pr_context is unrelated (SC2153 misfires on the pair).
-  # shellcheck disable=SC2153
-  git fetch --no-tags --depth=200 origin "${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null || true
+  local -a cred=()
+  if [[ -n "${BASE_REF_TOKEN:-}" ]]; then
+    # Single-quoted ON PURPOSE (SC2016): ${BASE_REF_TOKEN} must NOT expand
+    # here. Leaving it unexpanded is what keeps the token out of argv — git
+    # runs this helper as a shell snippet and the expansion happens inside
+    # that subshell, reading the value from the inherited environment.
+    # The empty first value resets any inherited helper chain (git appends).
+    # shellcheck disable=SC2016
+    cred=(-c 'credential.helper=' -c
+      'credential.helper=!f() { printf "username=x-access-token\npassword=%s\n" "${BASE_REF_TOKEN}"; }; f')
+  fi
+  local out rc=0
+  out="$(git "${cred[@]+"${cred[@]}"}" fetch --no-tags --depth=200 origin \
+    "+refs/heads/${BASE}:refs/remotes/origin/${BASE}" 2>&1)" || rc=$?
+  if ((rc != 0)); then
+    printf '%s\n' "${out}"
+    echo "::warning::Could not fetch the base ref '${BASE}' (git exit ${rc}). The review needs it to build the diff. On a private repository, either let the action use the workflow token (the default) or check out with 'fetch-depth: 0' so the base ref is already present."
+    return 0
+  fi
+
+  # The engine reviews BASE...HEAD (what this branch changed), which needs the
+  # branch point in local history. actions/checkout defaults to fetch-depth: 1,
+  # so it usually is not there — deepen once, bounded, rather than pulling the
+  # full history of a large repository. If this still isn't enough the engine
+  # warns and falls back to a direct BASE→HEAD diff.
+  if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]] &&
+    ! git merge-base "refs/remotes/origin/${BASE}" HEAD >/dev/null 2>&1; then
+    git "${cred[@]+"${cred[@]}"}" fetch --no-tags \
+      --deepen="${BASE_REF_DEEPEN:-500}" origin >/dev/null 2>&1 || true
+    if ! git merge-base "refs/remotes/origin/${BASE}" HEAD >/dev/null 2>&1; then
+      echo "::warning::No common ancestor with '${BASE}' within ${BASE_REF_DEEPEN:-500} commits of history. The review will diff ${BASE}→HEAD directly, which can attribute commits made on ${BASE} since this branch diverged to this PR. Check out with 'fetch-depth: 0' for an exact PR diff."
+    fi
+  fi
 }
 
 # ci::install_ai_cli — npm-install the chosen AI CLI on the runner.
@@ -102,10 +148,31 @@ ci::install_ai_cli() {
 # ci::gate_result — read review_action from the findings JSON, echo it, write it
 # to $GITHUB_OUTPUT, and fail the job when GATE=true and the result is not
 # APPROVE. Reads: REVIEW_JSON, GATE.
+#
+# The `result` output is ALWAYS written, so consumers can gate on it (the
+# read-only mode documented in docs/github-action.md relies on exactly that).
+# An absent findings file means the engine exited 0 without writing one, which
+# only happens when the diff is empty — there is nothing to flag, so that is
+# APPROVE. This matches the Jenkins plugin's readReviewAction().
+#
+# A findings file that EXISTS but cannot be parsed is an engine malfunction and
+# fails the step rather than defaulting to APPROVE — never fail open on the
+# verdict that drives the gate.
 ci::gate_result() {
-  [[ -f "${REVIEW_JSON}" ]] || return 0
   local result
-  result="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["review_action"])' "${REVIEW_JSON}")"
+  if [[ ! -f "${REVIEW_JSON}" ]]; then
+    result="APPROVE"
+    echo "[ai-review] no findings file (empty diff); reporting APPROVE."
+  elif ! result="$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+a = d["review_action"]
+if a not in ("APPROVE", "COMMENT", "REQUEST_CHANGES"):
+    raise SystemExit(f"unrecognized review_action: {a!r}")
+print(a)' "${REVIEW_JSON}")"; then
+    echo "::error::Could not read a valid review_action from ${REVIEW_JSON}. Refusing to assume APPROVE."
+    return 1
+  fi
   echo "result=${result}" >>"${GITHUB_OUTPUT}"
   echo "[ai-review] result: ${result}"
   if [[ "${GATE}" == "true" && "${result}" != "APPROVE" ]]; then

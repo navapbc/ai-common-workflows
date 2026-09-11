@@ -70,17 +70,33 @@ teardown() {
   [[ "$output" == *"DRY-RUN"* ]]
 }
 
-@test "profile: defaults to cms-ars" {
+@test "profile: defaults to baseline" {
   run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"Profile:"* ]]
-  [[ "$output" == *"cms-ars"* ]]
+  [[ "$output" == *"baseline"* ]]
 }
 
-@test "profile: baseline selected via AI_REVIEW_PROFILE" {
-  AI_REVIEW_PROFILE=baseline run bash "${ENGINE}" --against origin/main --dry-run
+@test "profile: cms-ars selected via AI_REVIEW_PROFILE" {
+  AI_REVIEW_PROFILE=cms-ars run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"baseline"* ]]
+  [[ "$output" == *"Profile:"*"cms-ars"* ]]
+}
+
+@test "profile: baseline compliance floor always applies; cms-ars only adds to it" {
+  local log_baseline="${WORK}/prompt-baseline.log"
+  STUB_PROMPT_LOG="${log_baseline}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+    run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  grep -q -- "COMPLIANCE PERSPECTIVE ────" "${log_baseline}"
+  ! grep -q -- "ADDITIONS" "${log_baseline}"
+
+  local log_cms="${WORK}/prompt-cms.log"
+  AI_REVIEW_PROFILE=cms-ars STUB_PROMPT_LOG="${log_cms}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+    run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  grep -q -- "COMPLIANCE PERSPECTIVE ────" "${log_cms}"
+  grep -q -- "COMPLIANCE PERSPECTIVE — cms-ars ADDITIONS" "${log_cms}"
 }
 
 @test "profile: unknown name is a config error (exit 2)" {
@@ -219,4 +235,61 @@ teardown() {
   AI_REVIEW_TOOL=claude ANTHROPIC_API_KEY="" \
     run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
+}
+
+
+# ── PR diff semantics: BASE...HEAD, not BASE..HEAD ──────────────────────────
+# The review must cover what THIS branch changed. A two-dot diff also reports,
+# inverted, every commit landed on the base since the branch forked — which
+# attributes other people's work to this PR, inflates batching, and can fail
+# --gate on somebody else's commit.
+
+@test "diff excludes commits made on the base after the branch diverged" {
+  # main moves forward with an unrelated change after `feature` forked.
+  git checkout -q main
+  printf 'shared\nSOMEONE_ELSES_LINE\n' >other.py
+  git add -A && git commit -qm "unrelated main commit"
+  git update-ref refs/remotes/origin/main main
+  git checkout -q feature
+
+  run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  # The PR's own files are reviewed...
+  [[ "$output" == *"src/app.py"* ]]
+  # ...and the file only main touched is NOT attributed to this PR.
+  [[ "$output" != *"other.py"* ]]
+}
+
+@test "diff source line reports the resolved merge base" {
+  run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"merge-base"* ]]
+  [[ "$output" == *"origin/main...HEAD"* ]]
+}
+
+@test "AI_REVIEW_AGAINST handed to the model is the merge base" {
+  # The skills tell the model to run `git diff "$AI_REVIEW_AGAINST" HEAD`, so
+  # the exported value must already be the merge base for that to be correct.
+  local expected
+  expected="$(git merge-base origin/main HEAD)"
+  STUB_ENV_LOG="${WORK}/env.log" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+    run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  grep -qx "AI_REVIEW_AGAINST=${expected}" "${WORK}/env.log"
+}
+
+@test "no merge base (shallow) warns and still reviews" {
+  # A ref with no common ancestor: an orphan commit stands in for a shallow
+  # clone whose branch point was never fetched.
+  git checkout -q --orphan unrelated-root
+  git rm -rq --cached . 2>/dev/null || true
+  rm -f src/app.py infra/rds.tf 2>/dev/null || true
+  echo x >lonely.txt && git add lonely.txt && git commit -qm orphan
+  git update-ref refs/remotes/origin/orphan unrelated-root
+  git checkout -q feature
+
+  run bash "${ENGINE}" --against origin/orphan --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"No merge base found"* ]]
+  [[ "$output" == *"fetch-depth: 0"* ]]
 }

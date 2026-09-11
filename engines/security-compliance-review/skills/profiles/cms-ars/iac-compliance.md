@@ -1,143 +1,104 @@
-# IaC Compliance Perspective
+# IaC Compliance Perspective — CMS ARS 5.1 / NIST 800-53 additions
 
-The compliance check list for the composed PR review: infrastructure-as-code
-changes (Terraform, CloudFormation, Bicep, Pulumi, Ansible, Kubernetes
-manifests, Helm charts, CDK, and similar) reviewed against **CMS ARS 5.1**
-(which incorporates and tailors **NIST SP 800-53 Rev 5**) for the controls
-that can be verified by inspecting IaC directly. Apply it to the PR diff;
-the output contract (report format, JSON block, result marker) is defined in
-the PR-review instructions that accompany this perspective in the same
-prompt.
+**This is an addition to the framework-neutral baseline compliance
+perspective (`skills/base/iac-compliance.md`), not a replacement for it.**
+The baseline perspective always applies and already runs Steps 1–2 (collect
+the diff, detect IaC type, load targeted context) and its own control
+checks (IAM least privilege, network exposure, encryption, logging,
+configuration hygiene, resilience) before this section — do not repeat that
+work. This file adds:
 
----
+1. **NIST SP 800-53 Rev 5 / CMS ARS 5.1 control-ID citations** for those same
+   baseline findings — cite the ID below *instead of* (not in addition to)
+   the baseline's generic theme name for a finding.
+2. **CMS/HIPAA-specific checks** the baseline perspective does not cover at
+   all: multi-factor authentication, vulnerability/posture monitoring,
+   DoS/WAF protection, malware and image-provenance discipline, pipeline
+   source integrity, and a detailed PHI/PII log-content review.
 
-## Step 1 — Collect Changes
+**Precedence:** where this file's severity or guidance differs from the
+baseline for the same finding, use this file's — it is the more specific of
+the two. Never report the same underlying finding twice (once under a
+baseline theme and once under a NIST/ARS ID) — merge into one comment citing
+the NIST/ARS ID.
 
-Review the PR diff between the base ref and HEAD:
-
-```bash
-git diff "$AI_REVIEW_AGAINST" HEAD --unified=5      # full content
-git diff "$AI_REVIEW_AGAINST" HEAD --name-only      # list of changed paths
-```
-
-(When `AI_REVIEW_SCOPE_PATHS` is set, restrict to those files — see the
-PR-review instructions.)
-
-If none of the changed files are recognisable IaC (see file types below),
-this perspective does not apply — note that in the report and move on.
-
-**Recognised IaC file patterns:**
-- Terraform: `.tf`, `.tfvars`, `.tf.json`
-- CloudFormation: `*.template.json`, `*.template.yaml`
-- Bicep: `*.bicep`, `*.bicepparam`
-- Pulumi: `Pulumi.yaml`, `Pulumi.*.yaml`, `*.pulumiproject`
-- Ansible: `requirements.yml` plus `*.yml`/`*.yaml` under `roles/` or `playbooks/`
-- Kubernetes: any YAML containing both `apiVersion:` and `kind:`
-- Helm: `Chart.yaml`, `values.yaml`, `templates/`
-- CDK: `cdk.json`, `app.py`/`app.ts` when paired with `cdk.json`
-- Terragrunt / Packer: `*.hcl`
-
----
-
-## Step 2 — Detect IaC Type and Load Targeted Context
-
-Identify which IaC tool(s) are in use based on file extensions and directory
-structure. This determines which control checks apply (e.g., AWS-specific
-checks only apply when Terraform or CloudFormation targets AWS).
-
-**Load these context files if not already in the diff (limit: the
-`AI_REVIEW_CONTEXT_BUDGET` ceiling, default 15 files):**
-
-| Context file | Why it matters |
-|---|---|
-| `terraform.tfvars`, `*.auto.tfvars`, `variables.tf` | Resolves variable references in the diff; needed to assess actual values |
-| `backend.tf`, `versions.tf` | State backend config; provider version constraints |
-| `data.tf` or files containing `data "` blocks | Data sources that feed into changed resources |
-| Module `main.tf` when changed resource calls a local module | Understand what the module provisions |
-| `Chart.yaml`, `values.yaml` for changed Helm templates | Chart metadata and default values |
-| `kustomization.yaml` for changed Kubernetes manifests | Overlay context |
-| `cdk.json`, shared stack constructs referenced by the diff | CDK context |
-| Existing IAM policy JSON files referenced by changed resources | Assess policy permissions in full |
-| Existing security group or network ACL rules that the diff modifies | Understand cumulative network exposure |
-
-Do **not** load: entire module registries, provider plugins, lock files
-(`.terraform.lock.hcl`), generated plan files, test fixtures, or documentation.
-
----
-
-## Step 3 — IaC Compliance Control Checks
-
-Apply the control checks below to the diff and loaded context. Skip
-categories that have no plausible attack surface in the changed code (e.g.,
-skip encryption-at-rest checks if only a DNS record changed). Be explicit
-about what was skipped and why.
-
-For each control reference: **NIST SP 800-53 Rev 5 ID** | **CMS ARS 5.1
+For each control reference below: **NIST SP 800-53 Rev 5 ID** | **CMS ARS 5.1
 family** — both use identical control identifiers, since ARS is a tailored
 overlay of NIST 800-53.
 
 ---
 
-### AC — Access Control
+## Control-ID cross-reference for baseline findings
 
-**AC-2 | Account Management**
-- IAM users, roles, groups, or service accounts created or modified without a
-  description, tags, or clear purpose attribute
-- IAM users with console access but no MFA requirement configured
-- Shared/generic account names (`admin`, `root`, `shared`, `common`) in new
-  resource definitions
+When the baseline perspective's checks apply, cite the matching control ID
+below instead of the generic theme name:
 
-**AC-3 | Access Enforcement / Least Privilege**
-- IAM policies with `"Action": "*"` or `"Action": ["*"]` (wildcard actions)
-- IAM policies with `"Resource": "*"` without a scoping `Condition` block
-- `"Effect": "Allow"` on `sts:AssumeRole` without `Condition` constraints
-- IAM roles granted `AdministratorAccess` or equivalent managed policy
-- S3 bucket policies granting `s3:*` to `"Principal": "*"` (public write)
-- Lambda execution roles with `iam:PassRole` and `"Resource": "*"`
-
-**AC-4 | Information Flow Enforcement**
-- Security groups or NACLs allowing inbound `0.0.0.0/0` or `::/0` on:
-  - SSH (TCP 22), RDP (TCP 3389) — always Critical
-  - Database ports: MySQL/Aurora (3306), PostgreSQL (5432), MongoDB (27017),
-    Redis (6379), Elasticsearch (9200/9300), Cassandra (9042) — always High
-  - All traffic (`-1` / protocol `all`) — always Critical
-- VPC peering or Transit Gateway attachments with unrestricted routing
-- ECS/EKS tasks with `hostNetwork: true` or `network_mode = "host"`
-
-**AC-17 | Remote Access**
-- Bastion hosts or jump boxes exposed on `0.0.0.0/0` without IP restriction
-- VPN endpoints created without certificate-based authentication
-- SSM Session Manager not used as the sole remote access method (flag if SSH
-  security groups are opened to wide CIDRs instead)
-
-**AC-22 | Publicly Accessible Content**
-- S3 buckets without `block_public_acls = true`, `block_public_policy = true`,
-  `ignore_public_acls = true`, `restrict_public_buckets = true`
-- CloudFront distributions without origin access control/identity
-- EC2 instances or load balancers in public subnets without documented justification
-- RDS instances with `publicly_accessible = true`
-- Elasticsearch/OpenSearch domains with `network_config` set to public
+| Baseline category | NIST / ARS control ID |
+|---|---|
+| IAM wildcard actions/resources, admin policies, `sts:AssumeRole` without `Condition`, S3 public-write policies | AC-3 |
+| Shared/generic account names, IAM account provisioning hygiene | AC-2 |
+| Public-facing management endpoints / bastions without IP restriction | AC-17 |
+| Public S3 access blocks, `publicly_accessible` datastores | AC-22 |
+| Open security groups/NACLs (SSH/RDP/all-traffic/DB ports), `hostNetwork` | AC-4 |
+| Audit/flow logging disabled (CloudTrail/VPC Flow Logs/EKS/RDS/CloudFront) | AU-2 / AU-3 |
+| Log destination encryption, log retention | AU-9 |
+| Tagging gaps, hardcoded AMI/IP | CM-2 |
+| Deletion protection, force-destroy, container root/privileged, `latest` image tags | CM-6 |
+| Unused open ports | CM-7 |
+| Missing Name/description tags, unpinned module versions | CM-8 |
+| Backups disabled, no PITR, no backup plan | CP-9 |
+| Hardcoded passwords/secrets, KMS key rotation disabled | IA-5 |
+| Encryption at rest (S3/EBS/RDS/EFS/SNS/SQS/Secrets Manager), CMK vs default key | SC-12 / SC-13 / SC-28 |
+| Transport TLS (LB/API GW/OpenSearch/MSK/RDS) | SC-8 |
+| Deprecated runtimes | SI-2 |
+| State/artifact bucket versioning | SI-7 |
+| No image scanning on push for ECR/registries | SI-3 / RA-5 |
 
 ---
 
-### AU — Audit and Accountability
+## CMS/HIPAA-specific additions (not covered by baseline)
 
-**AU-2 / AU-3 | Audit Events and Content**
-- CloudTrail trail disabled, single-region only, or with `is_multi_region_trail = false`
-- CloudTrail log file validation disabled (`enable_log_file_validation = false`)
-- S3 server access logging disabled on buckets containing sensitive data
-  (inferred from bucket name patterns: `logs`, `audit`, `data`, `phi`, `pii`, `backup`)
-- VPC Flow Logs not enabled on new VPCs
-- EKS control plane logging disabled (missing `enabled_cluster_log_types`)
-- RDS enhanced monitoring disabled (`monitoring_interval = 0`)
-- CloudFront access logging disabled
+Apply these in addition to the cross-referenced findings above.
 
-**AU-9 | Protection of Audit Information**
-- CloudTrail logs delivered to an S3 bucket without server-side encryption (KMS)
-- CloudWatch Log Groups without a retention period set (`retention_in_days` absent or 0)
-- CloudWatch Log Groups without KMS encryption when they contain sensitive log streams
+### IA-2 | Multi-Factor Authentication
+- IAM user resources without an associated `aws_iam_virtual_mfa_device` or a
+  policy requiring MFA via a `Condition` block
+- Cognito user pools without MFA enabled (`mfa_configuration = "OFF"`)
+- AWS SSO / IAM Identity Center permission sets granting console access
+  without a `RequireMFA` condition
 
-**AU-11 / SI-11 / AC-23 | Log content discipline (PHI/PII leak prevention at the IaC layer)**
+### RA-5 / SI-4 | Vulnerability and Posture Monitoring
+- Amazon Inspector not enabled for new EC2 or container workloads
+- GuardDuty not enabled (flag if `aws_guardduty_detector` is absent while EC2,
+  S3, or EKS resources are being added significantly)
+- AWS Config rules not present when significant infrastructure is added
+  (`aws_config_configuration_recorder` absent)
+- Security Hub not enabled (`aws_securityhub_account` absent)
+- CloudWatch alarms not created alongside new security-sensitive resources
+  (RDS, EKS, ECS, Lambda added without corresponding alarms/dashboards)
+
+### SC-5 | Denial of Service Protection
+- Application Load Balancers or API Gateways without an associated WAF web ACL
+  (`aws_wafv2_web_acl_association` missing when public-facing ALB/API GW is added)
+- CloudFront distributions without AWS Shield or WAF association for public endpoints
+
+### SC-7 | Boundary Protection
+- VPC endpoints not used for S3, DynamoDB, or Secrets Manager when resources
+  accessing these services are being added (flag absence as Medium — forces
+  traffic over public internet)
+- Security groups using `cidr_blocks = ["0.0.0.0/0"]` on egress rules for
+  sensitive workloads
+- Internet-facing ALBs in private subnets (misconfiguration)
+- `associate_public_ip_address = true` on EC2 instances in private subnets
+
+### SI-3 | Malware Protection
+- ECS task definitions referencing images from public registries without a
+  documented approval process (images not from a private ECR registry)
+
+### SI-7 | Software, Firmware, and Information Integrity (pipeline addendum)
+- CodePipeline or CodeBuild projects without source integrity checks
+
+### AU-11 / SI-11 / AC-23 | Log content discipline (PHI/PII leak prevention at the IaC layer)
 
 The application-code side of this concern lives in the security
 perspective's § 3A.1 (Logging Hygiene). At the IaC layer, the equivalent
@@ -206,171 +167,18 @@ fence rather than `` ```suggestion ``.
 
 ---
 
-### CM — Configuration Management
+## Severity Definitions (CMS/HIPAA additions only)
 
-**CM-2 | Baseline Configuration**
-- Resources provisioned with no tags, or missing required tags:
-  `Environment`, `Owner` (or `Team`), `Project`, `CostCenter` — flag absence
-  of two or more of these as Medium; all missing as High
-- Hardcoded AMI IDs without a comment explaining their source and purpose
-- Hardcoded IP addresses for internal services (should be data source lookups)
-
-**CM-6 | Configuration Settings**
-- `deletion_protection = false` on RDS, Aurora, Elasticsearch, or DynamoDB
-  tables in non-development environments (inferred from `Environment` tag or
-  workspace name)
-- `force_destroy = true` on S3 buckets in non-development environments
-- Kubernetes containers running as root (`runAsNonRoot: false` or absent;
-  `runAsUser: 0`)
-- Kubernetes containers with `privileged: true`
-- Kubernetes containers with `allowPrivilegeEscalation: true` or absent
-- Docker/container images tagged `latest` rather than a pinned digest or
-  explicit version tag
-
-**CM-7 | Least Functionality**
-- Unused or unnecessary ports opened in security groups beyond what is required
-- Lambda functions with `reserved_concurrent_executions` unset and no throttling
-- ECS tasks with all Linux capabilities (`add: ["ALL"]`)
-- Kubernetes `hostPID: true` or `hostIPC: true`
-
-**CM-8 | System Component Inventory**
-- Resources of significant scope (VPCs, subnets, RDS clusters, EKS clusters,
-  WAF web ACLs) provisioned without a `Name` tag or `description` field
-- Terraform modules used without pinned `version` constraints (using `source`
-  from a registry without `version =`)
-
----
-
-### CP — Contingency Planning
-
-**CP-9 | System Backup**
-- RDS instances with `backup_retention_period = 0` or not set
-- RDS instances with `skip_final_snapshot = true` in non-development environments
-- DynamoDB tables without point-in-time recovery enabled
-  (`point_in_time_recovery { enabled = true }`)
-- EBS volumes not included in a Backup plan (flag if `aws_backup_selection` is
-  absent and significant EC2 resources are being added)
-
----
-
-### IA — Identification and Authentication
-
-**IA-2 | Multi-Factor Authentication**
-- IAM user resources without an associated `aws_iam_virtual_mfa_device` or
-  IAM policy requiring MFA via Condition block
-- Cognito user pools without MFA enabled (`mfa_configuration = "OFF"`)
-- AWS SSO/IAM Identity Center permission sets granting console access without
-  `RequireMFA` condition
-
-**IA-5 | Authenticator Management**
-- IAM access keys created directly in IaC for human users (vs. roles)
-- Hardcoded passwords in RDS, ElastiCache, or MSK resources
-  (flag `password =` or `master_password =` set to a literal string)
-- AWS Secrets Manager or SSM Parameter Store not used for secrets injection
-- KMS key rotation disabled (`enable_key_rotation = false`)
-- ACM certificates with expiry monitoring missing (no associated CloudWatch alarm)
-
----
-
-### RA — Risk Assessment
-
-**RA-5 | Vulnerability Monitoring and Scanning**
-- Amazon Inspector not enabled for new EC2 or container workloads
-  (flag when EC2 instances or ECR repositories are added without a corresponding
-  `aws_inspector2_enabler` or equivalent)
-- ECR image scanning on push not enabled
-  (`image_scanning_configuration { scan_on_push = false }` or absent)
-- Lambda functions without `tracing_config { mode = "Active" }` when X-Ray is
-  available
-
----
-
-### SC — System and Communications Protection
-
-**SC-5 | Denial of Service Protection**
-- Application Load Balancers or API Gateways without an associated WAF web ACL
-  (`aws_wafv2_web_acl_association` missing when public-facing ALB/API GW is added)
-- CloudFront distributions without AWS Shield or WAF association for public endpoints
-
-**SC-7 | Boundary Protection**
-- VPC endpoints not used for S3, DynamoDB, or Secrets Manager when resources
-  accessing these services are being added (flag absence as Medium — forces
-  traffic over public internet)
-- Security groups using `cidr_blocks = ["0.0.0.0/0"]` on egress rules for
-  sensitive workloads
-- Internet-facing ALBs in private subnets (misconfiguration)
-- `associate_public_ip_address = true` on EC2 instances in private subnets
-
-**SC-8 | Transmission Confidentiality and Integrity**
-- Load balancer listeners on port 80 (HTTP) without a redirect to HTTPS
-- API Gateway stages with `protocol_type = "HTTP"` rather than `HTTPS`
-- Elasticsearch/OpenSearch domains with `node_to_node_encryption { enabled = false }`
-- Elasticsearch/OpenSearch domains with `encrypt_at_rest { enabled = false }`
-- MSK clusters without `in_cluster_encryption_in_transit { client_broker = "TLS" }`
-- RDS without `storage_encrypted = true`
-
-**SC-12 / SC-13 | Cryptographic Key Management**
-- S3 buckets without server-side encryption (`server_side_encryption_configuration` absent)
-- S3 buckets using SSE-S3 (AES256) rather than SSE-KMS for sensitive data
-  (infer sensitivity from bucket name patterns: `phi`, `pii`, `data`, `archive`,
-  `backup`, `audit`, `log`)
-- EBS volumes with `encrypted = false` or absent
-- RDS without `kms_key_id` specified when `storage_encrypted = true` (uses default AWS key, not CMK)
-- SNS topics and SQS queues without KMS encryption
-- Secrets Manager secrets without `kms_key_id` (uses default AWS key, not CMK)
-- KMS keys with `key_usage = "ENCRYPT_DECRYPT"` and `is_enabled = false`
-- KMS CMK policies allowing `"Principal": {"AWS": "*"}` without conditions
-
-**SC-28 | Protection of Information at Rest**
-- Any of the SC-12/SC-13 encryption-at-rest findings above also map here
-- EFS file systems without `encrypted = true` and `kms_key_id`
-- Glacier vaults without vault lock policies
-- Kinesis streams without server-side encryption
-
----
-
-### SI — System and Information Integrity
-
-**SI-2 | Flaw Remediation**
-- EC2 launch configurations/templates without SSM Agent or user-data enabling
-  automatic patching
-- EKS node groups using `ami_type = "AL2_x86_64"` without a patch management
-  note when not using managed node groups with automatic updates
-- Lambda functions using a deprecated runtime
-  (flag `nodejs14.x`, `python3.7`, `python3.8`, `ruby2.7`, `java8`, `go1.x`,
-  `dotnetcore3.1`, `dotnet5.0` — these are end-of-life or deprecated)
-
-**SI-3 | Malware Protection**
-- ECR repositories without image scanning on push enabled
-- ECS task definitions referencing images from public registries without a
-  documented approval process (images not from a private ECR registry)
-
-**SI-4 | System Monitoring**
-- CloudWatch alarms not created alongside new security-sensitive resources
-  (flag when RDS, EKS, ECS, Lambda are added without corresponding CloudWatch
-  metric alarms or dashboards)
-- GuardDuty not enabled (flag if `aws_guardduty_detector` is absent while EC2,
-  S3, or EKS resources are being added significantly)
-- AWS Config rules not present (flag absence of `aws_config_configuration_recorder`
-  when significant infrastructure is being added)
-- Security Hub not enabled (flag absence of `aws_securityhub_account`)
-
-**SI-7 | Software, Firmware, and Information Integrity**
-- Terraform state backend without versioning enabled on the S3 bucket
-- S3 buckets storing IaC state or deployment artifacts without object versioning
-  (`versioning { enabled = true }` absent)
-- CodePipeline or CodeBuild projects without source integrity checks
-
----
-
-## Severity Definitions
+The baseline perspective's severity table already covers the
+cross-referenced findings above. These apply to the CMS/HIPAA-specific
+additions:
 
 | Severity | Criteria |
 |---|---|
-| **Critical** | Public internet exposure of management ports (SSH/RDP); IAM wildcard with no conditions; unencrypted PHI/PII datastores; all S3 public access blocks disabled; publicly accessible RDS |
-| **High** | IAM admin policies; open database ports to internet; encryption at rest disabled; CloudTrail disabled; no MFA on IAM users; hardcoded passwords; deprecated Lambda runtimes; deletion protection off on production datastores |
-| **Medium** | Missing VPC endpoints; WAF absent on public endpoints; tagging gaps (2+ required tags missing); KMS default key instead of CMK; log retention not set; Inspector/GuardDuty absent |
-| **Low** | Minor tagging gaps (1 tag missing); container image using `latest` tag; Lambda tracing not enabled; module without pinned version; description/name tag missing on non-critical resources |
+| **Critical** | Unencrypted PHI/PII datastores; PHI identifiers captured in access logs with no redaction |
+| **High** | No MFA on IAM users/console access; CMS/HIPAA log-content violations (§ 164.312(b), § 164.502(b)) |
+| **Medium** | Missing VPC endpoints (SC-7); WAF absent on public endpoints (SC-5); Inspector/GuardDuty/Config/Security Hub absent (RA-5); audit-log retention shorter than HIPAA's 6-year requirement |
+| **Low** | Pipeline source-integrity checks absent (SI-7 addendum) |
 | **Informational** | (Do not report) |
 
 Report all findings assessed as **low severity or above**; do not report
@@ -393,5 +201,5 @@ applicable to this diff, and why.
   `terraform plan`, `cfn-lint`, `checkov`, `tfsec`, or `kube-score`. Run those
   tools in CI alongside this review.
 - **CMS ARS applicability:** ARS 5.1 applies to CMS systems and contractors.
-  For non-CMS projects, the NIST 800-53 Rev 5 controls still apply; the ARS
-  column simply indicates the CMS tailoring.
+  For non-CMS projects, the underlying NIST 800-53 Rev 5 controls still apply;
+  the ARS column simply indicates the CMS tailoring.

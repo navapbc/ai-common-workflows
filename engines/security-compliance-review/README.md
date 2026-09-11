@@ -28,6 +28,7 @@ bash <engines>/security-compliance-review/harness/ai-pr-review [flags]   # run f
 |---|---|
 | `--pr <n>` | Explicit PR number (otherwise discovered via the SCM CLI) |
 | `--against <ref>` | Base ref for the diff (skips PR discovery) |
+| `--unpushed` | Diff committed + staged work against the last push (local use; skips PR discovery) |
 | `--post-comments` | Post the review with inline comments to the SCM |
 | `--gate` | Exit 1 on any non-APPROVE result |
 | `--json-only` | Print only the machine-readable findings JSON |
@@ -50,7 +51,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 |---|---|---|
 | `AI_REVIEW_TOOL` | yes | `claude` \| `codex` \| `copilot` |
 | `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` (claude or codex) \| `vertex` (claude) \| `azure` (codex) |
-| `AI_REVIEW_PROFILE` | no | Compliance profile: `cms-ars` (default) \| `baseline` \| a `skills/profiles/` name or a directory path |
+| `AI_REVIEW_PROFILE` | no | Compliance profile: `baseline` (default) \| `cms-ars` \| a `skills/profiles/` name or a directory path. The `skills/base/iac-compliance.md` floor always applies; the profile's `iac-compliance.md` (if any) is an addition layered on top, not a replacement — see [docs/profiles.md](../../docs/profiles.md) |
 | `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `ANTHROPIC_API_KEY` | claude+api | Public Anthropic API key |
 | `OPENAI_API_KEY` | codex | Public OpenAI API key |
@@ -65,7 +66,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `AI_REVIEW_JOBS` | no | Fan-out concurrency (default 4) |
 | `AI_REVIEW_BATCH_BY` | no | `dir` (default) \| `file` |
 | `AI_REVIEW_BATCH_MIN_FILES` | no | Fan-out threshold (default 10) |
-| `AI_REVIEW_CONTEXT_BUDGET` | no | Context-file ceiling per AI call (default 15) |
+| `AI_REVIEW_CONTEXT_BUDGET` | no | Ceiling on context files the model may load beyond the diff (default 15). Stated to the model in a CONTEXT BUDGET prompt block; fan-out workers narrow it per batch |
 | `AI_REVIEW_SCM` | no | SCM backend under `../_common/scm/` (default `github`) |
 | `GITHUB_TOKEN` / `GH_TOKEN` | posting | Auth for `gh`; `GH_HOST` for GitHub Enterprise |
 | `CI`, `NO_COLOR` | no | Output plumbing |
@@ -91,7 +92,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 harness/ai-pr-review        thin entrypoint (prompt, profiles, posting; also the
                             fan-out worker entry) — sources ../_common
 skills/base/*.md            framework-neutral review rubric base, inlined at dispatch time
-skills/profiles/<name>/     per-compliance-framework rubric overrides (AI_REVIEW_PROFILE)
+skills/profiles/<name>/     per-compliance-framework rubric additions/overrides (AI_REVIEW_PROFILE)
 
 ../_common/                 the shared runtime (see ../_common/CONTRACT.md):
   harness/core.sh           flags, tool invocation, markers, adjudication, fan-out

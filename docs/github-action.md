@@ -11,10 +11,16 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
   - uses: actions/checkout@v4
     with: { ref: "${{ github.event.pull_request.head.sha }}" }
   ```
-  The action runs `git fetch` for the base ref itself; `fetch-depth: 0` is a
-  belt-and-suspenders option for very large PRs. For the strongest token
+  The action runs `git fetch` for the base ref itself, then deepens history
+  as needed to locate the branch point — the review diffs `base...HEAD` (only
+  what this branch changed), which needs the merge base present.
+  `fetch-depth: 0` skips that and is a belt-and-suspenders option for very
+  large or long-lived branches; without a reachable merge base the action
+  warns and falls back to a direct `base`→`HEAD` diff. For the strongest token
   isolation, add `persist-credentials: false` to the checkout so no token is
-  left in `.git/config` during the AI phase (see [security.md](security.md)).
+  left in `.git/config` during the AI phase (see [security.md](security.md)) —
+  the base-ref fetch is a separate, AI-free step that authenticates with the
+  `github-token` input, so private repositories keep working.
 - Least-privilege permissions — `contents: read` (never write) plus
   `pull-requests: write` **only** if posting comments:
   ```yaml
@@ -44,6 +50,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `gate` | `false` | Fail the job on any non-APPROVE result |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
+| `profile` | `baseline` | Compliance profile: `baseline` \| `cms-ars`, a `skills/profiles/` name, or a custom profile directory path. The floor always applies; a profile only adds to it |
 | `provider` | `api` | `api` \| `bedrock` \| `vertex` \| `azure` (bedrock→claude or codex; vertex→claude; azure→codex) |
 | `model` | — | Model override; Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `aws-region` | — | Region for provider=bedrock (claude or codex) |
@@ -61,14 +68,14 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `jobs` | `4` | Fan-out concurrency for large diffs |
 | `batch-by` | `dir` | `dir` \| `file` fan-out batching |
 | `batch-min-files` | `10` | Minimum changed files before fanning out |
-| `context-budget` | `15` | Context files loaded per AI call |
+| `context-budget` | `15` | Ceiling on context files the model may load beyond the diff, stated to it directly in the prompt. Fan-out workers narrow it per batch. |
 | `install-cli` / `cli-version` | `true` / `latest` | npm-install the AI CLI on the runner |
 
 ## Outputs
 
 | Output | Description |
 |---|---|
-| `result` | `APPROVE` \| `COMMENT` \| `REQUEST_CHANGES` |
+| `result` | `APPROVE` \| `COMMENT` \| `REQUEST_CHANGES`. Always set when the review ran. An empty diff yields `APPROVE` (nothing to flag). A findings file that exists but cannot be parsed fails the step rather than reporting `APPROVE`. |
 | `review-json` | Path to the findings JSON on the runner |
 
 ## Advisory vs gating
@@ -112,5 +119,5 @@ re-posts automatically. A re-run with nothing new posts nothing.
 | Job skipped with a notice | Not a `pull_request` event and no `pr-number` given. |
 | `HTTP 422` from GitHub | An inline comment landed off the diff. The action already filters these and falls back to a summary-only review; if it persists, the diff fetch likely failed — check token scope. |
 | `HTTP 401/403` from GitHub | Token lacks `pull-requests: write`. |
-| No marker / empty review | The AI CLI errored. The run fails safe (exit 1) unless `--no-block`. Check the CLI install and endpoint config. |
+| No marker / empty review | The AI CLI errored. The run fails safe (exit 1) — the action has no override for this. Check the CLI install and endpoint config. |
 | Bedrock auth errors | No AWS credentials reached the runner. Use `aws-actions/configure-aws-credentials` (OIDC) before the action. |
