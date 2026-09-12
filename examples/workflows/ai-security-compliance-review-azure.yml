@@ -1,4 +1,4 @@
-# AI PR review against Azure OpenAI — keep code and diffs inside your Azure boundary.
+# AI security & compliance review against Azure OpenAI — keep code and diffs inside your Azure boundary.
 #
 # Azure OpenAI serves OpenAI models, so this uses the `codex` tool (not `claude`).
 # `model` is the Azure *deployment* name; the engine derives the OpenAI-compatible
@@ -7,7 +7,7 @@
 # As with Bedrock, in-boundary only holds if the review compute is in-boundary too.
 # If the Azure resource is behind a Private Endpoint / firewall, run this on a
 # self-hosted runner that can reach it (change `runs-on`). See docs/private-endpoints.md.
-name: AI PR review (Azure OpenAI)
+name: AI security & compliance review (Azure OpenAI)
 on:
   pull_request:
     types: [opened, synchronize, reopened]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# End-to-end tests for engines/security-compliance-review/harness/ai-pr-review
+# End-to-end tests for engines/security-compliance-review/harness/ai-security-compliance-review
 # using stub CLIs and a throwaway
 # git repo. No API keys, no network — the stubs return canned AI responses and
 # record what `gh` was asked to post.
@@ -8,7 +8,7 @@ bats_require_minimum_version 1.5.0
 
 setup() {
   REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
-  ENGINE="${REPO_ROOT}/engines/security-compliance-review/harness/ai-pr-review"
+  ENGINE="${REPO_ROOT}/engines/security-compliance-review/harness/ai-security-compliance-review"
   STUBS="${REPO_ROOT}/tests/stubs"
   FIX="${REPO_ROOT}/tests/fixtures"
   export PATH="${STUBS}:${PATH}"

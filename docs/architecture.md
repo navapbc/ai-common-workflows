@@ -21,7 +21,7 @@ adapters; the generic harness is written once and never copied (see
                                            sandbox/  (experimental, not shipped)
 ```
 
-Workflows today: **security-compliance-review** (`harness/ai-pr-review`) and
+Workflows today: **security-compliance-review** (`harness/ai-security-compliance-review`) and
 **test-classifier** (`harness/ai-test-classifier`).
 
 The **compliance profile** (`AI_REVIEW_PROFILE`, default `baseline`) selects

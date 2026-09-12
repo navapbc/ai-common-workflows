@@ -13,8 +13,8 @@ For the full input/output reference, see [github-action.md](github-action.md)
 ## Quickstart (GitHub Actions)
 
 ```yaml
-# .github/workflows/ai-pr-review.yml
-name: AI PR review
+# .github/workflows/ai-security-compliance-review.yml
+name: AI security & compliance review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -52,7 +52,7 @@ Bedrock is three extra lines — and the diff never leaves your AWS boundary:
 
 ```yaml
       - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: arn:aws:iam::…:role/ai-pr-review, aws-region: us-east-1 }
+        with: { role-to-assume: arn:aws:iam::…:role/ai-security-compliance-review, aws-region: us-east-1 }
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           provider: bedrock

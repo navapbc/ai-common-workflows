@@ -1,11 +1,11 @@
-# AI PR review against Amazon Bedrock — no code or diff leaves your AWS boundary.
+# AI security & compliance review against Amazon Bedrock — no code or diff leaves your AWS boundary.
 #
 # Because the LLM is in-boundary, the review compute should be too. GitHub-hosted
 # runners execute the checkout and diff on GitHub's shared infrastructure — if
 # that is outside your accreditation boundary, run this on a self-hosted runner
 # or an AWS CodeBuild-backed runner in your VPC instead (change `runs-on`), where
 # Bedrock is reachable over a VPC endpoint. See docs/private-endpoints.md.
-name: AI PR review (Bedrock)
+name: AI security & compliance review (Bedrock)
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -25,7 +25,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
+          role-to-assume: arn:aws:iam::123456789012:role/ai-security-compliance-review
           aws-region: us-east-1
 
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0

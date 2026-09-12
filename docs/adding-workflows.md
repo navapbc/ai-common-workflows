@@ -24,7 +24,7 @@ engines/
     scm/<name>.sh                    #   SCM seam — github ships; others implement 3 fns
     CONTRACT.md                      #   the interface every entrypoint targets
   security-compliance-review/        # workflow 1
-    harness/ai-pr-review             #   THIN entrypoint → sources _common
+    harness/ai-security-compliance-review             #   THIN entrypoint → sources _common
     skills/base/*.md                 #   framework-neutral rubric base
     skills/profiles/<name>/          #   per-compliance-framework rubric overrides
   test-classifier/                   # workflow 2 — same shape, zero overlap

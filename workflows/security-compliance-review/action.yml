@@ -272,7 +272,7 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
-        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-pr-review"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-security-compliance-review"
         review_json="${RUNNER_TEMP:-/tmp}/ai-review-findings.json"
         echo "review-json=${review_json}" >> "${GITHUB_OUTPUT}"
 
@@ -294,7 +294,7 @@ runs:
         CI: "true"
       run: |
         set -euo pipefail
-        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-pr-review"
+        engine="$(cd "${ACTION_PATH}/../.." && pwd)/engines/security-compliance-review/harness/ai-security-compliance-review"
         bash "${engine}" --post-only --pr "${PR_NUMBER}" --json-in "${REVIEW_JSON}"
 
     # ── Result + gate ────────────────────────────────────────────────────────

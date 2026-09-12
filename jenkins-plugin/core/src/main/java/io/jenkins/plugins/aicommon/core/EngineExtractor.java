@@ -33,7 +33,7 @@ public final class EngineExtractor {
      * @param zipResource absolute resource path of the engine zip, e.g.
      *                    {@code /io/jenkins/plugins/aipreview/ai-review-engine.zip}
      * @param entrypoint relative path of the executable entrypoint, e.g.
-     *                    {@code security-compliance-review/harness/ai-pr-review}
+     *                    {@code security-compliance-review/harness/ai-security-compliance-review}
      */
     public static FilePath extract(FilePath dest, ClassLoader loader, String zipResource, String entrypoint)
             throws IOException, InterruptedException {

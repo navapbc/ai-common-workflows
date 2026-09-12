@@ -216,7 +216,7 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
 
     if suppressed:
         messages.append(
-            f"[pr-review] Suppressed {suppressed} finding(s) already posted on unchanged lines."
+            f"[security-compliance-review] Suppressed {suppressed} finding(s) already posted on unchanged lines."
         )
 
     # Findings that cannot be inline-anchored — either their line is not in the
@@ -232,7 +232,7 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
 
     if out_of_diff:
         messages.append(
-            f"[pr-review] {len(out_of_diff)} finding(s) reference lines outside the "
+            f"[security-compliance-review] {len(out_of_diff)} finding(s) reference lines outside the "
             f"PR diff; moving them into the review body."
         )
         summary = (
@@ -243,7 +243,7 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
 
     if unanchorable:
         messages.append(
-            f"[pr-review] {len(unanchorable)} finding(s) lack the fields needed to "
+            f"[security-compliance-review] {len(unanchorable)} finding(s) lack the fields needed to "
             f"anchor an inline comment; moving them into the review body."
         )
         summary = (
@@ -259,14 +259,14 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
     if action == "COMMENT" and not comments_out and not out_of_diff and not unanchorable:
         if suppressed:
             messages.append(
-                "[pr-review] All findings already posted on unchanged lines; nothing new to comment."
+                "[security-compliance-review] All findings already posted on unchanged lines; nothing new to comment."
             )
         else:
             # Don't claim findings were "already posted" when there were none
             # to post — that sends an operator looking for comments that never
             # existed.
             messages.append(
-                "[pr-review] The review reported COMMENT but carried no postable "
+                "[security-compliance-review] The review reported COMMENT but carried no postable "
                 "findings; nothing to post."
             )
         return None, messages
