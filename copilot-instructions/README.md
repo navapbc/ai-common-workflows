@@ -2,9 +2,17 @@
 
 These files make GitHub Copilot's automatic PR review apply the same security
 and compliance checks — and the same comment format — as the AI Security &
-Compliance Review action and Jenkins plugin. Copilot review runs natively inside
-GitHub with no CI minutes and no LLM keys of your own; running it alongside the
-action gives you a second independent reviewer.
+Compliance Review action and Jenkins plugin. Copilot review runs on GitHub's own
+infrastructure and needs no LLM keys of your own, so it complements the action as
+a second independent reviewer.
+
+It is **metered, not free**: it requires a Copilot plan that includes code
+review, and consumes AI credits plus — since 1 June 2026 — GitHub Actions
+minutes on **private** repositories (Actions usage on public repos with
+standard runners remains free). Budget for it per review, especially if you
+enable automatic review on every push. See
+[GitHub's Copilot billing docs](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)
+for current rates.
 
 ## What's here
 
