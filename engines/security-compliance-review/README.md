@@ -22,7 +22,7 @@ temporary directories.
 ## Entrypoint
 
 ```
-bash <engines>/security-compliance-review/harness/ai-pr-review [flags]   # run from the reviewed repo's root
+bash <engines>/security-compliance-review/harness/ai-security-compliance-review [flags]   # run from the reviewed repo's root
 ```
 
 | Flag | Meaning |
@@ -90,7 +90,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 ## Layout
 
 ```
-harness/ai-pr-review        thin entrypoint (prompt, profiles, posting; also the
+harness/ai-security-compliance-review        thin entrypoint (prompt, profiles, posting; also the
                             fan-out worker entry) — sources ../_common
 skills/base/*.md            framework-neutral review rubric base, inlined at dispatch time
 skills/profiles/<name>/     per-compliance-framework rubric additions/overrides (AI_REVIEW_PROFILE)

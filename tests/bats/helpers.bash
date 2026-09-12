@@ -5,7 +5,7 @@
 # PATH that resolves the AI CLIs and gh to the stubs in tests/stubs/.
 
 REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
-ENGINE="${REPO_ROOT}/engines/security-compliance-review/harness/ai-pr-review"
+ENGINE="${REPO_ROOT}/engines/security-compliance-review/harness/ai-security-compliance-review"
 CORE_LIB="${REPO_ROOT}/engines/_common/harness/core.sh"
 ENDPOINTS_LIB="${REPO_ROOT}/engines/_common/endpoints.sh"
 FIXTURES="${REPO_ROOT}/tests/fixtures"

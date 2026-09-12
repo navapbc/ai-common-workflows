@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# engines/security-compliance-review/harness/ai-pr-review
+# engines/security-compliance-review/harness/ai-security-compliance-review
 #
 # AI-assisted PR review: composes security + compliance perspectives into a
 # single review of a pull-request diff and (optionally) posts the result as
@@ -7,12 +7,12 @@
 # in engines/_common (see engines/_common/CONTRACT.md).
 #
 # Usage:
-#   ai-pr-review --against origin/main                # review; print only
-#   ai-pr-review --pr 1234 --post-comments            # review + post inline comments
-#   ai-pr-review --against origin/main --gate         # exit 1 on non-APPROVE
-#   ai-pr-review --against origin/main --json-out f   # also write findings JSON
-#   ai-pr-review --post-only --pr 1234 --json-in f    # post previously produced JSON
-#   ai-pr-review --dry-run --against origin/main      # show plan, no AI call
+#   ai-security-compliance-review --against origin/main                # review; print only
+#   ai-security-compliance-review --pr 1234 --post-comments            # review + post inline comments
+#   ai-security-compliance-review --against origin/main --gate         # exit 1 on non-APPROVE
+#   ai-security-compliance-review --against origin/main --json-out f   # also write findings JSON
+#   ai-security-compliance-review --post-only --pr 1234 --json-in f    # post previously produced JSON
+#   ai-security-compliance-review --dry-run --against origin/main      # show plan, no AI call
 #
 # The engine is relocatable: this script resolves everything it needs from
 # its own location (ENGINE_HOME), never from the repository being reviewed.
@@ -37,8 +37,8 @@ set -euo pipefail
 ENGINE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AI_COMMON_HOME="$(cd "${ENGINE_HOME}/../_common" && pwd)"
 
-SKILL_NAME="pr-review"
-SKILL_HUMAN_NAME="AI-Assisted PR Review (security + compliance)"
+SKILL_NAME="security-compliance-review"
+SKILL_HUMAN_NAME="AI Security & Compliance Review"
 # Defaults in _common already match this workflow; set explicitly for clarity.
 AI_REVIEW_MARKER_VOCAB="APPROVE|COMMENT|REQUEST_CHANGES"
 AI_REVIEW_JSON_MARKER="AI_REVIEW_JSON"
@@ -93,10 +93,10 @@ pr_review::rubric() {
 # ── Help (overrides the generic _common fallback) ──────────────────────────
 ai_review::print_help() {
   cat <<EOF
-AI-assisted PR review (security + compliance)
+AI Security & Compliance Review — AI-assisted PR review
 
 Usage:
-  ai-pr-review [options]
+  ai-security-compliance-review [options]
 
 Options:
   --pr <number>        Explicit PR number (overrides auto-discovery).
@@ -280,7 +280,7 @@ pr_review::require_json() {
 }
 
 # ── Fan-out worker ──────────────────────────────────────────────────────────
-# Entry point for one batch (invoked as: ai-pr-review --__review-one <record>).
+# Entry point for one batch (invoked as: ai-security-compliance-review --__review-one <record>).
 # Reviews exactly one batch and prints a single sentinel line to stdout:
 #   AI_REVIEW_BATCH_RESULT\t<key>\t<marker>\t<json_file>
 # The human report streams to stderr so it is never captured by the parent.

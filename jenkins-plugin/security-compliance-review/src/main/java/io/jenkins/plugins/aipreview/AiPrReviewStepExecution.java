@@ -36,7 +36,7 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
     // classloader and these paths.
     private static final String ENGINE_RESOURCE = "/io/jenkins/plugins/aipreview/ai-review-engine.zip";
     private static final String VERSION_RESOURCE = "/io/jenkins/plugins/aipreview/engine-version.txt";
-    private static final String ENTRYPOINT = "security-compliance-review/harness/ai-pr-review";
+    private static final String ENTRYPOINT = "security-compliance-review/harness/ai-security-compliance-review";
 
     private final transient AiPrReviewStep step;
 
@@ -174,7 +174,7 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
 
         // ── Locate the engine (bundled, or a workspace override for dev/test) ──
         FilePath engineHome;
-        FilePath tmpRoot = workspace.child(".ai-pr-review@tmp");
+        FilePath tmpRoot = workspace.child(".ai-security-compliance-review@tmp");
         boolean extracted = false;
         if (step.getEngineOverridePath() != null && !step.getEngineOverridePath().isEmpty()) {
             engineHome = workspace.child(step.getEngineOverridePath());

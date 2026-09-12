@@ -1,6 +1,6 @@
 """Merge per-batch AI review JSON blocks into one review.
 
-Invoked by engines/security-compliance-review/harness/ai-pr-review after a fan-out run as:
+Invoked by engines/security-compliance-review/harness/ai-security-compliance-review after a fan-out run as:
 
     python3 fold_review_json.py batch1.json batch2.json ... > merged.json
 

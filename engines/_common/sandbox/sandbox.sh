@@ -235,7 +235,7 @@ log "Running the AI review phase (internal network; allowlist above; checkout re
 REVIEW_ENV_ARGS=()
 while IFS= read -r line; do REVIEW_ENV_ARGS+=("${line}"); done < <(review_env_args)
 
-ENGINE_CMD=(bash /opt/engines/security-compliance-review/harness/ai-pr-review --against "${AGAINST}" --json-out /out/review.json)
+ENGINE_CMD=(bash /opt/engines/security-compliance-review/harness/ai-security-compliance-review --against "${AGAINST}" --json-out /out/review.json)
 ((NO_BLOCK == 1)) && ENGINE_CMD+=(--no-block)
 ENGINE_CMD+=("${ENGINE_ARGS[@]+"${ENGINE_ARGS[@]}"}")
 
@@ -299,7 +299,7 @@ if ((POST_COMMENTS == 1)); then
     --env GIT_OPTIONAL_LOCKS=0 \
     "${POST_ENV_ARGS[@]+"${POST_ENV_ARGS[@]}"}" \
     "${IMAGE}" \
-    bash /opt/engines/security-compliance-review/harness/ai-pr-review --post-only --pr "${PR_NUMBER}" --json-in /out/review.json
+    bash /opt/engines/security-compliance-review/harness/ai-security-compliance-review --post-only --pr "${PR_NUMBER}" --json-in /out/review.json
 fi
 
 # ── Gate ────────────────────────────────────────────────────────────────────
