@@ -83,7 +83,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 By default the review is **advisory**: findings post as comments and the job
 stays green. Set `gate: true` to fail the job on any non-APPROVE result — then
 the job can be a required check. See
-[`examples/workflows/ai-pr-review-gating.yml`](../examples/workflows/ai-pr-review-gating.yml).
+[`examples/workflows/ai-security-compliance-review-gating.yml`](../examples/workflows/ai-security-compliance-review-gating.yml).
 
 ## Read-only mode (no repository writes)
 

@@ -1,6 +1,7 @@
 # Review engine — embedding contract
 
-This directory is the single source of truth for the AI PR review. The
+This directory is the single source of truth for the AI security & compliance
+review. The
 composite GitHub Action references it in place, and the Jenkins plugin bundles
 a zip of it at build time and extracts it onto the agent. Both consume it
 through the contract on this page and nothing else. (The experimental sandbox

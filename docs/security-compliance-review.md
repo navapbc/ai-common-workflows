@@ -13,8 +13,8 @@ For the full input/output reference, see [github-action.md](github-action.md)
 ## Quickstart (GitHub Actions)
 
 ```yaml
-# .github/workflows/ai-pr-review.yml
-name: AI PR review
+# .github/workflows/ai-security-compliance-review.yml
+name: AI security & compliance review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
