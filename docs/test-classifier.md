@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
       - uses: navapbc/ai-common-workflows/workflows/test-classifier@<commit-sha> # v1.x.x
         with:

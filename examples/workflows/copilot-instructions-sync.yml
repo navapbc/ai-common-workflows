@@ -60,10 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out this repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Fetch instruction files from ai-common-workflows
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.ACW_REPO }}
           ref: ${{ env.ACW_REF }}

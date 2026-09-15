@@ -21,6 +21,21 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **GitHub Actions pinned to current majors for the Node 20 runner
+  deprecation** — `actions/checkout` `v4` → **`v7`** (the examples, the docs
+  quickstarts, and this repo's own CI), plus `setup-python` `v5` → **`v7`**,
+  `setup-java` `v4` → **`v6`**, and `upload-artifact` `v4` → **`v7`** in
+  `.github/workflows/`. Node 20 is deprecated on Actions runners, so each of
+  these was being force-run on Node 24 with a warning on every run — including
+  every consumer who copied a quickstart. Note `upload-artifact@v5` is still
+  Node 20; v6 is the first Node 24 major. `attest-build-provenance@v4` is
+  unchanged: it is a composite action with no Node runtime of its own, and v4
+  is still its current major.
+  Two behavior notes: `checkout@v7` refuses to check out a fork PR under
+  `pull_request_target` / `workflow_run` (this repo already tells consumers
+  never to use `pull_request_target`, so nothing here is affected), and these
+  majors require Actions runner **2.327.1+** — relevant only to self-hosted
+  runners.
 - **Compliance profiles are now additive, and `baseline` is the default**
   (was `cms-ars`). The framework-neutral rubric (CIS / NIST CSF / OWASP) moved
   to `engines/security-compliance-review/skills/base/iac-compliance.md` and
