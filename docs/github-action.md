@@ -8,7 +8,7 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
 
 - Check out the PR head before the action, with the base ref reachable:
   ```yaml
-  - uses: actions/checkout@v7
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     with: { ref: "${{ github.event.pull_request.head.sha }}" }
   ```
   The action runs `git fetch` for the base ref itself, then deepens history
