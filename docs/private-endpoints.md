@@ -32,7 +32,7 @@ jobs:
   review:
     runs-on: [self-hosted, linux, x64] # in your VPC; or ubuntu-latest if acceptable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
       - uses: aws-actions/configure-aws-credentials@v4
         with:

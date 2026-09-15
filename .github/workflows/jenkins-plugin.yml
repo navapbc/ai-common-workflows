@@ -23,8 +23,8 @@ jobs:
     name: Build & test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -32,7 +32,7 @@ jobs:
       - name: mvn verify
         working-directory: jenkins-plugin
         run: mvn -B -ntp verify
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ai-security-compliance-review-hpi
           # Both .hpi files: the workflow plugin and the shared core it depends on.
@@ -50,8 +50,8 @@ jobs:
       id-token: write # OIDC identity for Sigstore signing of the provenance
       attestations: write # store the attestation on the repo
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
