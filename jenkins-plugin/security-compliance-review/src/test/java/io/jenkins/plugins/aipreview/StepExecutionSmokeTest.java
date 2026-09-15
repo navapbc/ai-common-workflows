@@ -73,8 +73,8 @@ public class StepExecutionSmokeTest {
         String stub = "'''" + STUB_ENGINE + "'''";
         return ""
                 + "node {\n"
-                + "  writeFile file: 'engine/security-compliance-review/harness/ai-pr-review', text: " + stub + "\n"
-                + "  sh 'chmod +x engine/security-compliance-review/harness/ai-pr-review'\n"
+                + "  writeFile file: 'engine/security-compliance-review/harness/ai-security-compliance-review', text: " + stub + "\n"
+                + "  sh 'chmod +x engine/security-compliance-review/harness/ai-security-compliance-review'\n"
                 + "  withEnv([" + envList + "]) {\n"
                 + "    aiSecurityComplianceReview(engineOverridePath: 'engine', fetchBase: false, " + stepParams + ")\n"
                 + "  }\n"

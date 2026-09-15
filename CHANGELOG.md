@@ -68,7 +68,7 @@ follow [Semantic Versioning](https://semver.org/).
   used by the test classifier; the review's read-only invocation behavior is
   unchanged. The Jenkins plugins bundle `_common` + their workflow engine in
   the `.hpi` (entrypoint moved to
-  `security-compliance-review/harness/ai-pr-review`).
+  `security-compliance-review/harness/ai-security-compliance-review`).
 
 ### Fixed
 

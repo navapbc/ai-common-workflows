@@ -26,7 +26,7 @@ public class EngineExtractorTest {
     public void extractsEntrypointAndLib() throws Exception {
         FilePath dest = new FilePath(new File(tmp.getRoot(), "engine"));
         FilePath entry = EngineExtractor.extract(
-                dest, getClass().getClassLoader(), TEST_ENGINE_ZIP, "security-compliance-review/harness/ai-pr-review");
+                dest, getClass().getClassLoader(), TEST_ENGINE_ZIP, "security-compliance-review/harness/ai-security-compliance-review");
 
         assertTrue("entrypoint exists", entry.exists());
         assertTrue("entrypoint is executable", (entry.mode() & 0100) != 0);

@@ -13,14 +13,14 @@ setup_file() {
   fi
   REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
   export REPO_ROOT
-  docker build -q -t ai-pr-review:batstest "${REPO_ROOT}" >/dev/null
+  docker build -q -t ai-security-compliance-review:batstest "${REPO_ROOT}" >/dev/null
   # Overlay the stub claude CLI + canned response onto the built image.
   local ctx
   ctx="$(mktemp -d)"
   cp "${REPO_ROOT}/tests/stubs/claude" "${ctx}/claude"
   cp "${REPO_ROOT}/tests/fixtures/response-comment.txt" "${ctx}/response.txt"
   cat > "${ctx}/Dockerfile" <<'DOCKER'
-FROM ai-pr-review:batstest
+FROM ai-security-compliance-review:batstest
 USER root
 COPY claude /usr/local/bin/claude
 COPY response.txt /stub/response.txt
@@ -28,7 +28,7 @@ RUN chmod 755 /usr/local/bin/claude && chmod 644 /stub/response.txt
 ENV STUB_RESPONSE_FILE=/stub/response.txt
 USER node
 DOCKER
-  docker build -q -t ai-pr-review:batsstub "${ctx}" >/dev/null
+  docker build -q -t ai-security-compliance-review:batsstub "${ctx}" >/dev/null
   rm -rf "${ctx}"
 }
 
@@ -50,14 +50,14 @@ start_proxy() {  # $1 = allowlist spec
   docker run -d --name "${PROXY}" \
     -v "${REPO_ROOT}/engine:/opt/engine:ro" \
     -e ALLOWED_HOSTS="$1" \
-    ai-pr-review:batstest python3 /opt/engines/_common/sandbox/allowlist_proxy.py >/dev/null
+    ai-security-compliance-review:batstest python3 /opt/engines/_common/sandbox/allowlist_proxy.py >/dev/null
   docker network connect "${NET}" "${PROXY}"
   docker inspect -f "{{(index .NetworkSettings.Networks \"${NET}\").IPAddress}}" "${PROXY}"
 }
 
 @test "direct egress from the internal network has no route out" {
   start_proxy "registry.npmjs.org" >/dev/null
-  run docker run --rm --network "${NET}" ai-pr-review:batstest \
+  run docker run --rm --network "${NET}" ai-security-compliance-review:batstest \
     python3 -c "import socket; socket.create_connection(('1.1.1.1',443),timeout=5)"
   [ "$status" -ne 0 ]  # connection refused / unreachable
 }
@@ -65,7 +65,7 @@ start_proxy() {  # $1 = allowlist spec
 @test "denied host is refused by the proxy with 403" {
   local ip; ip="$(start_proxy "registry.npmjs.org")"
   run docker run --rm --network "${NET}" -e https_proxy="http://${ip}:3128" \
-    ai-pr-review:batstest python3 -c \
+    ai-security-compliance-review:batstest python3 -c \
     "import urllib.request; urllib.request.urlopen('https://example.com',timeout=15)"
   [ "$status" -ne 0 ]
   run docker logs "${PROXY}"
@@ -75,7 +75,7 @@ start_proxy() {  # $1 = allowlist spec
 @test "allowed host connects through the proxy" {
   local ip; ip="$(start_proxy "registry.npmjs.org")"
   run docker run --rm --network "${NET}" -e https_proxy="http://${ip}:3128" \
-    ai-pr-review:batstest python3 -c \
+    ai-security-compliance-review:batstest python3 -c \
     "import urllib.request; print(urllib.request.urlopen('https://registry.npmjs.org/',timeout=30).status)"
   [ "$status" -eq 0 ]
   [[ "$output" == *"200"* ]]
@@ -93,7 +93,7 @@ start_proxy() {  # $1 = allowlist spec
   )
   run env -C "${work}" \
     AI_REVIEW_TOOL=claude ANTHROPIC_API_KEY=stub \
-    AI_REVIEW_SANDBOX_IMAGE=ai-pr-review:batsstub CI=true NO_COLOR=1 \
+    AI_REVIEW_SANDBOX_IMAGE=ai-security-compliance-review:batsstub CI=true NO_COLOR=1 \
     bash "${REPO_ROOT}/engines/_common/sandbox/sandbox.sh" --against origin/main
   rm -rf "${work}"
   [ "$status" -eq 0 ]

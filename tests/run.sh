@@ -17,7 +17,7 @@ fail=0
 if (( RUN_LINT )) && command -v shellcheck &>/dev/null; then
   echo "==> shellcheck"
   shellcheck -x -P SCRIPTDIR \
-    engines/security-compliance-review/harness/ai-pr-review \
+    engines/security-compliance-review/harness/ai-security-compliance-review \
     engines/test-classifier/harness/ai-test-classifier \
     engines/_common/harness/core.sh engines/_common/endpoints.sh \
     engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \

@@ -36,7 +36,7 @@ jobs:
         with: { ref: "${{ github.event.pull_request.head.sha }}" }
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/ai-pr-review
+          role-to-assume: arn:aws:iam::123456789012:role/ai-security-compliance-review
           aws-region: us-east-1
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
@@ -96,7 +96,7 @@ withCredentials([aws(credentialsId: 'aws-bedrock', ...)]) {
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/…/providers/…
-          service_account: ai-pr-review@project.iam.gserviceaccount.com
+          service_account: ai-security-compliance-review@project.iam.gserviceaccount.com
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           provider: vertex

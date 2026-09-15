@@ -116,7 +116,7 @@ unclassified:
 Minimal (multibranch PR build, defaults from global config):
 
 ```groovy
-stage('AI PR Review') {
+stage('AI Security & Compliance Review') {
   when { changeRequest() }
   steps { aiSecurityComplianceReview() }
 }
