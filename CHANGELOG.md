@@ -21,6 +21,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`actions/checkout` is now SHA-pinned in the docs and examples**
+  (`3d3c42e…` # v7.0.1) rather than the floating `@v7` tag. The quickstarts are
+  copied verbatim into consumer repos, so a floating tag there taught the
+  opposite of what [docs/security.md](docs/security.md) tells consumers to do —
+  and did: a consumer that SHA-pins every other action inherited its one
+  floating pin from our example. This repo's own `.github/workflows/` still use
+  major tags; pinning those is a separate call.
 - **GitHub Actions pinned to current majors for the Node 20 runner
   deprecation** — `actions/checkout` `v4` → **`v7`** (the examples, the docs
   quickstarts, and this repo's own CI), plus `setup-python` `v5` → **`v7`**,
