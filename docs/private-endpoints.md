@@ -130,7 +130,19 @@ resource endpoint, the deployment name (`model`), and the API version:
 The derived endpoint is
 `https://<resource>.openai.azure.com/openai/deployments/<deployment>?api-version=<version>`.
 If you would rather pass the full URL yourself, set `openai-base-url` directly
-and it is used as-is. Keep your Azure resource in the region/boundary you need;
+and it is used as-is.
+
+**Adjudicating on a second deployment.** Azure resolves the model from that URL
+path rather than from a model flag, so `adjudication-model` needs its own URL.
+When the engine built the URL (i.e. you set `azure-openai-endpoint`), it
+rebuilds it for the adjudication call and the second opinion really does run on
+the other deployment. When you supply `openai-base-url` yourself the URL is
+opaque — the deployment name could be anywhere in it — so combining it with
+`adjudication-model` is rejected at startup. That is deliberate: the
+alternative is an "independent" pass that silently re-runs the first-pass
+deployment, which looks like a second opinion and is not one. Drop
+`adjudication-model` to adjudicate on the same deployment, or switch to
+`azure-openai-endpoint` so the engine can do the swap. Keep your Azure resource in the region/boundary you need;
 as with Bedrock, in-boundary only holds if the review also runs on in-boundary
 compute.
 

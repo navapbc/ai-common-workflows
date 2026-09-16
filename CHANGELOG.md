@@ -174,6 +174,21 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`adjudication-model` was silently ignored under `provider: azure`.** Azure
+  resolves the model from the request URL path, and the engine bakes the
+  deployment into `OPENAI_BASE_URL` once at startup; the adjudication pass only
+  varied the CLI's model flag. So an `independent` pass configured with a
+  second deployment re-ran the **first-pass deployment** — it looked like a
+  second opinion and was not one, with nothing warning about it.
+  The engine now records the URL template it built and rebuilds the URL for the
+  adjudication call, so a different deployment genuinely is used. When the URL
+  came from a caller-supplied `openai-base-url` it cannot be rewritten safely
+  (the deployment name could be anywhere in it), so that combination is now a
+  startup configuration error instead — failing before the first pass is paid
+  for rather than after. `self` adjudication is unaffected: it is one call, so
+  the override never applied.
+  Every other provider was already correct — they select the model from the
+  CLI's model flag, and the URL carries no model.
 - **`COPILOT_SYNC_TOKEN` is scoped to `Pull requests: Read and write` only.**
   It was documented with `Contents: Read and write`, which it never uses: the
   sync token authenticates only `gh pr list` and `gh pr create`, while the
