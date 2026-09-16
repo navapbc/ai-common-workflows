@@ -1,4 +1,4 @@
-# Copilot review setup — six steps
+# Copilot review setup — five steps
 
 Make GitHub Copilot's PR review apply this repo's security & compliance rubric.
 Runs natively inside GitHub: no CI minutes, no LLM keys of your own.
@@ -35,30 +35,7 @@ In the `env:` block at the top:
 A `PROFILE` that doesn't exist fails the run loudly, before anything is copied
 — it can't silently downgrade you.
 
-## 3. Add `ACW_READ_TOKEN` — only while `ai-common-workflows` is private
-
-**Skip this step entirely if the repo is public.**
-
-Your repo's built-in `GITHUB_TOKEN` is scoped to your repo alone and cannot
-read a private repo elsewhere, whatever your org settings say. Without this
-secret the checkout fails with a misleading `Repository not found`.
-
-Create a fine-grained PAT or GitHub App installation token:
-
-- **Repository access:** `navapbc/ai-common-workflows` — that repo only
-- **Permissions:** `Contents: Read-only`
-
-Add it to your repo as **`ACW_READ_TOKEN`**. It is read-only on one external
-repo: it can never write anything, in either repo. Fine-grained PATs expire; an
-App installation token avoids the renewal treadmill.
-
-> Also private-only: using the composite actions (`uses:
-> navapbc/ai-common-workflows/workflows/...`) needs that repo's own Settings →
-> Actions → General → Access to share it with your org. That is a **different**
-> switch from this token — neither one enables the other, and a repo doing both
-> needs both.
-
-## 4. Optional — `COPILOT_SYNC_TOKEN` for hands-off PRs
+## 3. Optional — `COPILOT_SYNC_TOKEN` for hands-off PRs
 
 Without it, the workflow pushes its branch, fails to open the PR (GitHub blocks
 PR creation by the built-in `GITHUB_TOKEN` by default), and prints a compare
@@ -73,7 +50,7 @@ no workflow gains approve rights, and `pull_request` CI runs normally on the
 sync PR — GitHub suppresses CI on PRs opened by the built-in token, but not on
 PAT-opened ones.
 
-## 5. Run it, merge the sync PR
+## 4. Run it, merge the sync PR
 
 Actions → **Sync AI-review Copilot instructions** → Run workflow.
 
@@ -84,7 +61,7 @@ From then on it runs weekly and is idempotent: no upstream change, no PR. To
 upgrade, bump `ACW_REF`. To change profile, edit `PROFILE` — the next sync adds
 or removes that profile's `*-additions` files and never touches the base.
 
-## 6. Turn on Copilot review
+## 5. Turn on Copilot review
 
 The instructions do nothing until Copilot actually reviews your PRs. Two
 requirements, both outside this repo:
@@ -133,11 +110,10 @@ does it:
 
 | Symptom | Cause |
 |---|---|
-| `Repository not found` on the checkout | `ACW_READ_TOKEN` missing, expired, or not scoped to `ai-common-workflows` (step 3) |
-| `GitHub Actions is not permitted to create or approve pull requests` | Expected without `COPILOT_SYNC_TOKEN` — the branch **is** pushed; open the PR from the printed compare URL (step 4) |
+| `GitHub Actions is not permitted to create or approve pull requests` | Expected without `COPILOT_SYNC_TOKEN` — the branch **is** pushed; open the PR from the printed compare URL (step 3) |
 | `profile '<x>' not found` | `PROFILE` names a directory that doesn't exist under `copilot-instructions/profiles/` |
 | Run is green but no PR and no instructions on your default branch | Your copy predates the open-PR fix; a closed or merged sync PR on the branch kept matching. Take the current example (step 1) |
-| Instructions synced, but reviews look generic | Copilot review isn't enabled, or isn't being requested on the PR (step 6) |
+| Instructions synced, but reviews look generic | Copilot review isn't enabled, or isn't being requested on the PR (step 5) |
 
 A workflow fix upstream **never reaches you automatically.** The sync only ever
 writes `.github/instructions/` — it does not update your copy of

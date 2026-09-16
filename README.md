@@ -18,7 +18,7 @@ its own self-contained engine — so teams can adopt them one at a time.
 
 | | What it does | Docs |
 |---|---|---|
-| **Copilot review instructions** | Makes GitHub Copilot's own PR review apply the same security & compliance rubric as the review above — natively inside GitHub, no CI minutes and no LLM keys of your own. A sync workflow in your repo pulls the instruction files and opens a PR. Run it alongside the action for a second, independent reviewer. | [Setup in six steps](docs/copilot-review-setup.md) · [what's in them](copilot-instructions/README.md) |
+| **Copilot review instructions** | Makes GitHub Copilot's own PR review apply the same security & compliance rubric as the review above — natively inside GitHub, no CI minutes and no LLM keys of your own. A sync workflow in your repo pulls the instruction files and opens a PR. Run it alongside the action for a second, independent reviewer. | [Setup in five steps](docs/copilot-review-setup.md) · [what's in them](copilot-instructions/README.md) |
 
 More workflows will land here over time. Each one is meant to stand alone — you
 adopt only the ones you need. **Adding a workflow?** See the conventions in
