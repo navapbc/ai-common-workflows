@@ -735,6 +735,87 @@ ai_review::extract_review_json() {
   '
 }
 
+# ── Compliance profiles ─────────────────────────────────────────────────────
+# A profile only ever ADDS to the rubric. The base skill in
+# ${ENGINE_HOME}/skills/base/ always applies; a profile's copy of the same
+# filename is appended after it as an addition, never substituted for it.
+#
+# That is a deliberate policy, not an implementation detail: a profile exists
+# to layer an agency's requirements onto a floor everybody gets, so it must not
+# be able to remove coverage. The earlier override semantics let a profile
+# replace a base file, which meant copying ~20KB of rubric it then had to
+# maintain forever — the drift that per-profile standalone rubrics already
+# caused once.
+#
+# AI_REVIEW_PROFILE takes one profile or a comma-separated list. Additions are
+# appended in list order, and each one is told it outranks everything above it,
+# so the LAST profile listed wins any conflict.
+
+# ai_review::resolve_profiles
+# Reads AI_REVIEW_PROFILE (default "baseline"); publishes the resolved
+# directories, newline-separated and in order, as AI_REVIEW_PROFILE_DIRS.
+# Exits 2 on a name that is neither a bundled profile nor a directory.
+ai_review::resolve_profiles() {
+  local raw="${AI_REVIEW_PROFILE:-baseline}"
+  local dirs="" name resolved
+  local oldifs="${IFS}"
+  IFS=','
+  # shellcheck disable=SC2086  # deliberate split on the comma list
+  set -- ${raw}
+  IFS="${oldifs}"
+  for name in "$@"; do
+    # Trim surrounding whitespace so "cms-ars, pci-dss" works.
+    name="${name#"${name%%[![:space:]]*}"}"
+    name="${name%"${name##*[![:space:]]}"}"
+    [[ -z "${name}" ]] && continue
+    if [[ -d "${name}" ]]; then
+      resolved="$(cd "${name}" && pwd)"
+    elif [[ -d "${ENGINE_HOME}/skills/profiles/${name}" ]]; then
+      resolved="${ENGINE_HOME}/skills/profiles/${name}"
+    else
+      ai_review::err "profile '${name}' is not a known profile or an existing directory."
+      ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
+      ai_review::log "  Or pass a path to a custom profile directory."
+      ai_review::log "  Several may be combined: AI_REVIEW_PROFILE=cms-ars,my-overlay"
+      exit 2
+    fi
+    dirs="${dirs}${resolved}"$'\n'
+  done
+  if [[ -z "${dirs}" ]]; then
+    ai_review::err "AI_REVIEW_PROFILE resolved to no profiles."
+    exit 2
+  fi
+  AI_REVIEW_PROFILE_DIRS="${dirs}"
+  export AI_REVIEW_PROFILE_DIRS
+}
+
+# ai_review::profile_additions <rubric_filename> <section_label>
+# Prints the addition block for every resolved profile that supplies
+# <rubric_filename>, in list order. Prints nothing when none do — so a caller
+# can always interpolate it directly after the base file.
+#
+# Each block states that it outranks everything above it rather than just "the
+# base": with two profiles layered, a block that only claimed precedence over
+# the base would leave two sections both claiming to win.
+ai_review::profile_additions() {
+  local file="$1" label="$2"
+  local dir base
+  while IFS= read -r dir; do
+    [[ -z "${dir}" ]] && continue
+    [[ -f "${dir}/${file}" ]] || continue
+    base="$(basename "${dir}")"
+    cat <<ADDITION
+
+──────────── ${label} — ${base} ADDITIONS ────────────
+The following supplements the ${label} above for the '${base}' profile. It
+ADDS to everything above it and never replaces it. On any conflict with
+anything above — severity, citation, guidance — this section takes precedence.
+
+$(cat "${dir}/${file}")
+ADDITION
+  done <<<"${AI_REVIEW_PROFILE_DIRS:-}"
+}
+
 # ── Gate verdict ────────────────────────────────────────────────────────────
 # ai_review::gate_blocks <findings_json_file|->
 # Pass a file path, or "-" with the JSON on stdin. Returns 0 when the review

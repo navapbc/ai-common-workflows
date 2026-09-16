@@ -246,6 +246,95 @@ report
   [[ "$output" != *"azuresecret"* ]]
 }
 
+# ── profiles: additive everywhere, last listed wins ─────────────────────────
+# A profile may only ADD to the rubric. There is no override path: the base
+# skill always reaches the prompt, and a profile's copy of the same filename is
+# appended after it. Several profiles may be listed, and each addition claims
+# precedence over everything above it, so the last one listed wins.
+
+_profile_fixture() { # $1 = profile name, rest = rubric filenames to create
+  local name="$1"; shift
+  local d="${BATS_TEST_TMPDIR}/${name}"
+  mkdir -p "${d}"
+  local f
+  for f in "$@"; do printf 'ADDITION-FROM-%s\n' "${name}" >"${d}/${f}"; done
+  printf '%s' "${d}"
+}
+
+@test "profiles: a single name resolves to one directory" {
+  AI_REVIEW_PROFILE=cms-ars ai_review::resolve_profiles
+  [[ "${AI_REVIEW_PROFILE_DIRS}" == *"profiles/cms-ars"* ]]
+  [ "$(printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | grep -c .)" -eq 1 ]
+}
+
+@test "profiles: a comma list resolves in order" {
+  AI_REVIEW_PROFILE=baseline,cms-ars ai_review::resolve_profiles
+  [ "$(printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | grep -c .)" -eq 2 ]
+  [[ "$(printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | head -1)" == *baseline ]]
+  [[ "$(printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | tail -1)" == *cms-ars ]]
+}
+
+@test "profiles: surrounding whitespace in a list is tolerated" {
+  AI_REVIEW_PROFILE="baseline , cms-ars" ai_review::resolve_profiles
+  [ "$(printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | grep -c .)" -eq 2 ]
+}
+
+@test "profiles: a directory path is accepted alongside a bundled name" {
+  local d; d="$(_profile_fixture mine code-security.md)"
+  AI_REVIEW_PROFILE="cms-ars,${d}" ai_review::resolve_profiles
+  [ "$(printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | grep -c .)" -eq 2 ]
+}
+
+@test "profiles: an unknown name in a list is a config error" {
+  AI_REVIEW_PROFILE="cms-ars,nope" run ai_review::resolve_profiles
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"'nope' is not a known profile"* ]]
+  [[ "$output" == *"may be combined"* ]]
+}
+
+@test "profiles: additions are emitted for each profile that has the file" {
+  local a b; a="$(_profile_fixture one code-security.md)"; b="$(_profile_fixture two code-security.md)"
+  AI_REVIEW_PROFILE="${a},${b}" ai_review::resolve_profiles
+  run ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ADDITION-FROM-one"* ]]
+  [[ "$output" == *"ADDITION-FROM-two"* ]]
+}
+
+@test "profiles: the last listed profile's addition comes last" {
+  local a b; a="$(_profile_fixture one code-security.md)"; b="$(_profile_fixture two code-security.md)"
+  AI_REVIEW_PROFILE="${a},${b}" ai_review::resolve_profiles
+  run ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE"
+  local first_pos last_pos
+  first_pos="$(printf '%s' "$output" | grep -n 'ADDITION-FROM-one' | cut -d: -f1)"
+  last_pos="$(printf '%s' "$output" | grep -n 'ADDITION-FROM-two' | cut -d: -f1)"
+  [ "${first_pos}" -lt "${last_pos}" ]
+}
+
+@test "profiles: each addition claims precedence over everything above it" {
+  local a; a="$(_profile_fixture one code-security.md)"
+  AI_REVIEW_PROFILE="${a}" ai_review::resolve_profiles
+  run ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE"
+  [[ "$output" == *"ADDS to everything above it and never replaces it"* ]]
+  [[ "$output" == *"this section takes precedence"* ]]
+}
+
+@test "profiles: a profile with no copy of the file contributes nothing" {
+  # baseline ships only a README, so it adds nothing to any rubric.
+  AI_REVIEW_PROFILE=baseline ai_review::resolve_profiles
+  run ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "profiles: a profile copy never replaces the base (no override path)" {
+  # The engine reads skills/base/<file> unconditionally; grep the entrypoints
+  # rather than the prompt so this fails if an override helper comes back.
+  ! grep -qE 'rubric (pr-review|code-security|codebase-audit)\.md' \
+    "${ENGINE_HOME}/harness/ai-security-compliance-review" \
+    "${ENGINE_HOME}/harness/ai-security-compliance-audit"
+}
+
 # ── azure + a per-pass adjudication model ───────────────────────────────────
 # Azure resolves the deployment from the URL path, not the CLI model flag, so
 # AI_ADJUDICATION_MODEL needs its own URL. Before this it was silently ignored:

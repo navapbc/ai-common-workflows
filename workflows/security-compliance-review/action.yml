@@ -55,8 +55,9 @@ inputs:
       Compliance profile: baseline (default, no agency overlay) | cms-ars
       (adds CMS ARS 5.1 / NIST 800-53 citations + CMS/HIPAA checks), a name
       under the engine's skills/profiles/, or a path to a custom profile
-      directory. The compliance floor always applies; a profile only adds
-      to it.
+      directory. Several may be combined with commas (cms-ars,my-overlay);
+      additions layer in order and the last listed wins a conflict. Every base
+      rubric always applies — a profile only ever adds, never replaces.
     required: false
     default: "baseline"
 

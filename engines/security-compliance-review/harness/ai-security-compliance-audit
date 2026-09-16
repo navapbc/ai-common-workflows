@@ -52,33 +52,11 @@ SKILL_NAME="security-compliance-audit"
 SKILL_HUMAN_NAME="AI Security & Compliance Audit"
 
 # ── Compliance profile resolution ───────────────────────────────────────────
-# Same contract as the review: a bundled name under skills/profiles/, or a path
-# to a custom profile directory. Set by --profile or AI_REVIEW_PROFILE.
+# A profile only ever ADDS to the rubric — see ai_review::resolve_profiles and
+# ai_review::profile_additions in _common. AI_REVIEW_PROFILE (or --profile)
+# takes one profile or a comma-separated list; additions layer in list order
+# and the last one listed wins any conflict.
 AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-baseline}"
-
-audit::resolve_profile() {
-  if [[ -d "${AI_REVIEW_PROFILE}" ]]; then
-    PROFILE_DIR="$(cd "${AI_REVIEW_PROFILE}" && pwd)"
-  elif [[ -d "${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}" ]]; then
-    PROFILE_DIR="${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}"
-  else
-    ai_review::err "--profile '${AI_REVIEW_PROFILE}' is not a known profile or an existing directory."
-    ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
-    ai_review::log "  Or pass a path to a custom profile directory."
-    exit 2
-  fi
-}
-
-# audit::rubric <file> — path to a rubric file, preferring the active profile's
-# override. Used for code-security.md only, matching the review's whole-file
-# override semantics so a profile behaves the same in both paths.
-audit::rubric() {
-  if [[ -f "${PROFILE_DIR}/$1" ]]; then
-    printf '%s' "${PROFILE_DIR}/$1"
-  else
-    printf '%s' "${ENGINE_HOME}/skills/base/$1"
-  fi
-}
 
 # ── Flags ───────────────────────────────────────────────────────────────────
 SCOPE_PATHS=()
@@ -115,6 +93,9 @@ Scope:
 Rubric:
   --profile <name|dir>      Compliance profile (default baseline). A bundled
                             name under skills/profiles/, or a directory path.
+                            Comma-separate several (cms-ars,my-overlay); every
+                            base rubric always applies, additions layer in
+                            order, and the last listed wins a conflict.
 
 Output (nothing is written into the audited repo):
   --json-out <file>         Write the findings JSON to a file.
@@ -339,34 +320,19 @@ ${AI_REVIEW_SCOPE_PATHS}
 SCOPE
   )"
 
-  # The audit rubric: base ALWAYS applies, and the profile's copy (if any) is
-  # layered on top as an addition — the iac-compliance pattern, not the
-  # code-security whole-file-override pattern. A profile can only ever add
-  # audit coverage.
+  # Base ALWAYS applies; each profile's copy is appended as an addition.
   local audit_block
   audit_block="$(
     cat <<AUDIT
 
 ──────────────────── CODEBASE-AUDIT INSTRUCTIONS ────────────────────
 $(cat "${ENGINE_HOME}/skills/base/codebase-audit.md")
+$(ai_review::profile_additions codebase-audit.md "CODEBASE-AUDIT INSTRUCTIONS")
 AUDIT
   )"
-  if [[ -f "${PROFILE_DIR}/codebase-audit.md" ]]; then
-    audit_block="${audit_block}$(
-      cat <<AUDIT_ADD
-
-──────────── CODEBASE-AUDIT — ${AI_REVIEW_PROFILE} ADDITIONS ────────────
-The following supplements the audit instructions above for the
-'${AI_REVIEW_PROFILE}' profile. On any conflict with the section above, this
-section takes precedence.
-
-$(cat "${PROFILE_DIR}/codebase-audit.md")
-AUDIT_ADD
-    )"
-  fi
 
   # Compliance perspective when the scope contains IaC. Base always applies;
-  # the profile's copy is an addition. Same semantics as the review.
+  # each profile's copy is appended as an addition.
   local compliance_block=""
   if printf '%s\n' "${AI_REVIEW_SCOPE_PATHS}" |
     grep -qE '\.(tf|tfvars|bicep|hcl)$|\.template\.(json|ya?ml)$|Pulumi\.ya?ml$|(^|/)(Chart|values)\.ya?ml$|(^|/)k8s/|(^|/)helm/'; then
@@ -375,21 +341,9 @@ AUDIT_ADD
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
 $(cat "${ENGINE_HOME}/skills/base/iac-compliance.md")
+$(ai_review::profile_additions iac-compliance.md "COMPLIANCE PERSPECTIVE")
 COMPLIANCE
     )"
-    if [[ -f "${PROFILE_DIR}/iac-compliance.md" ]]; then
-      compliance_block="${compliance_block}$(
-        cat <<COMPLIANCE_ADD
-
-──────────── COMPLIANCE PERSPECTIVE — ${AI_REVIEW_PROFILE} ADDITIONS ────────────
-The following supplements the compliance perspective above for the
-'${AI_REVIEW_PROFILE}' profile. On any conflict with the perspective above
-(severity, citation, guidance), this section takes precedence.
-
-$(cat "${PROFILE_DIR}/iac-compliance.md")
-COMPLIANCE_ADD
-      )"
-    fi
   fi
 
   local self_adjudication_block=""
@@ -411,7 +365,8 @@ diff. Your full instructions follow.
 ${audit_block}
 
 ──────────────────── SECURITY PERSPECTIVE ────────────────────
-$(cat "$(audit::rubric code-security.md)")
+$(cat "${ENGINE_HOME}/skills/base/code-security.md")
+$(ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE")
 ${compliance_block}
 ${budget_block}
 ${scope_block}
@@ -445,7 +400,7 @@ audit::worker_main() {
   AI_REVIEW_ADJUDICATION_MODE="$(ai_review::adjudication_mode)"
   export AI_REVIEW_ADJUDICATION_MODE
 
-  audit::resolve_profile
+  ai_review::resolve_profiles
   SKILL_PROMPT="$(audit::build_prompt)"
 
   local output rc=0 marker="UNPARSEABLE" json_file="-"
@@ -474,7 +429,7 @@ audit::worker_main() {
 
 # ── Main ────────────────────────────────────────────────────────────────────
 audit::run() {
-  audit::resolve_profile
+  ai_review::resolve_profiles
 
   if [[ -n "${CI:-}" ]]; then
     ai_review::warn "CI is set. This is an ad-hoc local tool: a full-repo audit costs"

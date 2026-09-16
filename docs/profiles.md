@@ -8,11 +8,21 @@ control-ID citations on top of that floor, so the same engine serves a CMS
 system, a different federal agency, a state agency, or a team with no specific
 mandate, without any of them losing baseline coverage.
 
-A profile only ever **adds to** the compliance rubric (or, for other rubric
-files, may override one outright — see [How resolution works](#how-resolution-works)).
-The security perspective and the review mechanics (fan-out, adjudication,
-comment format, gating) are identical across profiles, and no profile can
-remove or weaken the compliance floor.
+A profile only ever **adds**. Every base rubric file always reaches the prompt;
+a profile's copy of the same filename is appended after it, never substituted
+for it. There is no override path, so **no profile can remove or weaken any
+base coverage** — security or compliance. The review mechanics (fan-out,
+adjudication, comment format, gating) are identical across profiles.
+
+**Profiles compose.** `profile` takes one name or a comma-separated list, so a
+program subject to two frameworks applies both:
+
+```yaml
+    profile: cms-ars,pci-dss
+```
+
+Additions layer in list order, and each one is told it outranks everything
+above it — so on a genuine conflict the **last profile listed wins**.
 
 ## Bundled profiles
 
@@ -54,29 +64,34 @@ overlay.
 3. Else the run fails with a configuration error (exit 2) listing the bundled
    profiles.
 
-Rubric files are handled differently depending on which one they are:
+Every rubric file works the same way — there is exactly one rule:
 
-- **`iac-compliance.md` (the compliance perspective) is additive.** The
-  framework-neutral floor at `engines/security-compliance-review/skills/base/iac-compliance.md`
-  is **always** included in the prompt. If the active profile also has its
-  own `iac-compliance.md`, it is appended immediately after the floor,
-  explicitly instructed to take precedence over the floor on any conflict
-  (severity, citation, guidance). `baseline` has no such file, so selecting
-  it (or the default) yields the floor alone; `cms-ars` has one, so selecting
-  it yields floor + CMS additions.
-- **`pr-review.md` and `code-security.md` are override-or-fallback**, like
-  before: the engine prefers the active profile's copy of the file and falls
-  back to the shared `skills/base/` copy only if the profile doesn't provide
-  one. No bundled profile currently overrides these — they're identical
-  across profiles — but a profile is free to if it ever needs to.
+- **The base file in `skills/base/` always applies.** It is the floor, and
+  nothing can displace it.
+- **Each listed profile's copy of that filename is appended after it**, in list
+  order, introduced as an addition and instructed to take precedence over
+  everything above it on conflict. A profile that doesn't ship the file
+  contributes nothing to that section.
 
 ```
-engines/security-compliance-review/skills/base/iac-compliance.md            ← always applied (the floor)
-engines/security-compliance-review/skills/profiles/<profile>/iac-compliance.md  ← appended if present (an addition, not a replacement)
-
-engines/security-compliance-review/skills/profiles/<profile>/<other-file>   ← used if present (a full override)
-engines/security-compliance-review/skills/base/<other-file>                 ← otherwise (the framework-neutral base)
+engines/security-compliance-review/skills/base/<file>                     ← always applied (the floor)
+engines/security-compliance-review/skills/profiles/<first>/<file>         ← appended if present
+engines/security-compliance-review/skills/profiles/<second>/<file>        ← appended after that; wins conflicts
 ```
+
+This applies to `iac-compliance.md`, `code-security.md`, `pr-review.md` and
+`codebase-audit.md` alike. Earlier versions treated the last three as
+whole-file overrides — a profile's copy replaced the base. That was removed
+deliberately: an override forces a profile that wants one extra check to copy
+~20 KB of rubric it then has to maintain forever, which is the drift that
+per-profile standalone rubrics already caused once, and two overrides cannot be
+composed because one silently wins.
+
+The practical consequence is that a profile **cannot suppress** a base check.
+It can contradict one — its section outranks the base — but the base text still
+reaches the model. If you find yourself needing to turn a base check off, that
+is a signal the check belongs behind a base-level condition rather than in a
+profile.
 
 ## Adding a profile (agency or state variant)
 
@@ -95,12 +110,20 @@ engines/security-compliance-review/skills/base/<other-file>                 ← 
    always syncs, and your `*-additions` files layer on top. See
    [copilot-instructions.md](copilot-instructions.md).
 3. Reference it: `profile: <name>` (Action/Jenkins) or `AI_REVIEW_PROFILE=<name>`.
+   Combine several with a comma — `profile: cms-ars,<name>` — and the last one
+   listed wins any conflict.
+
+Your profile may also ship `code-security.md`, `pr-review.md` or
+`codebase-audit.md` additions, layered the same way. Keep them to deltas for
+the same reason: the base always applies underneath.
 
 **Bring-your-own without committing to this repo:** point `profile` at a
-directory in *your* checkout containing an `iac-compliance.md`. It is treated
-the same as a bundled profile's file — an addition layered on top of the
-floor, not a replacement — so it only needs to contain your organization's
-deltas. No change to this repo required.
+directory in *your* checkout containing an `iac-compliance.md` (or any other
+rubric filename). It is treated exactly like a bundled profile's file — an
+addition layered on top of the base, never a replacement — so it only needs
+your organization's deltas. A path can appear in a list alongside a bundled
+name: `profile: cms-ars,./compliance/my-overlay`. No change to this repo
+required.
 
 > Do not invent control identifiers you can't source. If your agency's catalog
 > isn't public or you're unsure of an exact ID, describe the control in plain

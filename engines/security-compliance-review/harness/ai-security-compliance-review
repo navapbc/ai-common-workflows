@@ -58,37 +58,12 @@ fi
 source "${AI_COMMON_HOME}/scm/${AI_REVIEW_SCM}.sh"
 
 # ── Compliance profile resolution ───────────────────────────────────────────
-# A profile supplies additions to the compliance rubric (and may override any
-# base skill outright). AI_REVIEW_PROFILE is a bundled name under profiles/
-# (baseline is the default — the framework-neutral CIS/NIST-CSF/OWASP floor),
-# or a path to a custom profile directory (bring-your-own). For pr-review.md
-# and code-security.md, the active profile's copy replaces the shared base
-# entirely if present. For iac-compliance.md specifically, the shared base is
-# ALWAYS applied and the profile's copy (if any) is layered on top as an
-# addition, not a replacement — see build_prompt() and docs/profiles.md.
+# A profile only ever ADDS to the rubric — see ai_review::resolve_profiles and
+# ai_review::profile_additions in _common. AI_REVIEW_PROFILE takes one profile
+# or a comma-separated list; additions layer in list order and the last one
+# listed wins any conflict.
 AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-baseline}"
-if [[ -d "${AI_REVIEW_PROFILE}" ]]; then
-  PROFILE_DIR="$(cd "${AI_REVIEW_PROFILE}" && pwd)"
-elif [[ -d "${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}" ]]; then
-  PROFILE_DIR="${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}"
-else
-  ai_review::err "AI_REVIEW_PROFILE='${AI_REVIEW_PROFILE}' is not a known profile or an existing directory."
-  ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
-  ai_review::log "  Or pass a path to a custom profile directory."
-  exit 2
-fi
-
-# pr_review::rubric <file> — echo the path to a rubric file, preferring the
-# active profile's override, else the shared base in skills/base/. Used for
-# pr-review.md and code-security.md (whole-file override semantics). NOT used
-# for iac-compliance.md — see pr_review::build_prompt's compliance_block.
-pr_review::rubric() {
-  if [[ -f "${PROFILE_DIR}/$1" ]]; then
-    printf '%s' "${PROFILE_DIR}/$1"
-  else
-    printf '%s' "${ENGINE_HOME}/skills/base/$1"
-  fi
-}
+ai_review::resolve_profiles
 
 # ── Help (overrides the generic _common fallback) ──────────────────────────
 ai_review::print_help() {
@@ -204,30 +179,16 @@ SCOPE
 
   local compliance_block=""
   if ai_review::diff_has_iac; then
-    # The base compliance rubric ALWAYS applies (the compliance floor). If the
-    # active profile supplies its own iac-compliance.md, it is an ADDITION —
-    # appended, not substituted — and takes precedence over the base on any
-    # conflict. See docs/profiles.md.
+    # The base compliance rubric ALWAYS applies (the compliance floor); each
+    # profile's iac-compliance.md is appended after it as an addition.
     compliance_block="$(
       cat <<COMPLIANCE
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
 $(cat "${ENGINE_HOME}/skills/base/iac-compliance.md")
+$(ai_review::profile_additions iac-compliance.md "COMPLIANCE PERSPECTIVE")
 COMPLIANCE
     )"
-    if [[ -f "${PROFILE_DIR}/iac-compliance.md" ]]; then
-      compliance_block="${compliance_block}$(
-        cat <<COMPLIANCE_ADD
-
-──────────── COMPLIANCE PERSPECTIVE — ${AI_REVIEW_PROFILE} ADDITIONS ────────────
-The following supplements the compliance perspective above for the
-'${AI_REVIEW_PROFILE}' profile. On any conflict with the perspective above
-(severity, citation, guidance), this section takes precedence.
-
-$(cat "${PROFILE_DIR}/iac-compliance.md")
-COMPLIANCE_ADD
-      )"
-    fi
   fi
 
   local self_adjudication_block=""
@@ -248,10 +209,12 @@ request. The diff under review is between the base ref "${AI_REVIEW_AGAINST}"
 current working directory. Your full instructions follow.
 
 ──────────────────── PR-REVIEW INSTRUCTIONS ────────────────────
-$(cat "$(pr_review::rubric pr-review.md)")
+$(cat "${ENGINE_HOME}/skills/base/pr-review.md")
+$(ai_review::profile_additions pr-review.md "PR-REVIEW INSTRUCTIONS")
 
 ──────────────────── SECURITY PERSPECTIVE ────────────────────
-$(cat "$(pr_review::rubric code-security.md)")
+$(cat "${ENGINE_HOME}/skills/base/code-security.md")
+$(ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE")
 ${compliance_block}
 ${budget_block}
 ${scope_block}
@@ -542,7 +505,10 @@ pr_review::run() {
   if ((AI_REVIEW_DRY_RUN == 1)); then
     ai_review::info "DRY-RUN — no AI invocation will be made."
     ai_review::log "  Skill:          ${SKILL_HUMAN_NAME} (${SKILL_NAME})"
-    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE} (${PROFILE_DIR})"
+    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE}"
+    printf '%s' "${AI_REVIEW_PROFILE_DIRS}" | while IFS= read -r _d; do
+      [[ -n "${_d}" ]] && ai_review::log "                    ${_d}"
+    done
     ai_review::log "  AI tool:        ${AI_REVIEW_TOOL_RESOLVED}"
     ai_review::log "  PR number:      ${PR_NUMBER:-(none — using --against directly)}"
     ai_review::log "  Diff source:    $(ai_review::diff_command_description)"

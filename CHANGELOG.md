@@ -72,6 +72,30 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Profiles are additive everywhere, and several can be combined.** Every base
+  rubric file now always reaches the prompt, with each profile's copy of the
+  same filename appended after it as an addition. The whole-file override path
+  for `code-security.md`, `pr-review.md` and `codebase-audit.md` is **deleted**,
+  not merely bypassed, so a profile can no longer replace or suppress base
+  coverage — only add to it. `iac-compliance.md` already worked this way.
+  Why: an override forced a profile that wanted one extra check to copy ~20 KB
+  of rubric it then had to maintain forever — the drift that per-profile
+  standalone rubrics already caused once — and two overrides cannot compose,
+  because one silently wins.
+  `profile` / `AI_REVIEW_PROFILE` now accepts a **comma-separated list**
+  (`cms-ars,my-overlay`, bundled names and directory paths freely mixed).
+  Additions layer in list order and each is instructed that it outranks
+  everything above it, so the **last profile listed wins** a genuine conflict.
+  The resolution and layering live in `ai_review::resolve_profiles` /
+  `ai_review::profile_additions` in `_common`, shared by the review and audit
+  entrypoints rather than duplicated in each.
+  Behaviorally inert for `baseline` and `cms-ars` — neither ships a file that
+  was previously overridden. A bring-your-own profile that shipped
+  `code-security.md` or `pr-review.md` will now have it appended rather than
+  substituted; nothing in-tree did.
+  **Not changed:** the Copilot instructions sync still takes a single
+  `PROFILE`. Its layering is file-copying rather than prompt assembly, so list
+  support there is a separate change.
 - **`ai_review::plan_diff_batches` split into a generic grouper plus a
   diff-scoped caller.** `ai_review::group_files_into_batches` takes file paths
   on stdin, so a workflow whose scope is not a diff reuses the same grouping,
