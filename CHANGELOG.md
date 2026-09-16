@@ -21,6 +21,25 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Copilot instructions now sync into `.github/instructions/ai-review/`**
+  rather than flat into `.github/instructions/`. Copilot code review reads
+  subdirectories of `.github/instructions/`, so this changes nothing about
+  which instructions apply — it puts everything the sync owns in one directory,
+  so the workflow never writes beside, or prefix-matches against, instruction
+  files the consumer wrote themselves. Deleting that one directory now removes
+  the integration cleanly.
+  **Migration is automatic:** the sync removes legacy flat
+  `.github/instructions/ai-review-*.instructions.md` files on its next run —
+  matching that prefix only, never a consumer's own files. Without that step a
+  previously-synced repo would get every instruction twice (Copilot reads both
+  locations) and would strand a stale overlay at the old path on a `PROFILE`
+  switch. Consumers who copy the workflow by hand must take the updated
+  example; the sync only ever writes `.github/instructions/`, never the
+  workflow file.
+  Also corrects a claim in the docs: Copilot does **not** see only a flat
+  directory. It applies no precedence *between* instruction files, which is a
+  different thing and is why each additions file still states what it
+  overrides.
 - **`actions/checkout` is now SHA-pinned in the docs and examples**
   (`3d3c42e…` # v7.0.1) rather than the floating `@v7` tag. The quickstarts are
   copied verbatim into consumer repos, so a floating tag there taught the
