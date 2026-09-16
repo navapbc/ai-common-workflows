@@ -31,7 +31,7 @@ bash <engines>/security-compliance-review/harness/ai-security-compliance-review 
 | `--against <ref>` | Base ref for the diff (skips PR discovery) |
 | `--unpushed` | Diff committed + staged work against the last push (local use; skips PR discovery) |
 | `--post-comments` | Post the review with inline comments to the SCM |
-| `--gate` | Exit 1 on any non-APPROVE result |
+| `--gate` | Exit 1 when the review blocks: a HIGH or CRITICAL finding (MEDIUM and LOW are reported but do not fail the build) |
 | `--json-only` | Print only the machine-readable findings JSON |
 | `--json-out <file>` | Also write the findings JSON to a file |
 | `--post-only --pr <n> --json-in <file>` | Post a previously produced JSON; no AI call |
@@ -84,7 +84,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | Code | Meaning |
 |---|---|
 | 0 | APPROVE, or findings in advisory (non-gate) mode; also `--dry-run`, `--no-block` |
-| 1 | `--gate` with non-APPROVE, or unrecoverable runtime error (fail-safe) |
+| 1 | `--gate` with a blocking review, or unrecoverable runtime error (fail-safe) |
 | 2 | Configuration error (bad flags; `AI_REVIEW_TOOL`/provider invalid) |
 
 ## Layout
@@ -97,6 +97,8 @@ skills/profiles/<name>/     per-compliance-framework rubric additions/overrides 
 
 ../_common/                 the shared runtime (see ../_common/CONTRACT.md):
   harness/core.sh           flags, tool invocation, markers, adjudication, fan-out
+  harness/gate_verdict.py   the one decision on whether a review blocks —
+                            shared with the composite action and the sandbox
   harness/fold_review_json.py  merges per-batch findings JSON (fan-out)
   endpoints.sh              provider → CLI env mapping + validation + audit line
   scm/github.sh + github_payload.py  PR discovery + review posting (SCM seam)

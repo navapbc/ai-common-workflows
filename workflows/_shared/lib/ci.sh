@@ -159,29 +159,39 @@ ci::install_ai_cli() {
 # fails the step rather than defaulting to APPROVE — never fail open on the
 # verdict that drives the gate.
 ci::gate_result() {
-  local result
+  # Resolved from this library's own location, not from ACTION_PATH: the repo
+  # layout is fixed (workflows/_shared/lib -> repo root), and depending on a
+  # caller-set variable would make the gate silently unevaluable wherever a
+  # step forgot to export it.
+  local verdict_py
+  verdict_py="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/engines/_common/harness/gate_verdict.py"
+
+  # No findings file means the engine exited 0 without writing one, which only
+  # happens on an empty diff. Nothing to flag, and nothing for the evaluator to
+  # read.
   if [[ ! -f "${REVIEW_JSON}" ]]; then
-    result="APPROVE"
+    echo "result=APPROVE" >>"${GITHUB_OUTPUT}"
     echo "[ai-review] no findings file (empty diff); reporting APPROVE."
-  elif ! result="$(python3 -c '
-import json, sys
-d = json.load(open(sys.argv[1]))
-a = d["review_action"]
-if a not in ("APPROVE", "COMMENT", "REQUEST_CHANGES"):
-    raise SystemExit(f"unrecognized review_action: {a!r}")
-print(a)' "${REVIEW_JSON}")"; then
-    echo "::error::Could not read a valid review_action from ${REVIEW_JSON}. Refusing to assume APPROVE."
+    return 0
+  fi
+
+  # One call does both jobs: validates and reports review_action, and decides
+  # whether the review blocks. The decision lives in the engine's shared
+  # evaluator so this step, the engine's own --gate and the sandbox wrapper
+  # cannot drift apart on what "blocks" means.
+  local out rc
+  out="$(python3 "${verdict_py}" "${REVIEW_JSON}" 2>&1)"
+  rc=$?
+  if ((rc != 0)); then
+    echo "::error::Could not read a valid verdict from ${REVIEW_JSON}: ${out}. Refusing to assume APPROVE."
     return 1
   fi
+
+  local result
+  result="$(grep '^ACTION' <<<"${out}" | cut -f2-)"
   echo "result=${result}" >>"${GITHUB_OUTPUT}"
   echo "[ai-review] result: ${result}"
 
-  # `gate` is a boolean. When true the job fails on HIGH or CRITICAL findings,
-  # and MEDIUM/LOW still post as comments. The floor is fixed rather than
-  # configurable: the review emits a finding-bearing result for a single LOW
-  # observation, so gating on everything blocks merges on nits, and no team has
-  # yet needed a different line. If one does, that is a new, separately named
-  # input — not a second type smuggled into this one.
   local gate
   gate="$(printf '%s' "${GATE:-false}" | tr '[:upper:]' '[:lower:]')"
   case "${gate}" in
@@ -193,64 +203,18 @@ print(a)' "${REVIEW_JSON}")"; then
       ;;
   esac
 
-  [[ "${result}" == "APPROVE" ]] && return 0
-
-  # REQUEST_CHANGES is never emitted by the AI; if a dispatcher or a future
-  # engine does emit it, treat it as a verdict rather than re-deriving one from
-  # severities.
-  if [[ "${result}" == "REQUEST_CHANGES" ]]; then
-    echo "::error::AI review result is ${result} and gate is enabled."
-    return 1
-  fi
-
-  # Reads the engine's own JSON, so findings that could not be anchored to a
-  # diff line still count — whether a comment could be placed must not change
-  # the verdict.
-  local hits
-  if ! hits="$(python3 -c '
-import json, sys
-
-RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
-FLOOR = RANK["HIGH"]
-
-data = json.load(open(sys.argv[1]))
-comments = data.get("comments") or []
-if not isinstance(comments, list):
-    raise SystemExit("comments is not a list")
-
-blocking, unknown = [], []
-for c in comments:
-    if not isinstance(c, dict):
-        raise SystemExit("comment entry is not an object")
-    raw = str(c.get("severity", "")).strip().upper()
-    rank = RANK.get(raw)
-    if rank is None:
-        # Never let an unreadable severity buy a pass: count it as blocking and
-        # say so, rather than silently treating it as LOW.
-        unknown.append(raw or "<missing>")
-        blocking.append(c.get("title", "untitled"))
-    elif rank >= FLOOR:
-        blocking.append(c.get("title", "untitled"))
-
-for u in unknown:
-    print(f"UNKNOWN\t{u}")
-for b in blocking:
-    print(f"BLOCK\t{b}")
-' "${REVIEW_JSON}")"; then
-    echo "::error::Could not evaluate finding severities in ${REVIEW_JSON}. Refusing to assume the gate passes."
-    return 1
-  fi
-
-  local unknown_count blocking_count
-  unknown_count="$(grep -c '^UNKNOWN' <<<"${hits}" || true)"
-  blocking_count="$(grep -c '^BLOCK' <<<"${hits}" || true)"
+  local unknown_count
+  unknown_count="$(grep -c '^UNKNOWN' <<<"${out}" || true)"
   if [[ "${unknown_count}" -gt 0 ]]; then
     echo "::warning::${unknown_count} finding(s) carry an unrecognized severity; counting them as blocking."
   fi
-  if [[ "${blocking_count}" -gt 0 ]]; then
-    grep '^BLOCK' <<<"${hits}" | cut -f2- | sed 's/^/[ai-review]   /'
-    echo "::error::${blocking_count} HIGH or CRITICAL finding(s); failing the job."
+
+  local reason
+  reason="$(grep '^REASON' <<<"${out}" | cut -f2-)"
+  if grep -q '^VERDICT	BLOCK' <<<"${out}"; then
+    grep '^BLOCK' <<<"${out}" | cut -f2- | sed 's/^/[ai-review]   blocking: /'
+    echo "::error::${reason}; failing the job."
     return 1
   fi
-  echo "[ai-review] result is ${result}, but nothing is HIGH or CRITICAL; not blocking."
+  echo "[ai-review] result is ${result}, but ${reason}; not blocking."
 }
