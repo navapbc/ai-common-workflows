@@ -40,6 +40,7 @@ That's the whole setup. [Pin `@<commit-sha>`, not a tag](security.md).
 |---|---|---|
 | **GitHub Action** | Composite action; `uses:` it in any workflow. | [github-action.md](github-action.md) |
 | **Jenkins plugin** | `.hpi` adding an `aiSecurityComplianceReview` pipeline step. | [jenkins-plugin/README.md](../jenkins-plugin/README.md) |
+| **Codebase audit** | A second entrypoint on the same engine that audits an existing repo rather than a change. Local, ad-hoc, advisory. | [codebase-audit.md](codebase-audit.md) |
 | **Copilot instructions** | Files that make Copilot's built-in review match — a complement, not a substitute. | [copilot-review-setup.md](copilot-review-setup.md) |
 
 The Action and the plugin run the **same review engine**

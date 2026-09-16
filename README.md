@@ -18,6 +18,7 @@ its own self-contained engine — so teams can adopt them one at a time.
 
 | | What it does | Docs |
 |---|---|---|
+| **Codebase audit** | Audits an existing repo — or one directory — for the same security & compliance issues, instead of reviewing a change. Local and ad-hoc: run it from the repo you want to audit, nothing is installed there, it never posts and never gates. Same rubric and severities as the review above, so findings are comparable. | [Run it on your laptop](docs/codebase-audit.md) |
 | **Copilot review instructions** | Makes GitHub Copilot's own PR review apply the same security & compliance rubric as the review above, with no LLM keys of your own. A **complement** to the action, not a substitute: Copilot's native review cannot block a merge, does not adjudicate its own findings, and runs on GitHub's models rather than one you pin — so adopt the action first and add these so the second opinion judges by the same rubric. | [Setup in five steps](docs/copilot-review-setup.md) · [side by side](docs/copilot-review-setup.md#what-the-action-does-that-this-does-not) |
 
 More workflows will land here over time. Each one is meant to stand alone — you
