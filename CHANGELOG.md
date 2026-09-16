@@ -8,6 +8,22 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tests/python/test_entrypoint_invariants.py`** — static guards for the
+  obligations an engine entrypoint inherits from `_common`, written after the
+  audit shipped without `ai_review::configure_endpoint`. That bug was invisible
+  to every existing suite: the engine ran, the JSON parsed, the marker was
+  found — the only symptom was that `AI_REVIEW_PROVIDER` did nothing and the
+  traffic went somewhere the operator had not chosen. A missing *setup call*
+  has no failing assertion unless something checks for the call itself.
+  Seven invariants: any entrypoint that invokes a model must configure the
+  endpoint and resolve the tool; every entrypoint must call `parse_args` (or
+  the shared flags look broken rather than unimplemented), override the generic
+  `print_help` (or print help for a workflow the reader is not running), set
+  `SKILL_NAME` before logging (or the first `info` call dies on an unbound
+  variable under `set -u`), and derive `ENGINE_HOME` from `BASH_SOURCE` rather
+  than the CWD (or the rubric is read from the *audited* repo). Plus one
+  asserting the entrypoint glob matched something, since a glob that matched
+  nothing would make the rest vacuous.
 - **`tests/corpus/`** — a detection corpus: fixture diffs with expected
   findings, plus a runner and a scorer. It is the only thing in the repo that
   measures whether the **review** is any good; everything in `tests/bats/` and
