@@ -133,26 +133,29 @@ audit::parse_flags() {
         break
         ;;
       --profile)
-        [[ $# -ge 2 ]] || {
-          ai_review::err "--profile requires a value."
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--profile requires a value (e.g. base,cms-ars)."
           exit 2
-        }
+        fi
         AI_REVIEW_PROFILE="$2"
         shift 2
         ;;
       --include)
-        [[ $# -ge 2 ]] || {
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
           ai_review::err "--include requires a glob."
           exit 2
-        }
+        fi
         INCLUDE_GLOBS+=("$2")
         shift 2
         ;;
       --exclude)
-        [[ $# -ge 2 ]] || {
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
           ai_review::err "--exclude requires a glob."
           exit 2
-        }
+        fi
         EXCLUDE_GLOBS+=("$2")
         shift 2
         ;;
@@ -169,18 +172,20 @@ audit::parse_flags() {
         shift 2
         ;;
       --json-out)
-        [[ $# -ge 2 ]] || {
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
           ai_review::err "--json-out requires a path."
           exit 2
-        }
+        fi
         JSON_OUT="$2"
         shift 2
         ;;
       --md-out)
-        [[ $# -ge 2 ]] || {
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
           ai_review::err "--md-out requires a path."
           exit 2
-        }
+        fi
         MD_OUT="$2"
         shift 2
         ;;

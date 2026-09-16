@@ -79,7 +79,8 @@ overlay.
   ```groovy
   aiSecurityComplianceReview(profile: 'base,cms-ars')
   ```
-- **Engine directly** — the `AI_REVIEW_PROFILE` environment variable.
+- **Engine directly** — the `--profile` flag or the `AI_REVIEW_PROFILE`
+  environment variable; the flag wins. Both entrypoints accept it.
 - **Copilot instructions** — the `PROFILE` in your copy of the sync workflow
   ([`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)).
   Note this one is a **single value, not a list**, and its base set always

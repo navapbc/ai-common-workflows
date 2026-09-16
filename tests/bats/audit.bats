@@ -158,6 +158,18 @@ EOF
   [[ "$output" == *"must start with 'base' or 'none'"* ]]
 }
 
+@test "audit: --profile with no value does not swallow the next flag" {
+  run bash "${AUDIT}" --profile --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--profile requires a value"* ]]
+}
+
+@test "audit: --json-out with no value does not swallow the next flag" {
+  run bash "${AUDIT}" --json-out --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--json-out requires a path"* ]]
+}
+
 @test "audit: an unknown profile is a config error listing the bundled ones" {
   run bash "${AUDIT}" --profile base,nope --dry-run
   [ "$status" -eq 2 ]

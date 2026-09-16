@@ -107,6 +107,38 @@ teardown() {
   grep -q -- "COMPLIANCE PERSPECTIVE — cms-ars ADDITIONS" "${log_cms}"
 }
 
+@test "profile: --profile flag sets the rubric sources" {
+  run bash "${ENGINE}" --profile base,cms-ars --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Profile:"*"base,cms-ars"* ]]
+}
+
+@test "profile: --profile=<list> form works too" {
+  run bash "${ENGINE}" --profile=base,cms-ars --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Profile:"*"base,cms-ars"* ]]
+}
+
+@test "profile: --profile overrides AI_REVIEW_PROFILE" {
+  AI_REVIEW_PROFILE=base run bash "${ENGINE}" --profile base,cms-ars \
+    --against origin/main --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cms-ars"* ]]
+}
+
+@test "profile: --profile with no value does not swallow the next flag" {
+  # `--profile --against main` must not resolve a profile named "--against".
+  run bash "${ENGINE}" --profile --against origin/main --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--profile requires a value"* ]]
+}
+
+@test "profile: --profile rejects a bare name without base" {
+  run bash "${ENGINE}" --profile cms-ars --against origin/main --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must start with 'base' or 'none'"* ]]
+}
+
 @test "profile: unknown name is a config error (exit 2)" {
   AI_REVIEW_PROFILE=base,nope run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 2 ]

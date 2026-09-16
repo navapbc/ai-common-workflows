@@ -31,6 +31,7 @@ bash <engines>/security-compliance-review/harness/ai-security-compliance-review 
 | `--against <ref>` | Base ref for the diff (skips PR discovery) |
 | `--unpushed` | Diff committed + staged work against the last push (local use; skips PR discovery) |
 | `--post-comments` | Post the review with inline comments to the SCM |
+| `--profile <list>` | Rubric sources, default `base`. First entry must be `base` or `none`; later entries add and win conflicts. Same as `AI_REVIEW_PROFILE` |
 | `--gate` | Exit 1 when the review blocks: a HIGH or CRITICAL finding (MEDIUM and LOW are reported but do not fail the build) |
 | `--json-only` | Print only the machine-readable findings JSON |
 | `--json-out <file>` | Also write the findings JSON to a file |
