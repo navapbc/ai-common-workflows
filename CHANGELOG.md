@@ -110,6 +110,16 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The `Suggestion:` line in a posted comment carries its one-line summary
+  again.** The pre-restructure reviewer
+  (`navapbc/ai-transformation-delivery-systems`, `security/review`) rendered
+  `Suggestion: <one-line summary of the suggested change>`; the restructure
+  dropped the summary and emitted a bare `Suggestion:` header, the only
+  difference in posted-comment formatting between the two. The AI can now emit
+  `suggestion_summary` (an imperative describing the *fix*), and the dispatcher
+  falls back to the first sentence of `description` when it doesn't — the same
+  fallback the original specified. The header renders bare when neither yields
+  anything, never with a trailing space.
 - **The Copilot instructions sync workflow stopped opening PRs after the first
   one was closed or merged.** It tested for an existing PR with
   `gh pr view <branch>`, which matches a CLOSED or MERGED PR on that branch just

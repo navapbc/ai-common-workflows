@@ -192,3 +192,61 @@ def test_approve_with_no_comments_still_posts():
     payload, _ = gp.build_payload(_review(action="APPROVE", comments=[]), "", "")
     assert payload is not None
     assert payload["event"] == "APPROVE"
+
+
+# ── Suggestion: one-line summary ───────────────────────────────────────────
+# Restores the pre-restructure output format, where the "Suggestion:" header
+# carried a one-line summary derived from `description` unless the AI supplied
+# `suggestion_summary` explicitly.
+
+def test_explicit_suggestion_summary_is_used_verbatim():
+    body = gp.render_body(_finding(
+        description="Long description. Second sentence.",
+        suggestion_summary="Move the key to an environment variable",
+    ))
+    assert "Suggestion: Move the key to an environment variable\n" in body
+
+
+def test_suggestion_summary_falls_back_to_first_sentence():
+    body = gp.render_body(_finding(
+        description="An AWS access key is checked into source. Rotate it now."))
+    assert "Suggestion: An AWS access key is checked into source.\n" in body
+
+
+def test_suggestion_header_is_bare_when_nothing_to_summarize():
+    body = gp.render_body(_finding(description=""))
+    assert "\nSuggestion:\n" in body
+    assert "Suggestion: \n" not in body  # never a trailing space
+
+
+def test_blank_suggestion_summary_falls_back_rather_than_blanking():
+    body = gp.render_body(_finding(
+        description="Encryption at rest is missing here. More text.",
+        suggestion_summary="   "))
+    assert "Suggestion: Encryption at rest is missing here.\n" in body
+
+
+def test_first_sentence_does_not_split_on_a_trailing_abbreviation():
+    assert gp.first_sentence(
+        "Use a CMK, e.g. aws_kms_key.rds.arn, not the default. Next."
+    ) == "Use a CMK, e.g. aws_kms_key.rds.arn, not the default."
+
+
+def test_first_sentence_skips_a_too_short_leading_fragment():
+    assert gp.first_sentence("SC-12. Encryption at rest is required.") == \
+        "SC-12. Encryption at rest is required."
+
+
+def test_first_sentence_returns_whole_text_when_no_boundary():
+    assert gp.first_sentence("No terminal punctuation here") == \
+        "No terminal punctuation here"
+
+
+def test_first_sentence_empty_input():
+    assert gp.first_sentence("") == ""
+    assert gp.first_sentence(None) == ""
+
+
+def test_first_sentence_collapses_whitespace():
+    assert gp.first_sentence("Wrapped\n  across lines. Next.") == \
+        "Wrapped across lines."

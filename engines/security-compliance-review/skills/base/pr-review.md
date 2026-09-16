@@ -201,6 +201,7 @@ between the markers must be a single object with the schema below.
       "title": "Hardcoded AWS access key",
       "description": "An AWS access key is checked into source. Rotate this credential immediately — assume it is compromised — and move the value to an environment variable or secrets manager. OWASP A07:2021 – Identification and Authentication Failures.",
       "suggestion_kind": "applicable",
+      "suggestion_summary": "Read the key from the AWS_ACCESS_KEY_ID environment variable",
       "suggestion_body": "api_key = os.environ[\"AWS_ACCESS_KEY_ID\"]"
     },
     {
@@ -264,6 +265,12 @@ between the markers must be a single object with the schema below.
     target line via GitHub's `` ```suggestion `` block;
     `"reference"` if the fix is a new resource elsewhere, a structural
     refactor, or otherwise cannot be applied at this exact line.
+  - `suggestion_summary` — a one-line summary of the FIX, rendered after
+    `Suggestion:`. Write it as an imperative describing the change ("Move the
+    key to an environment variable"), not a restatement of the problem. If
+    omitted, the dispatcher falls back to the first sentence of `description`,
+    which describes the problem instead — so emit this field wherever the fix
+    is not obvious from the first sentence.
   - `suggestion_body` — the code that goes inside the suggestion / reference
     block. For `applicable`, this replaces the line(s) at `line`. For
     `reference`, this is illustrative code in the language given by
@@ -285,7 +292,7 @@ Description: <description>
 
 Severity: <SEVERITY>
 
-Suggestion:
+Suggestion: <one-line summary of the suggested change>
 
 ```suggestion
 <suggestion_body>
@@ -298,6 +305,11 @@ For `suggestion_kind: "reference"`, the fence language is
 `<suggestion_language>` instead of `suggestion`. `<perspective>` is
 literally `security` or `compliance`; the decoration form of `<severity>` is
 lowercase, while the `Severity:` line is uppercase.
+
+The summary after `Suggestion:` comes from `suggestion_summary` when present,
+otherwise from the first sentence of `description`. When neither yields
+anything the line is rendered bare as `Suggestion:` — never with a trailing
+space.
 
 ---
 
