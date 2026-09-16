@@ -1,7 +1,8 @@
 # Copilot instructions — model & distribution
 
 How the Copilot instruction files are structured and how consumer repos keep
-them in sync. For the consumer-facing quickstart, see
+them in sync — the maintainer's view. To *set this up* in a repo, see
+[copilot-review-setup.md](copilot-review-setup.md); for what the files contain,
 [`copilot-instructions/README.md`](../copilot-instructions/README.md).
 
 ## The model

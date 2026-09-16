@@ -60,6 +60,11 @@ Your existing `.github/copilot-instructions.md`, if any, is never touched.
 
 ## Adopt via a sync workflow (recommended — self-serve pull)
 
+> **In a hurry?** [docs/copilot-review-setup.md](../docs/copilot-review-setup.md)
+> is the same thing as six numbered steps, including the private-repo token,
+> turning on automatic review, and a troubleshooting table. This section is the
+> reasoning behind it.
+
 Copy [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
 into your repo's `.github/workflows/`, set two values, and merge:
 
