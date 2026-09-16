@@ -47,7 +47,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `openai-api-key` | — | OpenAI key (codex) |
 | `github-token` | `${{ github.token }}` | Token to post the review (`pull-requests: write`) |
 | `post-comments` | `true` | Post inline comments to the PR |
-| `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments. Also accepts `critical` or `any` |
+| `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
 | `profile` | `baseline` | Compliance profile: `baseline` \| `cms-ars`, a `skills/profiles/` name, or a custom profile directory path. The floor always applies; a profile only adds to it |
@@ -95,14 +95,9 @@ inline comments — gating changes what fails the build, never what gets
 reported. That is deliberate: the review emits a finding-bearing result for a
 single LOW observation, so blocking on everything would fail merges on nits.
 
-If you want an end of the scale explicitly, `gate` also takes:
-
-| `gate` | The job fails on |
-|---|---|
-| `false` *(default)* | nothing — advisory |
-| `true` | HIGH or CRITICAL |
-| `critical` | CRITICAL only |
-| `any` | every finding, LOW included |
+The HIGH floor is fixed, not configurable. If a team ever needs a different
+line, that should arrive as its own clearly named input rather than as a second
+kind of value in this one.
 
 Two behaviours to know before relying on it, both chosen so the gate cannot
 silently pass:

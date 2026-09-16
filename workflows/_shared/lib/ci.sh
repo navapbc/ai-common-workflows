@@ -176,19 +176,19 @@ print(a)' "${REVIEW_JSON}")"; then
   echo "result=${result}" >>"${GITHUB_OUTPUT}"
   echo "[ai-review] result: ${result}"
 
-  # `gate: true` means "gate at the level worth gating on" — HIGH and CRITICAL.
-  # It deliberately does NOT mean `any`: the review emits a finding-bearing
-  # result for a single LOW observation, so `any` blocks merges on nits and is
-  # not what someone switching gating on is asking for. `critical` and `any`
-  # remain available for teams that want the ends of the scale explicitly.
+  # `gate` is a boolean. When true the job fails on HIGH or CRITICAL findings,
+  # and MEDIUM/LOW still post as comments. The floor is fixed rather than
+  # configurable: the review emits a finding-bearing result for a single LOW
+  # observation, so gating on everything blocks merges on nits, and no team has
+  # yet needed a different line. If one does, that is a new, separately named
+  # input — not a second type smuggled into this one.
   local gate
   gate="$(printf '%s' "${GATE:-false}" | tr '[:upper:]' '[:lower:]')"
   case "${gate}" in
     false | off | no | 0 | "") return 0 ;;
-    true | yes | 1 | high) gate="high" ;;
-    critical | any | all) ;;
+    true | on | yes | 1) ;;
     *)
-      echo "::error::unrecognized gate '${GATE}' (expected: true | false, or critical | high | any)."
+      echo "::error::gate takes true or false (got '${GATE}'). When true the job fails on HIGH or CRITICAL findings."
       return 1
       ;;
   esac
@@ -197,9 +197,9 @@ print(a)' "${REVIEW_JSON}")"; then
 
   # REQUEST_CHANGES is never emitted by the AI; if a dispatcher or a future
   # engine does emit it, treat it as a verdict rather than re-deriving one from
-  # severities, and block at every gate level.
-  if [[ "${gate}" == "any" || "${result}" == "REQUEST_CHANGES" ]]; then
-    echo "::error::AI review result is ${result} and gate is '${gate}'."
+  # severities.
+  if [[ "${result}" == "REQUEST_CHANGES" ]]; then
+    echo "::error::AI review result is ${result} and gate is enabled."
     return 1
   fi
 
@@ -211,7 +211,7 @@ print(a)' "${REVIEW_JSON}")"; then
 import json, sys
 
 RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
-floor = {"high": 3, "critical": 4}[sys.argv[2]]
+FLOOR = RANK["HIGH"]
 
 data = json.load(open(sys.argv[1]))
 comments = data.get("comments") or []
@@ -229,14 +229,14 @@ for c in comments:
         # say so, rather than silently treating it as LOW.
         unknown.append(raw or "<missing>")
         blocking.append(c.get("title", "untitled"))
-    elif rank >= floor:
+    elif rank >= FLOOR:
         blocking.append(c.get("title", "untitled"))
 
 for u in unknown:
     print(f"UNKNOWN\t{u}")
 for b in blocking:
     print(f"BLOCK\t{b}")
-' "${REVIEW_JSON}" "${gate}")"; then
+' "${REVIEW_JSON}")"; then
     echo "::error::Could not evaluate finding severities in ${REVIEW_JSON}. Refusing to assume the gate passes."
     return 1
   fi
@@ -249,8 +249,8 @@ for b in blocking:
   fi
   if [[ "${blocking_count}" -gt 0 ]]; then
     grep '^BLOCK' <<<"${hits}" | cut -f2- | sed 's/^/[ai-review]   /'
-    echo "::error::${blocking_count} finding(s) at '${gate}' or above; failing the job."
+    echo "::error::${blocking_count} HIGH or CRITICAL finding(s); failing the job."
     return 1
   fi
-  echo "[ai-review] result is ${result}, but nothing reaches '${gate}'; not blocking."
+  echo "[ai-review] result is ${result}, but nothing is HIGH or CRITICAL; not blocking."
 }
