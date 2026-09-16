@@ -1,0 +1,127 @@
+# Detection corpus
+
+Fixture diffs with expected findings. This is the only thing in the repo that
+measures whether the **review is any good**, as opposed to whether the plumbing
+works.
+
+Everything in `tests/bats/` and `tests/python/` tests the envelope: does the
+JSON parse, does the gate fire, do comments dedupe. All of it would still pass
+if the rubric were replaced with "report nothing". This corpus is the ratchet
+that stops a rubric edit quietly reducing detection.
+
+**It is not part of `bash tests/run.sh`.** Every case costs a real model call,
+so it runs on demand, like `tests/bats/sandbox.bats`.
+
+## Running it
+
+```bash
+export AI_REVIEW_TOOL=claude
+export ANTHROPIC_API_KEY=sk-...
+bash tests/corpus/run.sh                 # every case
+bash tests/corpus/run.sh 01 04           # just these
+bash tests/corpus/run.sh --profile base,cms-ars
+```
+
+You get a per-case table and a summary:
+
+```
+  01-hardcoded-aws-key        FOUND 1/1   extra 0
+  02-sql-injection-fstring    FOUND 1/1   extra 1
+  07-benign-refactor          CLEAN       extra 0   (expected clean)
+  ...
+  recall 6/7 expected findings   1 case(s) with unexpected findings
+```
+
+Run it before and after a rubric change. A drop in recall, or a jump in extras,
+is the signal. Absolute numbers are less interesting than the delta — and one
+run is a sample, not a measurement: re-run a case before concluding the rubric
+caused a change.
+
+## Case layout
+
+```
+tests/corpus/01-hardcoded-aws-key/
+  case.md          what this exercises, and which rubric rule
+  base/            files as they exist BEFORE the change (optional)
+  head/            files as they exist AFTER  (required)
+  expected.json    what the review must report
+```
+
+The runner builds a scratch git repo, commits `base/`, overlays `head/`,
+commits that, and runs the engine with `--against` the first commit. No patch
+files — a tree that is checked in is easier to read and cannot fail to apply.
+
+### `expected.json`
+
+```json
+{
+  "clean": false,
+  "findings": [
+    {
+      "path": "src/config.py",
+      "min_severity": "HIGH",
+      "perspective": "security",
+      "must_match": ["secret", "environment"]
+    }
+  ]
+}
+```
+
+- `min_severity` — the finding must be at least this severe. Use the floor you
+  would actually accept, not the severity you hope for; a corpus that fails on
+  HIGH-vs-CRITICAL disagreement measures the model's calibration rather than
+  its detection, and you will stop trusting the corpus.
+- `must_match` — case-insensitive substrings, all of which must appear in the
+  finding's title or description. Keep them to the *concept* ("secret",
+  "parameterized"), not to phrasing the model has no reason to reuse.
+- `perspective` — optional; `security` or `compliance`.
+- `clean: true` — a **negative case**: any finding is a failure. At least a
+  quarter of the corpus should be these. Precision is what determines whether
+  teams keep the tool, and a corpus of only positive cases rewards a rubric
+  that reports everything.
+
+## Getting to 20+ cases
+
+In descending order of value:
+
+**1. One case per rubric rule.** Walk `skills/base/code-security.md` and
+`iac-compliance.md` and write a minimal diff for each numbered check. This is
+the highest-value source because it tests *your* rubric rather than a generic
+notion of vulnerability — and it immediately tells you which rules are
+unreachable or unstated.
+
+**2. Negative controls.** For each positive case, consider its already-mitigated
+twin: the same shape with the fix present (parameterized query, encryption
+already set, an account-level guard elsewhere in the diff). These catch the
+failure mode adjudication exists for, and the adjudication rubric already names
+several.
+
+**3. Public vulnerable-by-design fixtures**, for realism you would not think to
+write. [TerraGoat](https://github.com/bridgecrewio/terragoat) and
+[CfnGoat](https://github.com/bridgecrewio/cfngoat) are purpose-built misconfigured
+IaC; [OWASP WebGoat](https://github.com/WebGoat/WebGoat) and the
+[NIST SARD Juliet](https://samate.nist.gov/SARD/) suites cover app-layer.
+Check the licence before vendoring, and reduce each to a minimal diff — a whole
+vulnerable app measures nothing useful.
+
+**4. Inverted CVE fix commits.** A fix commit's parent is, by definition, a
+vulnerable state. Reducing a real fix to a two-file diff gives you a case that
+is known-exploitable rather than merely suspicious.
+
+**5. Your own adopted repos.** Once this is running in real programs, the best
+source is findings people confirmed or rejected — anonymized. That corpus
+reflects what your programs actually write, which none of the above does.
+
+Aim for breadth over depth first: one case per rubric area beats five on
+secrets. The gaps that matter are the perspectives with no case at all.
+
+## What this cannot tell you
+
+- **Recall against real-world code.** Minimal fixtures are easier than a
+  3,000-line PR. High recall here is necessary, not sufficient.
+- **Whether severities are calibrated.** `min_severity` is a floor, so a rubric
+  that reports everything as CRITICAL still passes. If you want calibration,
+  assert exact severities in a subset and accept the flakiness.
+- **Cross-model agreement.** Run the corpus under each `AI_REVIEW_TOOL` you
+  support. Divergence there is worth knowing before you ship `gate: true`,
+  because the gate's threshold is a severity the model assigns.

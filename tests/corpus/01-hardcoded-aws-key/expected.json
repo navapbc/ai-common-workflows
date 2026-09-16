@@ -1,0 +1,11 @@
+{
+  "clean": false,
+  "findings": [
+    {
+      "path": "src/config.py",
+      "min_severity": "CRITICAL",
+      "perspective": "security",
+      "must_match": ["key"]
+    }
+  ]
+}

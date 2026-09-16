@@ -40,6 +40,12 @@ bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \
 
 # tests/bats/sandbox.bats covers the experimental (unshipped) sandbox and is
 # not part of the default suite; run it manually with Docker if working on it.
+#
+# tests/corpus/ is the DETECTION corpus — fixture diffs with expected findings.
+# Everything above tests the envelope (does the JSON parse, does the gate fire)
+# and would still pass if the rubric reported nothing; the corpus is what tests
+# whether the review is any good. It makes real model calls, so it runs on
+# demand:  bash tests/corpus/run.sh   (see tests/corpus/README.md)
 
 if (( fail )); then
   echo "SUITE FAILED" >&2

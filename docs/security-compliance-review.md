@@ -10,6 +10,43 @@ For the full input/output reference, see [github-action.md](github-action.md)
 (GitHub Action) or [jenkins-plugin/README.md](../jenkins-plugin/README.md)
 (Jenkins).
 
+## Run it alongside your scanners, not instead of them
+
+This reasons about a change; it does not exhaustively analyze a codebase. It
+belongs next to the deterministic tools, and a program that adopts it as their
+whole answer has a gap they cannot see.
+
+| Job | Best tool | Why |
+|---|---|---|
+| Taint tracking, reachability, exhaustive sink coverage | **SAST** (CodeQL, Semgrep) | Deterministic, complete over the paths it models, repeatable |
+| Known vulnerabilities in dependencies, transitive included | **SCA** (Dependabot, Snyk) | Needs a CVE database and a resolved dependency graph |
+| Secrets across full history, validated against providers, push protection | **Secret scanning** (GitHub secret scanning, gitleaks) | Scans every commit, not one diff, and can confirm a credential is live |
+| Was a check *forgotten*? Is this config individually valid and collectively wrong? Will this log line carry PHI? Does this change weaken a control elsewhere? | **This review** | Needs to read intent across files, which pattern matchers cannot |
+
+What that means concretely:
+
+- **It is diff-scoped.** A vulnerability in code the PR does not touch is out of
+  scope by construction. The [codebase audit](codebase-audit.md) covers an
+  existing repo, ad hoc; neither replaces continuous scanning.
+- **It is probabilistic.** Two runs on the same diff may differ, and recall is
+  not measured. A clean review is *not* evidence that a diff is safe — it is one
+  reviewer's opinion, which is why the default is advisory and the posted review
+  says so.
+- **It has no CVE database, no full history, and no reachability analysis.** It
+  will not tell you that a transitive dependency has a known RCE.
+- **Control IDs it cites are model-generated.** The rubric forbids inventing
+  identifiers, but nothing verifies them. Check any citation against the
+  authoritative catalog before it goes into a compliance deliverable — the
+  posted review carries that caveat for the same reason.
+
+The useful mental model: SAST and SCA answer *"does this match a known-bad
+pattern?"*; this answers *"does a careful reviewer think this change is
+wrong?"* — with the reliability that comparison implies in both directions.
+
+If you are changing the rubric, `tests/corpus/` is the fixture set that
+measures whether detection got better or worse; the rest of the test suite
+only proves the plumbing works.
+
 ## Quickstart (GitHub Actions)
 
 ```yaml
