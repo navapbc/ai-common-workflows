@@ -70,6 +70,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `AI_REVIEW_BATCH_MIN_FILES` | no | Fan-out threshold (default 10) |
 | `AI_REVIEW_CONTEXT_BUDGET` | no | Ceiling on context files the model may load beyond the diff (default 15). Stated to the model in a CONTEXT BUDGET prompt block; fan-out workers narrow it per batch |
 | `AI_REVIEW_SCM` | no | SCM backend under `../_common/scm/` (default `github`) |
+| `AI_REVIEW_MAX_COMMENTS` | no | Cap on inline comments per review (default 15; `0` = no cap). Over the cap, the highest-severity findings stay inline and the rest are listed in the review body; the gate still accounts for every finding |
 | `GITHUB_TOKEN` / `GH_TOKEN` | posting | Auth for `gh`; `GH_HOST` for GitHub Enterprise |
 | `CI`, `NO_COLOR` | no | Output plumbing |
 

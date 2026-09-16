@@ -34,6 +34,14 @@ inputs:
     description: "Post the review with inline comments to the PR."
     required: false
     default: "true"
+  max-comments:
+    description: >-
+      Cap on inline comments per review (default 15; 0 = no cap). Above the cap
+      the highest-severity findings stay inline and the rest are listed in the
+      review body — nothing is dropped, and the gate still accounts for every
+      finding. A review that buries the diff is a review teams switch off.
+    required: false
+    default: "15"
   gate:
     description: >-
       Fail the job on HIGH or CRITICAL findings. Default false (advisory).
@@ -296,6 +304,7 @@ runs:
         REVIEW_JSON: ${{ steps.review.outputs.review-json }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
+        AI_REVIEW_MAX_COMMENTS: ${{ inputs.max-comments }}
         CI: "true"
       run: |
         set -euo pipefail
