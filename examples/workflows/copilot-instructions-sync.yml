@@ -122,7 +122,14 @@ jobs:
           # Pushing the branch is always permitted (contents: write); only PR
           # creation is gated by the create-and-approve toggle.
           git push -f -q origin "${branch}"
-          if gh pr view "${branch}" >/dev/null 2>&1; then
+          # Only an OPEN PR means "already tracked". `gh pr view <branch>`
+          # matches a CLOSED or MERGED PR on the same branch too, so using it
+          # here made every run after the first sync PR was closed/merged print
+          # "Existing sync PR updated" and skip `gh pr create` — the update sat
+          # on the branch with no PR and a green check. `gh pr list --state open`
+          # is the state-scoped lookup this needs.
+          if [[ -n "$(gh pr list --head "${branch}" --state open \
+                        --json number --jq '.[0].number' 2>/dev/null)" ]]; then
             echo "Existing sync PR updated."
           elif gh pr create --head "${branch}" \
               --title "Sync AI-review Copilot instructions (${PROFILE})" \

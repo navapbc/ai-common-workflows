@@ -79,6 +79,17 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The Copilot instructions sync workflow stopped opening PRs after the first
+  one was closed or merged.** It tested for an existing PR with
+  `gh pr view <branch>`, which matches a CLOSED or MERGED PR on that branch just
+  as readily as an open one. Once the first sync PR left the open state, every
+  later run pushed the updated branch, reported "Existing sync PR updated", and
+  skipped `gh pr create` — so instruction updates piled up on
+  `ai-review/instructions-sync` with no PR to review them and a green check on
+  the run. Now scoped with `gh pr list --head <branch> --state open`.
+  Consumers must copy the fix into their own
+  `.github/workflows/copilot-instructions-sync.yml`: the sync only ever writes
+  `.github/instructions/`, never the workflow file itself.
 - **The review now diffs `base...HEAD`, not `base..HEAD`.** A pull request's
   diff is what the branch changed since it diverged; the two-dot form
   additionally reported, inverted, every commit landed on the base branch
