@@ -56,7 +56,9 @@ permissions:
 env:
   # Compliance profile to track: baseline (default) | cms-ars | <your profile>.
   PROFILE: baseline
-  # Pin ai-common-workflows to a commit SHA (preferred) or a release tag.
+  # Pin ai-common-workflows to a full commit SHA. NOT a tag — a tag is a
+  # mutable pointer that can be re-created against different content, and
+  # nothing here would notice. Record which release it is in a comment.
   ACW_REPO: navapbc/ai-common-workflows
   ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char SHA, or v1.0.0
 

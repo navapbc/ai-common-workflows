@@ -77,7 +77,8 @@ Copy [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/
 into your repo's `.github/workflows/`, set two values, and merge:
 
 - `PROFILE` — the compliance profile to track (`baseline` default, `cms-ars`, …).
-- `ACW_REF` — pin `ai-common-workflows` to a commit SHA or release tag.
+- `ACW_REF` — pin `ai-common-workflows` to a full commit SHA. Not a tag: a
+  tag can be deleted and re-pointed at different content ([why](../docs/security.md)).
 
 On its schedule (and on demand), the workflow fetches the base
 `ai-review-*.instructions.md` files from `ai-common-workflows@<ACW_REF>` — plus
