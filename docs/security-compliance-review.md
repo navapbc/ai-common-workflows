@@ -40,11 +40,20 @@ That's the whole setup. [Pin `@<commit-sha>`, not a tag](security.md).
 |---|---|---|
 | **GitHub Action** | Composite action; `uses:` it in any workflow. | [github-action.md](github-action.md) |
 | **Jenkins plugin** | `.hpi` adding an `aiSecurityComplianceReview` pipeline step. | [jenkins-plugin/README.md](../jenkins-plugin/README.md) |
-| **Copilot instructions** | Files that make Copilot's built-in review match. | [copilot-instructions/README.md](../copilot-instructions/README.md) |
+| **Copilot instructions** | Files that make Copilot's built-in review match — a complement, not a substitute. | [copilot-review-setup.md](copilot-review-setup.md) |
 
 The Action and the plugin run the **same review engine**
 ([`engines/security-compliance-review/`](../engines/security-compliance-review/README.md)) —
 one source of truth for the review logic, two front ends.
+
+**Start with the Action** (or the plugin, on Jenkins). It is the only path that
+can block a merge, it adjudicates its own findings to cut false positives, it
+lets you pin the model and keep the diff inside your boundary, and it emits
+machine-readable output a pipeline can act on. Copilot's built-in review
+applies the same rubric with nothing of yours to run, which makes it a good
+always-on second opinion — but it is unfiltered and unenforceable, so it is
+worth adding *after* the Action rather than instead of it
+([side by side](copilot-review-setup.md#what-the-action-does-that-this-does-not)).
 
 ## Private & self-hosted LLM endpoints
 

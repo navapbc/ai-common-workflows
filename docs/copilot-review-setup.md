@@ -1,7 +1,15 @@
 # Copilot review setup — five steps
 
 Make GitHub Copilot's PR review apply this repo's security & compliance rubric.
-Runs natively inside GitHub: no CI minutes, no LLM keys of your own.
+Runs natively inside GitHub, with no LLM keys of your own.
+
+> **Start with the action, not this.** The
+> [AI security & compliance review action](security-compliance-review.md) is
+> the primary reviewer: it is the only path that can block a merge, it filters
+> its own false positives, and you choose the model and where the data goes.
+> Copilot's native review is a **complement** — a cheap second opinion with
+> nothing of yours to run — not a substitute. If you only adopt one, adopt the
+> action. [What you give up ↓](#what-the-action-does-that-this-does-not)
 
 This page is the **how**. For what the instruction files contain and why they
 are split base + profile, see
@@ -156,6 +164,35 @@ does it:
 | `ai-review-iac` | Terraform, CloudFormation, Bicep, Pulumi, Helm, K8s, CDK |
 | `ai-review-auth` | auth / authn / authz / session / middleware / oauth / jwt / rbac paths |
 | `ai-review-scripts` | `**/*.sh`, `**/*.bash` |
+
+## What the action does that this does not
+
+Both reviewers apply the same rubric and the same comment format. The action
+does four things Copilot's native review cannot:
+
+| | Action + API/LLM | Copilot native |
+|---|---|---|
+| **Block a merge** | `gate: true` fails the job on HIGH or CRITICAL, and the job is a status check a ruleset can require | **No.** It submits no blocking review and emits no status check — there is nothing for a ruleset to require |
+| **Filter false positives** | Adjudication re-examines candidate findings before reporting (`self` by default, `independent` for a fresh second pass on a different model) | **No.** Single pass, unfiltered |
+| **Control the model and data path** | `provider: api \| bedrock \| vertex \| azure`, or a custom gateway — the diff can stay inside your boundary, on a model you pin | Runs on GitHub's infrastructure with GitHub's models |
+| **Feed automation** | `review-json` and `result` outputs, so a pipeline can act on the findings | Comments only |
+
+Three smaller ones worth knowing: the action's rubric is **pinned by SHA**, so
+it changes only when you bump the ref, while Copilot's model and behaviour move
+under you; the AI phase holds **no SCM token**, so the reviewed code cannot
+reach a repo-write credential; and large diffs are **fanned out** under a
+context budget rather than truncated.
+
+What Copilot's native review gives you in exchange is that there is nothing to
+run: no workflow minutes of your own on public repos, no keys, no runner. That
+makes it a good always-on second opinion, and a reasonable starting point if
+you cannot get LLM credentials yet — but treat its output as advisory, because
+it is unfiltered and cannot be enforced.
+
+It is also **metered, not free**: it needs a Copilot plan that includes code
+review, and consumes AI credits plus — since 1 June 2026 — GitHub Actions
+minutes on **private** repositories. See
+[GitHub's billing docs](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
 
 ## Troubleshooting
 
