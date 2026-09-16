@@ -53,11 +53,15 @@ behaves identically under every profile.
 The review mechanics — fan-out, adjudication modes, comment format, gating —
 are identical across all sources.
 
-## Bundled profiles
+## Bundled sources
 
-| Profile | Adds | Use when |
+`base` is not a profile directory — it resolves to the engine's
+`skills/base/`. The profiles below live under `skills/profiles/` and are listed
+after it.
+
+| Source | Adds | Use when |
 |---|---|---|
-| `base` *(required first entry)* | Nothing to add — it IS the framework-neutral CIS/NIST CSF/OWASP floor only. | You want a solid security baseline with no specific agency mandate |
+| `base` *(required first entry, unless `none`)* | Nothing — it **is** the framework-neutral CIS / NIST CSF / OWASP floor. | Always, unless a profile is replacing the rubric wholesale |
 | `cms-ars` | CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations for the floor's findings, plus CMS/HIPAA-specific checks the floor doesn't cover (MFA, vulnerability/posture monitoring, WAF/DoS, malware/image provenance, pipeline integrity, and a detailed PHI/PII log-content review) | CMS systems and contractors |
 
 ## Selecting a profile
@@ -69,11 +73,11 @@ overlay.
   ```yaml
   - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
     with:
-      profile: cms-ars
+      profile: base,cms-ars
   ```
 - **Jenkins** — the `profile` step parameter (or the global default):
   ```groovy
-  aiSecurityComplianceReview(profile: 'cms-ars')
+  aiSecurityComplianceReview(profile: 'base,cms-ars')
   ```
 - **Engine directly** — the `AI_REVIEW_PROFILE` environment variable.
 - **Copilot instructions** — the `PROFILE` in your copy of the sync workflow
@@ -141,9 +145,10 @@ profile.
    additive in the same way: the base set in `copilot-instructions/base/`
    always syncs, and your `*-additions` files layer on top. See
    [copilot-instructions.md](copilot-instructions.md).
-3. Reference it: `profile: <name>` (Action/Jenkins) or `AI_REVIEW_PROFILE=<name>`.
-   Combine several with a comma — `profile: cms-ars,<name>` — and the last one
-   listed wins any conflict.
+3. Reference it after `base`: `profile: base,<name>` (Action/Jenkins) or
+   `AI_REVIEW_PROFILE=base,<name>`. List several — `profile: base,cms-ars,<name>`
+   — and the last one wins any conflict. Use `none,<name>` only if your profile
+   is meant to replace the floor entirely.
 
 Your profile may also ship `code-security.md`, `pr-review.md` or
 `codebase-audit.md` additions, layered the same way. Keep them to deltas for
@@ -154,7 +159,7 @@ directory in *your* checkout containing an `iac-compliance.md` (or any other
 rubric filename). It is treated exactly like a bundled profile's file — an
 addition layered on top of the base, never a replacement — so it only needs
 your organization's deltas. A path can appear in a list alongside a bundled
-name: `profile: cms-ars,./compliance/my-overlay`. No change to this repo
+name: `profile: base,cms-ars,./compliance/my-overlay`. No change to this repo
 required.
 
 > Do not invent control identifiers you can't source. If your agency's catalog
