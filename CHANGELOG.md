@@ -47,6 +47,22 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The docs now steer consumers to the Action rather than presenting it and
+  Copilot's native review as equivalent options.** They were described as two
+  independent reviewers, which understated the difference: the Action is the
+  only path that can block a merge (Copilot submits no blocking review and
+  emits no status check), the only one that adjudicates its own findings, and
+  the only one where you pin the model and choose whether the diff leaves your
+  boundary — plus it emits `review-json` / `result` for downstream automation.
+  `docs/copilot-review-setup.md` gains a "what the action does that this does
+  not" comparison and opens by saying to adopt the Action first;
+  `docs/security-compliance-review.md`, `copilot-instructions/README.md` and
+  the top-level README carry the same steer, framing Copilot's review as a
+  complement worth adding *after* the Action rather than instead of it.
+  Also drops a stale "no CI minutes" claim from the setup page and the README,
+  which contradicted the metered-not-free correction already in
+  `copilot-instructions/README.md`: Copilot code review consumes AI credits
+  and, since 1 June 2026, Actions minutes on private repositories.
 - **`--gate` on the engine now matches the composite action**: it fails on a
   HIGH or CRITICAL finding rather than on any non-`APPROVE` result. Local runs,
   the sandbox wrapper and the Action previously disagreed — the Action gated at

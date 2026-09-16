@@ -3,8 +3,16 @@
 These files make GitHub Copilot's automatic PR review apply the same security
 and compliance checks — and the same comment format — as the AI Security &
 Compliance Review action and Jenkins plugin. Copilot review runs on GitHub's own
-infrastructure and needs no LLM keys of your own, so it complements the action as
-a second independent reviewer.
+infrastructure and needs no LLM keys of your own.
+
+**It complements the action; it does not replace it.** The
+[action](../docs/security-compliance-review.md) is the primary reviewer — it is
+the only path that can block a merge, it adjudicates its own findings to cut
+false positives, and it lets you pin the model and keep the diff inside your
+boundary. Copilot's native review is a second opinion that happens to be
+unfiltered and unenforceable. Adopt the action first; add these instructions so
+the second opinion judges by the same rubric.
+[Side by side](../docs/copilot-review-setup.md#what-the-action-does-that-this-does-not).
 
 It is **metered, not free**: it requires a Copilot plan that includes code
 review, and consumes AI credits plus — since 1 June 2026 — GitHub Actions
