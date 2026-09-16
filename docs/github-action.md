@@ -35,6 +35,15 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
   into the runner image). The review runs natively; there is no bundled image
   providing these.
 
+## Scope
+
+This complements SAST, dependency/CVE scanning and secret scanning — it does
+not replace any of them. It is diff-scoped and probabilistic; a clean review is
+one reviewer's opinion, not evidence that a change is safe. See
+[Run it alongside your scanners](security-compliance-review.md#run-it-alongside-your-scanners-not-instead-of-them)
+for the division of labor, and note the posted review carries the same caveat
+so a PR reader sees it without opening these docs.
+
 ## Inputs
 
 There are 34 of them and **31 are optional**. Almost every team needs exactly

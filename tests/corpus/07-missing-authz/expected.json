@@ -1,0 +1,11 @@
+{
+  "clean": false,
+  "findings": [
+    {
+      "path": "src/api/claims.py",
+      "min_severity": "HIGH",
+      "perspective": "security",
+      "must_match": ["author"]
+    }
+  ]
+}

@@ -8,6 +8,29 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tests/corpus/`** — a detection corpus: fixture diffs with expected
+  findings, plus a runner and a scorer. It is the only thing in the repo that
+  measures whether the **review** is any good; everything in `tests/bats/` and
+  `tests/python/` tests the envelope and would still pass if the rubric
+  reported nothing. Run it before and after a rubric change and compare the
+  delta — `bash tests/corpus/run.sh`. Excluded from the default suite because
+  every case is a real model call.
+  Eight seed cases across the distinct rubric areas, **three of them negative**
+  (a parameterized query, a correctly-encrypted database, a pure refactor):
+  precision is what decides whether a team keeps the tool switched on, and a
+  corpus of only positive cases rewards a rubric that reports everything.
+  `expected.json` matches on path, a severity floor, perspective and concept
+  substrings rather than phrasing — a corpus that fails because the model wrote
+  "credential" for "secret" measures wording and gets ignored within a week.
+  `README.md` documents five sources for growing to 20+, in descending order of
+  value, starting with one case per rubric rule.
+- **The posted review now carries its own scope disclaimer.** Docs saying
+  "advisory" do not reach a PR reader. Every review body states that it is
+  advisory and not exhaustive, that it complements rather than replaces SAST /
+  dependency scanning / secret scanning, and — the part that matters for
+  compliance work — that any control IDs it cites are **model-generated and
+  unverified**, because an ARS or NIST citation in a PR comment reads like an
+  audit artifact and may be carried into a deliverable.
 - **`tests/python/test_pin_hygiene.py`** — CI now enforces the SHA-only pinning
   rule instead of relying on reviewers to notice. It fails on a tag or branch
   pin of this repo in any doc, example or README, on a non-SHA `ACW_REF`, and
@@ -98,6 +121,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/security-compliance-review.md` opens with the division of labor**
+  against SAST, SCA and secret scanning, before the quickstart: what each tool
+  is best at, and the four things this review structurally cannot do
+  (diff-scoped, probabilistic, no CVE database or reachability analysis,
+  unverified control IDs). A program could previously read "security review"
+  as covering what CodeQL and Dependabot cover. `docs/github-action.md` gains a
+  short Scope section pointing at it.
 - **A commit SHA is now the only accepted pin, everywhere.** Four places still
   offered a release tag as an alternative — `copilot-instructions/README.md`,
   the sync workflow's header, `docs/security.md`'s `ACW_REF` paragraph, and the
@@ -284,6 +314,11 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The review body's feedback ask is now the last line.** It was appended to
+  the summary before the overflow sections, so "was this helpful?" appeared
+  above the out-of-diff, unanchored and capped findings and read as the end of
+  the review. The body is now assembled in a fixed order — summary, scope
+  disclaimer, finding sections, attribution last.
 - **`adjudication-model` was silently ignored under `provider: azure`.** Azure
   resolves the model from the request URL path, and the engine bakes the
   deployment into `OPENAI_BASE_URL` once at startup; the adjudication pass only

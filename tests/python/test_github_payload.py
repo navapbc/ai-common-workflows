@@ -344,3 +344,87 @@ def test_a_capped_review_is_still_posted(monkeypatch):
     payload, _ = gp.build_payload(_n_findings("LOW", "LOW", "LOW"), "", "")
     assert payload is not None
     assert payload.get("event") or payload.get("comments")
+
+
+# ── scope disclaimer in the posted review ───────────────────────────────────
+# The docs saying "advisory" is not enough: a reader of the PR never opens the
+# docs. The disclaimer has to be in the artifact.
+
+def test_body_carries_the_scope_disclaimer():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s", "comments": [_finding()]}, "", "")
+    assert "Advisory, not exhaustive" in payload["body"]
+    assert "does not replace" in payload["body"]
+
+
+def test_disclaimer_names_the_scanners_it_complements():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s", "comments": [_finding()]}, "", "")
+    body = payload["body"]
+    assert "SAST" in body
+    assert "dependency" in body
+    assert "secret scanning" in body
+
+
+def test_disclaimer_flags_control_ids_as_model_generated():
+    # The liability case: an ARS/NIST citation in a PR comment reads like an
+    # audit artifact, and someone may carry it into a compliance deliverable.
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s", "comments": [_finding()]}, "", "")
+    body = payload["body"]
+    assert "control IDs" in body
+    assert "unverified" in body
+
+
+def test_disclaimer_is_not_duplicated_if_the_ai_already_included_it():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s " + gp.SCOPE_DISCLAIMER,
+         "comments": [_finding()]}, "", "")
+    assert payload["body"].count("Advisory, not exhaustive") == 1
+
+
+def test_an_approve_review_also_carries_the_disclaimer():
+    # A clean review is exactly when someone might over-read the result as
+    # "this code is secure".
+    payload, _ = gp.build_payload({"review_action": "APPROVE", "summary": "No findings."}, "", "")
+    assert "Advisory, not exhaustive" in payload["body"]
+
+
+# ── body ordering ───────────────────────────────────────────────────────────
+
+def test_the_feedback_ask_is_the_last_thing_in_the_body():
+    # It used to be appended before the overflow sections, so "was this
+    # helpful?" appeared above half the review and read as the end of it.
+    data = {
+        "review_action": "COMMENT",
+        "summary": "s",
+        "comments": [
+            _finding(),
+            {"path": "b.py", "perspective": "security", "severity": "LOW",
+             "title": "no anchor", "description": "d"},
+        ],
+    }
+    payload, _ = gp.build_payload(data, "", "")
+    body = payload["body"].rstrip()
+    assert body.endswith(gp.AI_ATTRIBUTION)
+    assert body.index("no anchor") < body.index(gp.AI_ATTRIBUTION)
+
+
+def test_the_disclaimer_precedes_the_finding_sections():
+    data = {
+        "review_action": "COMMENT",
+        "summary": "s",
+        "comments": [
+            {"path": "b.py", "perspective": "security", "severity": "LOW",
+             "title": "no anchor", "description": "d"},
+        ],
+    }
+    payload, _ = gp.build_payload(data, "", "")
+    body = payload["body"]
+    assert body.index("Advisory, not exhaustive") < body.index("no anchor")
+
+
+def test_the_ai_summary_stays_first():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "MY-SUMMARY-TEXT", "comments": [_finding()]}, "", "")
+    assert payload["body"].startswith("MY-SUMMARY-TEXT")

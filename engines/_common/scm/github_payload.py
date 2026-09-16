@@ -26,6 +26,21 @@ import re
 import sys
 
 
+# Stated in the posted review itself, not only in the docs. A reader who never
+# opens this repo still needs to know three things: the review is advisory, it
+# does not replace the deterministic scanners, and any control ID it cites came
+# from a model rather than from a catalog. That last one matters most — a
+# citation like "NIST SC-28" in a PR comment reads like an audit artifact, and
+# someone may carry it into a compliance deliverable.
+SCOPE_DISCLAIMER = (
+    "> **Advisory, not exhaustive.** AI-assisted review of this diff. It "
+    "complements — it does not replace — SAST, dependency/CVE scanning, and "
+    "secret scanning, and it reasons about the change rather than exhaustively "
+    "analyzing the codebase. Any control IDs cited are model-generated and "
+    "unverified: check them against the authoritative catalog before using them "
+    "in a compliance artifact."
+)
+
 ATTRIBUTION_MARKER = "Reviewed by AI"
 AI_ATTRIBUTION = (
     "_Reviewed by AI, was this helpful? Please react with "
@@ -250,10 +265,11 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             return line in left_lines.get(path, set())
         return line in right_lines.get(path, set())
 
-    # Append the attribution as the final line of the top-level review body.
-    # Guard against duplication if the AI already included it in the summary.
-    if AI_ATTRIBUTION not in summary:
-        summary = summary.rstrip() + "\n\n" + AI_ATTRIBUTION
+    # Sections appended to the review body, in order. Collected rather than
+    # concatenated as we go, because the attribution has to be the LAST line:
+    # appending it early (as this did) left "was this helpful?" in the middle of
+    # the body with findings below it, where it reads as the end of the review.
+    body_sections = []
 
     comments_out = []
     inline_sources = []  # the source finding for each entry in comments_out
@@ -342,9 +358,8 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             f"{n} {sev.lower()}"
             for sev, n in sorted(by_sev.items(), key=lambda kv: _SEVERITY_RANK.get(kv[0], 4))
         )
-        summary = (
-            summary.rstrip()
-            + f"\n\n---\n\n#### {len(capped)} further finding(s) not posted inline ({counts})\n\n"
+        body_sections.append(
+            f"#### {len(capped)} further finding(s) not posted inline ({counts})\n\n"
             + "Inline comments are capped so a review cannot bury the diff; these are\n"
             + "the lower-severity remainder. Nothing was dropped, and the gate verdict\n"
             + "accounts for every finding.\n\n"
@@ -356,9 +371,8 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             f"[security-compliance-review] {len(out_of_diff)} finding(s) reference lines outside the "
             f"PR diff; moving them into the review body."
         )
-        summary = (
-            summary.rstrip()
-            + "\n\n---\n\n#### Findings outside the diff (not inline-anchored)\n\n"
+        body_sections.append(
+            "#### Findings outside the diff (not inline-anchored)\n\n"
             + "\n".join(_md(c) for c in out_of_diff)
         )
 
@@ -367,9 +381,8 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             f"[security-compliance-review] {len(unanchorable)} finding(s) lack the fields needed to "
             f"anchor an inline comment; moving them into the review body."
         )
-        summary = (
-            summary.rstrip()
-            + "\n\n---\n\n#### Findings without a line anchor\n\n"
+        body_sections.append(
+            "#### Findings without a line anchor\n\n"
             + "\n".join(_md(c) for c in unanchorable)
         )
 
@@ -393,9 +406,20 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             )
         return None, messages
 
+    # Assemble the body in a fixed order: what the review found, the scope
+    # disclaimer, the overflow sections, then the feedback ask LAST so it reads
+    # as the end of the review rather than appearing above half of it.
+    parts = [summary.rstrip()]
+    if SCOPE_DISCLAIMER not in summary:
+        parts.append(SCOPE_DISCLAIMER)
+    parts.extend(body_sections)
+    if AI_ATTRIBUTION not in summary:
+        parts.append(AI_ATTRIBUTION)
+    body = "\n\n---\n\n".join(parts) if len(parts) > 1 else parts[0]
+
     payload = {
         "event": action if action in ("APPROVE", "COMMENT", "REQUEST_CHANGES") else "COMMENT",
-        "body": summary,
+        "body": body,
         "comments": comments_out,
     }
     return payload, messages

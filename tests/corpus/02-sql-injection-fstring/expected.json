@@ -1,0 +1,11 @@
+{
+  "clean": false,
+  "findings": [
+    {
+      "path": "src/users.py",
+      "min_severity": "MEDIUM",
+      "perspective": "security",
+      "must_match": ["injection"]
+    }
+  ]
+}

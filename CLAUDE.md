@@ -41,6 +41,10 @@ internals.
   `Jenkins plugin` CI job for the reactor, `@Extension` registration, and tests.
 - Keep the test stubs in `tests/stubs/` honest — they stand in for the AI CLIs
   and `gh` with no network.
+- **Changing a rubric?** `tests/run.sh` cannot tell you if you made the review
+  worse — it tests the envelope, not the judgment. Run `bash tests/corpus/run.sh`
+  before and after, and compare the delta. It costs real model calls, which is
+  why it is not in the default suite. See `tests/corpus/README.md`.
 
 ## Load-bearing conventions (don't break these)
 
