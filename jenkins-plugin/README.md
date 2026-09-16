@@ -4,7 +4,8 @@ Adds a single `aiSecurityComplianceReview` pipeline step that runs the same AI
 security & compliance review engine as the [GitHub Action](../docs/github-action.md),
 on your Jenkins agents. Supports Claude, Codex, and Copilot on the public API or
 a private endpoint (Bedrock, Vertex, Azure OpenAI, or a custom gateway), with a
-selectable compliance `profile` (CMS ARS by default).
+selectable compliance `profile` — an ordered list of rubric sources starting
+with `base` or `none`, e.g. `base` (the default floor) or `base,cms-ars`.
 
 The plugin is thin: it bundles its engine + `engines/_common` (a snapshot, zipped at build
 time), extracts it onto the agent at runtime, and runs it. Shared machinery

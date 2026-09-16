@@ -122,10 +122,11 @@ If your workflow judges code against a control framework, make the framework a
 **profile** rather than hardcoding it — the same pattern the review uses
 (`AI_REVIEW_PROFILE`, resolved from the engine's `skills/profiles/<name>/` with
 fallback to `skills/base/`, or a bring-your-own directory path). This lets one workflow
-serve several agencies without forks. Consider whether a profile should fully
-override a rubric file or only *add* to a shared floor — the review's
-compliance perspective does the latter, so a generic baseline always applies
-and no profile can accidentally weaken it (see
+serve several agencies without forks. Follow the settled convention rather
+than inventing a new one: rubric sources are an ordered list whose first entry
+is `base` or `none`, every source only *adds* to what precedes it, and the last
+listed wins a conflict. There is no per-file override — a program that needs to
+own the whole rubric declares `none` in the config, where it is visible (see
 [profiles.md](profiles.md#how-resolution-works)).
 
 ## Checklist before you open the PR

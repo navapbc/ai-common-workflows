@@ -57,38 +57,16 @@ fi
 # shellcheck source=../../_common/scm/github.sh
 source "${AI_COMMON_HOME}/scm/${AI_REVIEW_SCM}.sh"
 
-# ── Compliance profile resolution ───────────────────────────────────────────
-# A profile supplies additions to the compliance rubric (and may override any
-# base skill outright). AI_REVIEW_PROFILE is a bundled name under profiles/
-# (baseline is the default — the framework-neutral CIS/NIST-CSF/OWASP floor),
-# or a path to a custom profile directory (bring-your-own). For pr-review.md
-# and code-security.md, the active profile's copy replaces the shared base
-# entirely if present. For iac-compliance.md specifically, the shared base is
-# ALWAYS applied and the profile's copy (if any) is layered on top as an
-# addition, not a replacement — see build_prompt() and docs/profiles.md.
-AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-baseline}"
-if [[ -d "${AI_REVIEW_PROFILE}" ]]; then
-  PROFILE_DIR="$(cd "${AI_REVIEW_PROFILE}" && pwd)"
-elif [[ -d "${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}" ]]; then
-  PROFILE_DIR="${ENGINE_HOME}/skills/profiles/${AI_REVIEW_PROFILE}"
-else
-  ai_review::err "AI_REVIEW_PROFILE='${AI_REVIEW_PROFILE}' is not a known profile or an existing directory."
-  ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
-  ai_review::log "  Or pass a path to a custom profile directory."
-  exit 2
-fi
-
-# pr_review::rubric <file> — echo the path to a rubric file, preferring the
-# active profile's override, else the shared base in skills/base/. Used for
-# pr-review.md and code-security.md (whole-file override semantics). NOT used
-# for iac-compliance.md — see pr_review::build_prompt's compliance_block.
-pr_review::rubric() {
-  if [[ -f "${PROFILE_DIR}/$1" ]]; then
-    printf '%s' "${PROFILE_DIR}/$1"
-  else
-    printf '%s' "${ENGINE_HOME}/skills/base/$1"
-  fi
-}
+# ── Rubric composition ──────────────────────────────────────────────────────
+# AI_REVIEW_PROFILE is an ordered list of rubric sources, and the shared
+# base is an explicit member of it: `base`, `base,cms-ars`, or `none,<profile>`
+# to supply the whole rubric yourself. Sources layer in order and the last one
+# wins a conflict. See ai_review::resolve_profiles in _common — including why
+# the first entry must be `base` or `none`, and why finding-adjudication.md
+# sits outside this mechanism.
+# Resolution itself runs AFTER flag parsing (below), so --profile can feed it;
+# only the default is established here.
+AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-base}"
 
 # ── Help (overrides the generic _common fallback) ──────────────────────────
 ai_review::print_help() {
@@ -124,10 +102,15 @@ Options:
 
 Environment variables:
   AI_REVIEW_TOOL           Required. One of: claude | codex | copilot.
-  AI_REVIEW_PROFILE        Compliance profile: baseline (default) | cms-ars |
-                           a skills/profiles/ name or a directory path. The
-                           compliance rubric always includes the baseline; a
-                           profile only adds to it (see docs/profiles.md).
+  AI_REVIEW_PROFILE        Ordered rubric sources. First entry must be $(base)
+                           (default — the shared floor) or $(none) (no floor).
+                           Then profile names under skills/profiles/ or
+                           directory paths:  base | base,cms-ars |
+                           none,my-everything. Sources layer in order and the
+                           last listed wins a conflict; each only adds to what
+                           is above it. finding-adjudication.md is always read
+                           from skills/base/ and is outside this list.
+                           See docs/profiles.md.
   AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
                            bedrock: claude or codex; vertex: claude only;
                            azure: codex only. (copilot uses BYOK env vars —
@@ -204,30 +187,15 @@ SCOPE
 
   local compliance_block=""
   if ai_review::diff_has_iac; then
-    # The base compliance rubric ALWAYS applies (the compliance floor). If the
-    # active profile supplies its own iac-compliance.md, it is an ADDITION —
-    # appended, not substituted — and takes precedence over the base on any
-    # conflict. See docs/profiles.md.
+    # Composed from the listed rubric sources in order (base first when
+    # listed); each later source is appended as an addition.
     compliance_block="$(
       cat <<COMPLIANCE
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
-$(cat "${ENGINE_HOME}/skills/base/iac-compliance.md")
+$(ai_review::rubric_block iac-compliance.md "COMPLIANCE PERSPECTIVE")
 COMPLIANCE
     )"
-    if [[ -f "${PROFILE_DIR}/iac-compliance.md" ]]; then
-      compliance_block="${compliance_block}$(
-        cat <<COMPLIANCE_ADD
-
-──────────── COMPLIANCE PERSPECTIVE — ${AI_REVIEW_PROFILE} ADDITIONS ────────────
-The following supplements the compliance perspective above for the
-'${AI_REVIEW_PROFILE}' profile. On any conflict with the perspective above
-(severity, citation, guidance), this section takes precedence.
-
-$(cat "${PROFILE_DIR}/iac-compliance.md")
-COMPLIANCE_ADD
-      )"
-    fi
   fi
 
   local self_adjudication_block=""
@@ -248,10 +216,10 @@ request. The diff under review is between the base ref "${AI_REVIEW_AGAINST}"
 current working directory. Your full instructions follow.
 
 ──────────────────── PR-REVIEW INSTRUCTIONS ────────────────────
-$(cat "$(pr_review::rubric pr-review.md)")
+$(ai_review::rubric_block pr-review.md "PR-REVIEW INSTRUCTIONS")
 
 ──────────────────── SECURITY PERSPECTIVE ────────────────────
-$(cat "$(pr_review::rubric code-security.md)")
+$(ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE")
 ${compliance_block}
 ${budget_block}
 ${scope_block}
@@ -373,6 +341,20 @@ while [[ $# -gt 0 ]]; do
       fi
       shift
       ;;
+    --profile)
+      # Reject a following flag as the value: `--profile --against main` would
+      # otherwise resolve a profile literally named "--against".
+      if [[ -z "${2:-}" || "${2}" == -* ]]; then
+        ai_review::err "--profile requires a value (e.g. base,cms-ars)"
+        exit 2
+      fi
+      AI_REVIEW_PROFILE="$2"
+      shift 2
+      ;;
+    --profile=*)
+      AI_REVIEW_PROFILE="${1#*=}"
+      shift
+      ;;
     --post-comments)
       POST_COMMENTS=1
       shift
@@ -419,6 +401,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Rubric sources, now that --profile has been seen. Every path that builds a
+# prompt (single call, fan-out worker) needs these resolved.
+ai_review::resolve_profiles
+# pr-review.md carries the result marker and findings-JSON contract.
+ai_review::require_rubric pr-review.md
 
 # ── Post-only mode (trusted post phase of the sandboxed flow) ───────────────
 if ((POST_ONLY == 1)); then
@@ -542,7 +530,10 @@ pr_review::run() {
   if ((AI_REVIEW_DRY_RUN == 1)); then
     ai_review::info "DRY-RUN — no AI invocation will be made."
     ai_review::log "  Skill:          ${SKILL_HUMAN_NAME} (${SKILL_NAME})"
-    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE} (${PROFILE_DIR})"
+    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE}"
+    printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | while IFS= read -r _d; do
+      [[ -n "${_d}" ]] && ai_review::log "                    ${_d}"
+    done
     ai_review::log "  AI tool:        ${AI_REVIEW_TOOL_RESOLVED}"
     ai_review::log "  PR number:      ${PR_NUMBER:-(none — using --against directly)}"
     ai_review::log "  Diff source:    $(ai_review::diff_command_description)"

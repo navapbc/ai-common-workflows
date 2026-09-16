@@ -8,6 +8,31 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Codebase audit** — a second entrypoint on the security-review engine,
+  `engines/security-compliance-review/harness/ai-security-compliance-audit`,
+  that audits an existing repository (or given paths) rather than a change to
+  one. Same rubric, severities and findings JSON as the PR review, so findings
+  from the two are comparable; a new `skills/base/codebase-audit.md` supplies
+  the procedure, the line-anchoring rules whole-file review needs, and a
+  posture summary a diff review has no use for.
+  **Local and ad-hoc by design.** No composite action, no Jenkins step, no
+  posting, no SCM token, and no `--gate` — a full-repo audit costs about one
+  model call per batch every run, which is fine by hand and expensive on every
+  push, so it is deliberately not wired into any workflow and warns when it
+  detects CI. Nothing is written into the audited repo: reports go to stdout or
+  to paths named with `--json-out` / `--md-out`.
+  **Nothing to vendor.** The earlier iteration
+  (`navapbc/ai-transformation-delivery-systems`, `security/review`) required
+  syncing a `.skills/` directory into every audited repo. The rubric is read
+  from the engine's own directory, so a single clone audits any checkout.
+  Scope is `git ls-files`-based (untracked and gitignored files are never
+  audited; binaries and files over 256 KB are skipped with a printed reason),
+  narrowable by path, `--include`/`--exclude` and `--max-file-bytes`, and
+  `--list-files` / `--dry-run` report scope and expected call count before
+  anything is spent. `--profile` selects the compliance profile, where the base
+  audit rubric always applies and a profile's copy is layered on top as an
+  addition. Fan-out, adjudication (`self` by default) and JSON folding are
+  reused unchanged. See [docs/codebase-audit.md](docs/codebase-audit.md).
 - **`gate: true` fails the job on HIGH or CRITICAL findings**, not on any
   finding. `gate` is a boolean and still defaults to `false`; only what `true`
   means has changed. Previously it failed on any non-`APPROVE` result, and the
@@ -47,6 +72,45 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`profile` is now an ordered list of rubric sources, with the shared floor
+  as an explicit member.** `base` | `base,cms-ars` | `base,cms-ars,pci-dss` |
+  `none,my-agency-everything`. Sources layer in order, each only ever adding to
+  what is above it, and the **last entry wins** a genuine conflict. The
+  whole-file override path is **deleted** — `pr_review::rubric` and
+  `audit::rubric` are gone, with a test that fails if either returns — so no
+  source can replace or suppress what precedes it.
+  **The first entry must be `base` or `none`.** Omitting the floor is a silent,
+  severe failure: the review still runs, still posts, still reports a verdict,
+  having checked almost nothing against ~1,250 lines of rubric that are no
+  longer there. `profile: cms-ars` is a natural thing to type, so it is a
+  configuration error rather than a quiet downgrade. `base` must also be first —
+  listed later it would outrank the overlays layered before it.
+  `none` is the full-control escape hatch, declared in the config where a
+  reviewer can see it, replacing a per-file override that silently substituted a
+  base file. A `none` list must still supply the file carrying the output
+  contract (`pr-review.md`, or `codebase-audit.md` for the audit); otherwise the
+  run fails up front naming that file, rather than dying later on unparseable
+  output.
+  `finding-adjudication.md` is deliberately **outside** the list and always read
+  from `skills/base/`: it governs how findings are judged, not what is looked
+  for, so `none` does not cost a program its false-positive filter.
+  Composition lives in `ai_review::resolve_profiles`, `ai_review::rubric_block`
+  and `ai_review::require_rubric` in `_common`, shared by the review and audit
+  entrypoints rather than duplicated in each.
+  **Removed:** the `baseline` profile directory, which was a 10-line README
+  standing in for "the floor alone" — now spelled `base`. The `profile` input
+  and `AI_REVIEW_PROFILE` default from `baseline` to `base`.
+  **Not changed:** the Copilot instructions sync still takes a single `PROFILE`
+  whose base set always syncs. It copies files rather than assembling a prompt,
+  so the list form is a separate change with its own stale-overlay problem.
+
+- **`ai_review::plan_diff_batches` split into a generic grouper plus a
+  diff-scoped caller.** `ai_review::group_files_into_batches` takes file paths
+  on stdin, so a workflow whose scope is not a diff reuses the same grouping,
+  packing and context budgeting instead of growing a parallel planner that
+  would drift from it. `ai_review::fan_out`'s worker flag is likewise now
+  `AI_REVIEW_WORKER_FLAG` (default `--__review-one`) rather than hardcoded.
+  No behavior change for the existing callers.
 - **The docs now steer consumers to the Action rather than presenting it and
   Copilot's native review as equivalent options.** They were described as two
   independent reviewers, which understated the difference: the Action is the

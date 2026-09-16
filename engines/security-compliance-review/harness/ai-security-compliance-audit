@@ -1,0 +1,623 @@
+#!/usr/bin/env bash
+# ai-security-compliance-audit — AI-assisted security & compliance audit of an
+# existing codebase, for local ad-hoc use.
+#
+# Usage (run from the root of the repo being audited):
+#   ai-security-compliance-audit                      # whole repo (tracked files)
+#   ai-security-compliance-audit terraform/ src/api/  # only these paths
+#   ai-security-compliance-audit --profile cms-ars infra/
+#   ai-security-compliance-audit --list-files          # scope only, no AI call
+#   ai-security-compliance-audit --dry-run             # plan + cost shape, no AI call
+#
+# This is the repo-scoped sibling of ai-security-compliance-review. Same
+# rubric, same severities, same findings JSON; different question — "what is
+# wrong with this code" rather than "what did this change do".
+#
+# DELIBERATELY LOCAL-ONLY. There is no composite action and no Jenkins step for
+# this entrypoint, it never posts anything, and it needs no SCM token or `gh`.
+# A full-repo audit costs roughly (files / batch size) model calls, which is
+# fine to run by hand and expensive to run on every push — so it is not wired
+# into any workflow, and it warns when it detects CI.
+#
+# It writes NOTHING into the audited repository: reports go to stdout, or to
+# paths you name with --json-out / --md-out, and scratch lives under $TMPDIR.
+# Nothing needs to be vendored into the audited repo — the rubric is read from
+# this engine's own directory.
+#
+# Exit codes:
+#   0  audit completed (clean or with findings — this tool never gates)
+#   1  unrecoverable runtime error (AI CLI failure, no parseable result)
+#   2  configuration error (bad flags, unknown profile, empty scope)
+
+set -euo pipefail
+
+# ENGINE_HOME is this workflow's engine (engines/security-compliance-review);
+# _common is its sibling. Both resolved from this script's own location so the
+# engine can be copied anywhere, and never from the audited repo's CWD.
+ENGINE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AI_COMMON_HOME="$(cd "${ENGINE_HOME}/../_common" && pwd)"
+export ENGINE_HOME AI_COMMON_HOME
+
+# The audit's result vocabulary differs from the review's; _common parameterizes
+# it, so set it BEFORE sourcing core.sh (which defaults it).
+AI_REVIEW_MARKER_VOCAB="AUDIT_CLEAN|AUDIT_FINDINGS"
+export AI_REVIEW_MARKER_VOCAB
+
+# shellcheck source=../../_common/harness/core.sh
+source "${AI_COMMON_HOME}/harness/core.sh"
+# shellcheck source=../../_common/endpoints.sh
+source "${AI_COMMON_HOME}/endpoints.sh"
+
+SKILL_NAME="security-compliance-audit"
+SKILL_HUMAN_NAME="AI Security & Compliance Audit"
+
+# ── Rubric composition ──────────────────────────────────────────────────────
+# AI_REVIEW_PROFILE (or --profile) is an ordered list of rubric sources, and the shared
+# base is an explicit member of it: `base`, `base,cms-ars`, or `none,<profile>`
+# to supply the whole rubric yourself. Sources layer in order and the last one
+# wins a conflict. See ai_review::resolve_profiles in _common — including why
+# the first entry must be `base` or `none`, and why finding-adjudication.md
+# sits outside this mechanism.
+AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-base}"
+
+# ── Flags ───────────────────────────────────────────────────────────────────
+SCOPE_PATHS=()
+INCLUDE_GLOBS=()
+EXCLUDE_GLOBS=()
+MAX_FILE_BYTES="${AI_AUDIT_MAX_FILE_BYTES:-262144}"
+JSON_OUT=""
+MD_OUT=""
+JSON_ONLY=0
+LIST_FILES=0
+WORKER_MODE=0
+REMAINING_FOR_LIB=()
+
+ai_review::print_help() {
+  cat <<EOF
+${SKILL_HUMAN_NAME} — audit an existing codebase (local, ad-hoc)
+
+Usage:
+  ai-security-compliance-audit [flags] [<path>...]
+
+Run it from the root of the repo you want to audit. With no paths, the whole
+repository is audited; with paths, only those files (directories recurse).
+
+  ai-security-compliance-audit
+  ai-security-compliance-audit terraform/
+  ai-security-compliance-audit --profile cms-ars infra/ src/api/
+
+Scope:
+  <path>...                 Limit the audit to these files/directories.
+  --include <glob>          Keep only paths matching this glob (repeatable).
+  --exclude <glob>          Drop paths matching this glob (repeatable).
+  --max-file-bytes <n>      Skip files larger than n bytes (default ${MAX_FILE_BYTES}).
+
+Rubric:
+  --profile <list>          Ordered rubric sources, default $(base). The first
+                            entry must be $(base) (the shared floor) or $(none)
+                            (no floor — you supply the whole rubric), then any
+                            profile names or directory paths:
+                              base | base,cms-ars | none,my-everything
+                            Sources layer in order and the last listed wins a
+                            conflict; each only adds to what is above it.
+
+Output (nothing is written into the audited repo):
+  --json-out <file>         Write the findings JSON to a file.
+  --md-out <file>           Write the human-readable report to a file.
+  --json-only               Print only the findings JSON to stdout.
+
+Cost control — check scope before spending:
+  --list-files              Print the files in scope and exit. No AI call.
+  --list-batches            Print the batch plan and exit. No AI call.
+  --dry-run / -n            Print the full plan and exit. No AI call.
+  --jobs <n>                Fan-out concurrency (default ${AI_REVIEW_JOBS:-4}).
+  --no-adjudicate           Skip adjudication (cheaper, noisier first pass).
+
+Environment:
+  AI_REVIEW_TOOL            claude | codex | copilot   (required)
+  AI_REVIEW_PROFILE         same as --profile
+  AI_REVIEW_MODEL           model override
+  AI_ADJUDICATION           self (default) | independent | off
+  plus the provider variables documented in docs/private-endpoints.md
+
+This entrypoint never posts, never gates, and needs no SCM token.
+EOF
+}
+
+audit::parse_flags() {
+  while (($#)); do
+    case "$1" in
+      --__audit-one)
+        WORKER_MODE=1
+        shift
+        break
+        ;;
+      --profile)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--profile requires a value (e.g. base,cms-ars)."
+          exit 2
+        fi
+        AI_REVIEW_PROFILE="$2"
+        shift 2
+        ;;
+      --include)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--include requires a glob."
+          exit 2
+        fi
+        INCLUDE_GLOBS+=("$2")
+        shift 2
+        ;;
+      --exclude)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--exclude requires a glob."
+          exit 2
+        fi
+        EXCLUDE_GLOBS+=("$2")
+        shift 2
+        ;;
+      --max-file-bytes)
+        [[ $# -ge 2 ]] || {
+          ai_review::err "--max-file-bytes requires a value."
+          exit 2
+        }
+        [[ "$2" =~ ^[0-9]+$ ]] || {
+          ai_review::err "--max-file-bytes must be a number."
+          exit 2
+        }
+        MAX_FILE_BYTES="$2"
+        shift 2
+        ;;
+      --json-out)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--json-out requires a path."
+          exit 2
+        fi
+        JSON_OUT="$2"
+        shift 2
+        ;;
+      --md-out)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--md-out requires a path."
+          exit 2
+        fi
+        MD_OUT="$2"
+        shift 2
+        ;;
+      --json-only)
+        JSON_ONLY=1
+        shift
+        ;;
+      --list-files)
+        LIST_FILES=1
+        shift
+        ;;
+      -h | --help)
+        ai_review::print_help
+        exit 0
+        ;;
+      # Flags the shared library owns (--jobs, --list-batches, --dry-run,
+      # --no-adjudicate, --no-block).
+      --jobs | --list-batches | --dry-run | -n | --no-adjudicate | --no-block)
+        REMAINING_FOR_LIB+=("$1")
+        [[ "$1" == "--jobs" ]] && {
+          REMAINING_FOR_LIB+=("${2:-}")
+          shift
+        }
+        shift
+        ;;
+      # Flags the review has and the audit deliberately does not.
+      --gate | --post-comments | --pr | --against | --unpushed | --post-only | --json-in)
+        ai_review::err "$1 is not supported by the audit: it is a local, read-only,"
+        ai_review::err "  advisory tool — it never posts, never gates, and audits the working tree."
+        ai_review::err "  For PR-scoped review with those options, use ai-security-compliance-review."
+        exit 2
+        ;;
+      --)
+        shift
+        while (($#)); do
+          SCOPE_PATHS+=("$1")
+          shift
+        done
+        ;;
+      -*)
+        ai_review::err "Unknown flag: $1"
+        ai_review::log "  Run with --help for usage."
+        exit 2
+        ;;
+      *)
+        SCOPE_PATHS+=("$1")
+        shift
+        ;;
+    esac
+  done
+  WORKER_RECORD="${1:-}"
+}
+
+# ── Scope selection ─────────────────────────────────────────────────────────
+# git ls-files is the source of truth: tracked files only, so .gitignore is
+# honored for free and node_modules/vendor never appear. Working tree contents
+# are what get audited (a local tool audits what you have, not what you pushed).
+audit::scope_files() {
+  local -a args=(ls-files -z --cached)
+  if ((${#SCOPE_PATHS[@]} > 0)); then
+    args+=(--)
+    args+=("${SCOPE_PATHS[@]}")
+  fi
+  git "${args[@]}" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    [[ -f "${f}" ]] || continue # staged-deleted or replaced by a directory
+
+    if ((${#INCLUDE_GLOBS[@]} > 0)); then
+      local keep=0 g
+      for g in "${INCLUDE_GLOBS[@]}"; do
+        # shellcheck disable=SC2053  # glob match is intended
+        [[ "${f}" == $g ]] && keep=1 && break
+      done
+      ((keep)) || continue
+    fi
+    local g
+    for g in "${EXCLUDE_GLOBS[@]+"${EXCLUDE_GLOBS[@]}"}"; do
+      # shellcheck disable=SC2053
+      [[ "${f}" == $g ]] && continue 2
+    done
+
+    local size
+    size="$(wc -c <"${f}" 2>/dev/null | tr -d ' ')" || continue
+    if [[ -n "${size}" ]] && ((size > MAX_FILE_BYTES)); then
+      printf 'SKIP\t%s\tlarger than %s bytes\n' "${f}" "${MAX_FILE_BYTES}" >&2
+      continue
+    fi
+    # Binary sniff: a NUL byte in the first 8k. Compares the byte count with
+    # and without NULs rather than grepping for one — a NUL cannot be written
+    # as a grep pattern portably, and the naive attempt matches every file.
+    local head_bytes nul_stripped
+    head_bytes="$(LC_ALL=C head -c 8192 "${f}" | wc -c | tr -d ' ')"
+    nul_stripped="$(LC_ALL=C head -c 8192 "${f}" | tr -d '\000' | wc -c | tr -d ' ')"
+    if [[ "${head_bytes}" != "${nul_stripped}" ]]; then
+      printf 'SKIP\t%s\tbinary\n' "${f}" >&2
+      continue
+    fi
+    printf '%s\n' "${f}"
+  done
+}
+
+audit::scope_description() {
+  if ((${#SCOPE_PATHS[@]} > 0)); then
+    printf '%s' "$(
+      IFS=' '
+      echo "${SCOPE_PATHS[*]}"
+    )"
+  else
+    printf 'repository root'
+  fi
+}
+
+# ── Prompt ──────────────────────────────────────────────────────────────────
+audit::build_prompt() {
+  local scope_desc
+  scope_desc="$(audit::scope_description)"
+
+  local budget_block
+  budget_block="$(
+    cat <<BUDGET
+
+──────────────────────── CONTEXT BUDGET ────────────────────────
+Load at most ${AI_REVIEW_CONTEXT_BUDGET:-15} context file(s) from OUTSIDE the
+audit scope below. Files inside the scope are the audit subject and do not
+count against this ceiling. If accurate assessment would need more outside
+context, stop at the ceiling and note the limitation in the report.
+BUDGET
+  )"
+
+  # The file manifest IS the scope. A worker gets its batch; a single call gets
+  # everything selected.
+  local scope_block
+  scope_block="$(
+    cat <<SCOPE
+
+──────────────────────── AUDIT SCOPE ────────────────────────
+Audit exactly these files, in the current working directory. Report findings
+ONLY in these files; you may read others for context within the budget above.
+
+${AI_REVIEW_SCOPE_PATHS}
+SCOPE
+  )"
+
+  # Composed from the listed rubric sources in order (base first when listed).
+  local audit_block
+  audit_block="$(
+    cat <<AUDIT
+
+──────────────────── CODEBASE-AUDIT INSTRUCTIONS ────────────────────
+$(ai_review::rubric_block codebase-audit.md "CODEBASE-AUDIT INSTRUCTIONS")
+AUDIT
+  )"
+
+  # Compliance perspective when the scope contains IaC. Base always applies;
+  # each profile's copy is appended as an addition.
+  local compliance_block=""
+  if printf '%s\n' "${AI_REVIEW_SCOPE_PATHS}" |
+    grep -qE '\.(tf|tfvars|bicep|hcl)$|\.template\.(json|ya?ml)$|Pulumi\.ya?ml$|(^|/)(Chart|values)\.ya?ml$|(^|/)k8s/|(^|/)helm/'; then
+    compliance_block="$(
+      cat <<COMPLIANCE
+
+──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
+$(ai_review::rubric_block iac-compliance.md "COMPLIANCE PERSPECTIVE")
+COMPLIANCE
+    )"
+  fi
+
+  local self_adjudication_block=""
+  if [[ "${AI_REVIEW_ADJUDICATION_MODE:-self}" == "self" ]]; then
+    self_adjudication_block="$(
+      cat <<SELFADJ
+
+──────────────────── SELF-ADJUDICATION ────────────────────
+$(ai_review::self_adjudication_instructions)
+SELFADJ
+    )"
+  fi
+
+  cat <<PROMPT
+You are performing an AI-assisted security and compliance audit of an existing
+codebase in the current working directory. Scope: ${scope_desc}. Compliance
+profile: ${AI_REVIEW_PROFILE}. This is NOT a review of a change — there is no
+diff. Your full instructions follow.
+${audit_block}
+
+──────────────────── SECURITY PERSPECTIVE ────────────────────
+$(ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE")
+${compliance_block}
+${budget_block}
+${scope_block}
+${self_adjudication_block}
+PROMPT
+}
+
+# audit::require_json <output> <marker> — extract the findings JSON, or fail.
+audit::require_json() {
+  local output="$1" marker="$2" json
+  if ! json="$(ai_review::extract_review_json "${output}")" || [[ -z "${json}" ]]; then
+    return 1
+  fi
+  printf '%s' "${json}"
+}
+
+# ── One batch (fan-out worker) ──────────────────────────────────────────────
+audit::worker_main() {
+  local record="$1"
+  ai_review::resolve_tool >/dev/null
+
+  local key="${record%%$'\t'*}"
+  local files_pipe="${record#*$'\t'}"
+  local files_nl nfiles
+  files_nl="$(printf '%s' "${files_pipe}" | tr '|' '\n' | grep -v '^$' || true)"
+  nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
+
+  export AI_REVIEW_SCOPE_PATHS="${files_nl}"
+  export AI_REVIEW_CONTEXT_BUDGET
+  AI_REVIEW_CONTEXT_BUDGET="$(ai_review::context_budget "${nfiles}")"
+  AI_REVIEW_ADJUDICATION_MODE="$(ai_review::adjudication_mode)"
+  export AI_REVIEW_ADJUDICATION_MODE
+
+  ai_review::resolve_profiles
+  SKILL_PROMPT="$(audit::build_prompt)"
+
+  local output rc=0 marker="UNPARSEABLE" json_file="-"
+  output="$(ai_review::invoke_ai)" || rc=$?
+  if ((rc != 0)); then
+    ai_review::err "[${key}] AI invocation failed (rc=${rc})." >&2
+  else
+    marker="$(ai_review::parse_result "${output}")"
+    local json_block
+    if json_block="$(audit::require_json "${output}" "${marker}")"; then
+      json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX.json")"
+      printf '%s\n' "${json_block}" >"${json_file}"
+    else
+      ai_review::err "[${key}] AI response contained no parseable JSON block." >&2
+      marker="UNPARSEABLE"
+    fi
+  fi
+
+  {
+    printf '\n──────── [%s] (%s file(s)) ────────\n' "${key}" "${nfiles}"
+    printf '%s\n' "${output}"
+  } >&2
+
+  printf 'AI_REVIEW_BATCH_RESULT\t%s\t%s\t%s\n' "${key}" "${marker}" "${json_file}"
+}
+
+# ── Main ────────────────────────────────────────────────────────────────────
+audit::run() {
+  ai_review::resolve_profiles
+  # codebase-audit.md carries the result marker and findings-JSON contract.
+  ai_review::require_rubric codebase-audit.md
+
+  if [[ -n "${CI:-}" ]]; then
+    ai_review::warn "CI is set. This is an ad-hoc local tool: a full-repo audit costs"
+    ai_review::warn "  roughly (files / batch size) model calls every run. For CI, use"
+    ai_review::warn "  ai-security-compliance-review, which is diff-scoped."
+  fi
+
+  git rev-parse --git-dir >/dev/null 2>&1 || {
+    ai_review::err "Not a git repository. Run this from the root of the repo to audit."
+    exit 2
+  }
+
+  # ── Scope ──────────────────────────────────────────────────────────────
+  local files_nl nfiles
+  files_nl="$(audit::scope_files)"
+  nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
+
+  if ((nfiles == 0)); then
+    ai_review::err "No files in scope ($(audit::scope_description))."
+    ai_review::log "  Tracked, non-binary files under the given paths are audited."
+    ai_review::log "  Check the paths, --include/--exclude, and --max-file-bytes."
+    exit 2
+  fi
+
+  if ((LIST_FILES == 1)); then
+    printf '%s\n' "${files_nl}"
+    ai_review::info "${nfiles} file(s) in scope ($(audit::scope_description))."
+    exit 0
+  fi
+
+  ai_review::resolve_tool
+
+  # ── Batch plan ─────────────────────────────────────────────────────────
+  local -a _batch_records=()
+  local _rec
+  while IFS= read -r _rec; do
+    [[ -z "${_rec}" ]] && continue
+    _batch_records+=("${_rec}")
+  done < <(printf '%s\n' "${files_nl}" | ai_review::group_files_into_batches |
+    ai_review::pack_batches "${AI_REVIEW_JOBS}")
+  local _nbatches=${#_batch_records[@]}
+
+  if ((AI_REVIEW_LIST_BATCHES == 1)); then
+    ai_review::info "Batch plan (batch-by=${AI_REVIEW_BATCH_BY:-dir}): ${nfiles} file(s) in ${_nbatches} batch(es)"
+    for _rec in "${_batch_records[@]+"${_batch_records[@]}"}"; do
+      printf '  %s\n' "${_rec%%$'\t'*}"
+    done
+    exit 0
+  fi
+
+  if ((AI_REVIEW_DRY_RUN == 1)); then
+    ai_review::info "Plan (no AI call):"
+    ai_review::log "  Scope:          $(audit::scope_description)"
+    ai_review::log "  Files:          ${nfiles}"
+    ai_review::log "  Batches:        ${_nbatches} (concurrency ${AI_REVIEW_JOBS})"
+    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE}"
+    ai_review::log "  Tool:           ${AI_REVIEW_TOOL_RESOLVED}"
+    ai_review::log "  Adjudication:   $(ai_review::adjudication_mode)"
+    ai_review::log "  Expected calls: ~${_nbatches} first-pass$([[ "$(ai_review::adjudication_mode)" == "independent" ]] && printf ' + 1 adjudication')"
+    exit 0
+  fi
+
+  # ── Audit ──────────────────────────────────────────────────────────────
+  local audit_json result human_output=""
+  if ai_review::should_batch "${nfiles}" "${_nbatches}"; then
+    ai_review::info "Auditing ${nfiles} file(s) under $(audit::scope_description) via ${AI_REVIEW_TOOL_RESOLVED} — ${_nbatches} batch(es)..."
+    ai_review::log "────────────────────────────────────────────────────────────"
+
+    AI_REVIEW_BATCH_DIR="$(mktemp -d)"
+    AI_REVIEW_SELF="${BASH_SOURCE[0]}"
+    export AI_REVIEW_SELF AI_REVIEW_PROFILE
+    trap 'rm -rf "${AI_REVIEW_BATCH_DIR}"' EXIT
+
+    AI_REVIEW_FAN_COMPLETE=0
+    AI_REVIEW_BATCH_SENTINELS=""
+    AI_REVIEW_WORKER_FLAG="--__audit-one"
+    export AI_REVIEW_WORKER_FLAG
+    ai_review::fan_out "${_batch_records[@]}"
+    ai_review::log "────────────────────────────────────────────────────────────"
+
+    if ((AI_REVIEW_FAN_COMPLETE != 1)); then
+      ai_review::err "Fan-out did not audit every batch; failing rather than reporting a partial audit."
+      exit 1
+    fi
+
+    local -a _json_files=()
+    local _line _jf
+    while IFS= read -r _line; do
+      [[ "${_line}" == AI_REVIEW_BATCH_RESULT* ]] || continue
+      _jf="$(printf '%s' "${_line}" | cut -f4)"
+      [[ -n "${_jf}" && "${_jf}" != "-" ]] && _json_files+=("${_jf}")
+    done <<<"${AI_REVIEW_BATCH_SENTINELS}"
+
+    audit_json="$(python3 "${AI_COMMON_HOME}/harness/fold_review_json.py" "${_json_files[@]}")"
+    result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+  else
+    export AI_REVIEW_SCOPE_PATHS="${files_nl}"
+    AI_REVIEW_ADJUDICATION_MODE="$(ai_review::adjudication_mode)"
+    export AI_REVIEW_ADJUDICATION_MODE
+    SKILL_PROMPT="$(audit::build_prompt)"
+
+    ai_review::info "Auditing ${nfiles} file(s) under $(audit::scope_description) via ${AI_REVIEW_TOOL_RESOLVED}..."
+    ai_review::log "────────────────────────────────────────────────────────────"
+
+    local invoke_rc=0
+    human_output="$(ai_review::invoke_ai)" || invoke_rc=$?
+
+    if ((JSON_ONLY == 0)); then
+      printf '%s\n' "${human_output}"
+      ai_review::log "────────────────────────────────────────────────────────────"
+    fi
+
+    if ((invoke_rc != 0)); then
+      ai_review::err "AI CLI (${AI_REVIEW_TOOL_RESOLVED}) exited with code ${invoke_rc}."
+      exit 1
+    fi
+
+    local marker
+    marker="$(ai_review::parse_result "${human_output}")"
+    if [[ "${marker}" == "UNPARSEABLE" ]]; then
+      ai_review::err "No ${AI_REVIEW_MARKER_VOCAB} result marker in the AI response."
+      exit 1
+    fi
+    if ! audit_json="$(audit::require_json "${human_output}" "${marker}")"; then
+      ai_review::err "No parseable findings JSON block in the AI response."
+      exit 1
+    fi
+    result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+  fi
+
+  # ── Independent adjudication, once, on the whole audit ──────────────────
+  if [[ "$(ai_review::adjudication_mode)" == "independent" && "${result}" != "APPROVE" ]]; then
+    local adj_output adj_rc=0
+    adj_output="$(ai_review::adjudicate "${audit_json}")" || adj_rc=$?
+    if ((adj_rc == 0)); then
+      local adj_json
+      if adj_json="$(ai_review::extract_review_json "${adj_output}")" && [[ -n "${adj_json}" ]]; then
+        audit_json="${adj_json}"
+        result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+        ((JSON_ONLY == 0)) && printf '%s\n' "${adj_output}"
+      else
+        ai_review::warn "Adjudication produced no parseable JSON; keeping the first-pass findings."
+      fi
+    else
+      ai_review::warn "Adjudication failed (rc=${adj_rc}); keeping the first-pass findings."
+    fi
+  fi
+
+  # ── Artifacts, only where asked ─────────────────────────────────────────
+  if [[ -n "${JSON_OUT}" ]]; then
+    printf '%s\n' "${audit_json}" >"${JSON_OUT}"
+    ai_review::info "Findings JSON written to ${JSON_OUT}"
+  fi
+  if [[ -n "${MD_OUT}" ]]; then
+    printf '%s\n' "${human_output}" >"${MD_OUT}"
+    ai_review::info "Report written to ${MD_OUT}"
+  fi
+  if ((JSON_ONLY == 1)); then
+    printf '%s\n' "${audit_json}"
+  fi
+
+  local nfindings
+  nfindings="$(printf '%s' "${audit_json}" |
+    python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("comments") or []))')"
+  ai_review::ok "Audit complete: ${nfindings} finding(s) across ${nfiles} file(s) (${result})."
+  exit 0
+}
+
+# ── Dispatch ────────────────────────────────────────────────────────────────
+audit::parse_flags "$@"
+
+if ((WORKER_MODE == 1)); then
+  [[ -n "${WORKER_RECORD}" && -n "${AI_REVIEW_BATCH_DIR:-}" ]] || {
+    ai_review::err "Internal error: --__audit-one requires a batch record and AI_REVIEW_BATCH_DIR."
+    exit 2
+  }
+  ai_review::parse_args
+  audit::worker_main "${WORKER_RECORD}"
+  exit 0
+fi
+
+ai_review::parse_args "${REMAINING_FOR_LIB[@]+"${REMAINING_FOR_LIB[@]}"}"
+audit::run

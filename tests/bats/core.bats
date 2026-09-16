@@ -246,6 +246,168 @@ report
   [[ "$output" != *"azuresecret"* ]]
 }
 
+# ── rubric composition: base is an explicit list member ─────────────────────
+# `profile` is an ordered list of rubric sources, base among them. Sources only
+# add; the last listed wins. The first entry must be `base` or `none`, because
+# dropping the floor by accident is silent and severe — the review still runs
+# and reports a verdict having checked almost nothing.
+
+_profile_fixture() { # $1 = name, rest = rubric filenames to create
+  local name="$1"; shift
+  local d="${BATS_TEST_TMPDIR}/${name}"
+  mkdir -p "${d}"
+  local f
+  for f in "$@"; do printf 'ADDITION-FROM-%s\n' "${name}" >"${d}/${f}"; done
+  printf '%s' "${d}"
+}
+
+_dirs_count() { printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | grep -c . ; }
+
+@test "rubric: base alone resolves to the base directory" {
+  AI_REVIEW_PROFILE=base ai_review::resolve_profiles
+  [ "$(_dirs_count)" -eq 1 ]
+  [[ "${AI_REVIEW_RUBRIC_DIRS}" == *"/skills/base"* ]]
+}
+
+@test "rubric: default is base" {
+  unset AI_REVIEW_PROFILE || true
+  ai_review::resolve_profiles
+  [[ "${AI_REVIEW_RUBRIC_DIRS}" == *"/skills/base"* ]]
+}
+
+@test "rubric: base,cms-ars resolves both in order" {
+  AI_REVIEW_PROFILE=base,cms-ars ai_review::resolve_profiles
+  [ "$(_dirs_count)" -eq 2 ]
+  [[ "$(printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | head -1)" == *"/skills/base" ]]
+  [[ "$(printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | tail -1)" == *cms-ars ]]
+}
+
+@test "rubric: whitespace around list entries is tolerated" {
+  AI_REVIEW_PROFILE="base , cms-ars" ai_review::resolve_profiles
+  [ "$(_dirs_count)" -eq 2 ]
+}
+
+@test "rubric: a directory path may follow base" {
+  local d; d="$(_profile_fixture mine code-security.md)"
+  AI_REVIEW_PROFILE="base,${d}" ai_review::resolve_profiles
+  [ "$(_dirs_count)" -eq 2 ]
+}
+
+# ── the guards ──────────────────────────────────────────────────────────────
+
+@test "rubric: omitting base or none is a config error, not a quiet downgrade" {
+  AI_REVIEW_PROFILE=cms-ars run ai_review::resolve_profiles
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must start with 'base' or 'none'"* ]]
+  [[ "$output" == *"by accident"* ]]
+}
+
+@test "rubric: base listed after a profile is a config error" {
+  AI_REVIEW_PROFILE=cms-ars,base run ai_review::resolve_profiles
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must be the FIRST entry"* ]]
+}
+
+@test "rubric: none listed after a profile is a config error" {
+  AI_REVIEW_PROFILE=cms-ars,none run ai_review::resolve_profiles
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must be the FIRST entry"* ]]
+}
+
+@test "rubric: none with nothing after it is a config error" {
+  AI_REVIEW_PROFILE=none run ai_review::resolve_profiles
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"resolved to no rubric sources"* ]]
+}
+
+@test "rubric: an unknown name in the list is a config error" {
+  AI_REVIEW_PROFILE=base,nope run ai_review::resolve_profiles
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"'nope' is not a known profile"* ]]
+}
+
+# ── composition ─────────────────────────────────────────────────────────────
+
+@test "rubric: the first source supplying a file is emitted verbatim" {
+  AI_REVIEW_PROFILE=base ai_review::resolve_profiles
+  run ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Security Perspective"* ]]
+  [[ "$output" != *"ADDITIONS"* ]]
+}
+
+@test "rubric: later sources are appended as additions, in order" {
+  local a b; a="$(_profile_fixture one code-security.md)"; b="$(_profile_fixture two code-security.md)"
+  AI_REVIEW_PROFILE="base,${a},${b}" ai_review::resolve_profiles
+  run ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Security Perspective"* ]]          # base still there
+  local p1 p2
+  p1="$(printf '%s' "$output" | grep -n 'ADDITION-FROM-one' | cut -d: -f1)"
+  p2="$(printf '%s' "$output" | grep -n 'ADDITION-FROM-two' | cut -d: -f1)"
+  [ "${p1}" -lt "${p2}" ]
+}
+
+@test "rubric: each addition claims precedence over everything above it" {
+  local a; a="$(_profile_fixture one code-security.md)"
+  AI_REVIEW_PROFILE="base,${a}" ai_review::resolve_profiles
+  run ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE"
+  [[ "$output" == *"ADDS to everything above it and never replaces it"* ]]
+  [[ "$output" == *"this section takes precedence"* ]]
+}
+
+@test "rubric: none,<profile> emits only the profile's rubric" {
+  local a; a="$(_profile_fixture only code-security.md)"
+  AI_REVIEW_PROFILE="none,${a}" ai_review::resolve_profiles
+  run ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ADDITION-FROM-only"* ]]
+  [[ "$output" != *"Security Perspective"* ]]          # the floor is genuinely gone
+}
+
+@test "rubric: a source without the file contributes nothing" {
+  local a; a="$(_profile_fixture nofiles)"
+  AI_REVIEW_PROFILE="none,${a}" ai_review::resolve_profiles
+  run ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# ── the output-contract guard ───────────────────────────────────────────────
+
+@test "rubric: require_rubric passes when a source supplies the file" {
+  AI_REVIEW_PROFILE=base ai_review::resolve_profiles
+  run ai_review::require_rubric pr-review.md
+  [ "$status" -eq 0 ]
+}
+
+@test "rubric: require_rubric fails when no source supplies the contract file" {
+  local a; a="$(_profile_fixture partial code-security.md)"
+  AI_REVIEW_PROFILE="none,${a}" ai_review::resolve_profiles
+  run ai_review::require_rubric pr-review.md
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"No rubric source supplies pr-review.md"* ]]
+  [[ "$output" == *"result marker"* ]]
+}
+
+@test "rubric: finding-adjudication.md is read from base, outside the list" {
+  # `none` must not cost a program its false-positive filter.
+  local a; a="$(_profile_fixture only code-security.md pr-review.md)"
+  AI_REVIEW_PROFILE="none,${a}" ai_review::resolve_profiles
+  export AI_REVIEW_AGAINST=origin/main # the adjudication prompt names the base ref
+  run ai_review::build_adjudication_prompt '{"review_action":"COMMENT","comments":[]}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Finding Adjudication"* ]]
+}
+
+@test "rubric: no override path exists in either entrypoint" {
+  # The old override helpers, by name. rubric_block (the additive composer) is
+  # expected; pr_review::rubric / audit::rubric returning a path is not.
+  ! grep -qE '(pr_review|audit)::rubric\b' \
+    "${ENGINE_HOME}/harness/ai-security-compliance-review" \
+    "${ENGINE_HOME}/harness/ai-security-compliance-audit"
+}
+
 # ── azure + a per-pass adjudication model ───────────────────────────────────
 # Azure resolves the deployment from the URL path, not the CLI model flag, so
 # AI_ADJUDICATION_MODEL needs its own URL. Before this it was silently ignored:

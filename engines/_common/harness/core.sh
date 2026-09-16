@@ -735,6 +735,161 @@ ai_review::extract_review_json() {
   '
 }
 
+# ── Rubric composition (profiles) ───────────────────────────────────────────
+# AI_REVIEW_PROFILE is an ordered, comma-separated list of rubric sources. The
+# shared base is an explicit member of that list, not an implicit extra:
+#
+#   base                       the framework-neutral floor, alone
+#   base,cms-ars               floor + CMS additions
+#   base,cms-ars,pci-dss       floor + CMS + PCI; PCI wins a conflict
+#   none,my-agency-everything  NO floor — the program supplies the whole rubric
+#
+# Sources layer in list order and each is told it outranks everything above it,
+# so the LAST entry wins a genuine conflict.
+#
+# Why base is listed rather than always-on: a program that needs full control
+# used to reach for a per-file override, which was invisible and forced it to
+# copy ~20KB of rubric it then maintained forever. Declaring `none` is the same
+# capability, visible in the config.
+#
+# Why `none` is required rather than inferred from base's absence: omitting the
+# floor by accident is a silent, severe failure — the review still runs, still
+# posts, still reports a verdict, and checked almost nothing. `profile: cms-ars`
+# is a natural thing to type, so it must be an error rather than a quiet
+# downgrade. The first entry has to be `base` or `none`; there is no way to
+# type your way into dropping the floor.
+#
+# finding-adjudication.md is deliberately OUTSIDE this mechanism: it governs how
+# findings are judged, not what is looked for, so `none` must not cost a program
+# its false-positive filter. ai_review::build_adjudication_prompt reads it from
+# skills/base/ directly.
+
+# ai_review::resolve_profiles
+# Publishes AI_REVIEW_RUBRIC_DIRS (newline-separated, in order) — the resolved
+# sources, with the base directory included when `base` was listed. Exits 2 on
+# a malformed list.
+ai_review::resolve_profiles() {
+  local raw="${AI_REVIEW_PROFILE:-base}"
+  local dirs="" name resolved first=1 saw_base=0 saw_none=0
+  local oldifs="${IFS}"
+  IFS=','
+  # shellcheck disable=SC2086  # deliberate split on the comma list
+  set -- ${raw}
+  IFS="${oldifs}"
+
+  for name in "$@"; do
+    name="${name#"${name%%[![:space:]]*}"}"
+    name="${name%"${name##*[![:space:]]}"}"
+    [[ -z "${name}" ]] && continue
+
+    case "${name}" in
+      base)
+        if ((first == 0)); then
+          ai_review::err "'base' must be the FIRST entry in AI_REVIEW_PROFILE (got '${raw}')."
+          ai_review::err "  Listed later, the floor would outrank the overlays layered before it,"
+          ai_review::err "  which is never what is meant. Use: base,<profile>[,<profile>...]"
+          exit 2
+        fi
+        saw_base=1
+        dirs="${dirs}${ENGINE_HOME}/skills/base"$'\n'
+        first=0
+        continue
+        ;;
+      none)
+        if ((first == 0)); then
+          ai_review::err "'none' must be the FIRST entry in AI_REVIEW_PROFILE (got '${raw}')."
+          exit 2
+        fi
+        saw_none=1
+        first=0
+        continue
+        ;;
+    esac
+
+    if [[ -d "${name}" ]]; then
+      resolved="$(cd "${name}" && pwd)"
+    elif [[ -d "${ENGINE_HOME}/skills/profiles/${name}" ]]; then
+      resolved="${ENGINE_HOME}/skills/profiles/${name}"
+    else
+      ai_review::err "profile '${name}' is not a known profile or an existing directory."
+      ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
+      ai_review::log "  Or pass a path to a custom profile directory."
+      exit 2
+    fi
+    dirs="${dirs}${resolved}"$'\n'
+    first=0
+  done
+
+  if ((saw_base == 0 && saw_none == 0)); then
+    ai_review::err "AI_REVIEW_PROFILE must start with 'base' or 'none' (got '${raw}')."
+    ai_review::err "  base,<profile>...  the shared rubric floor plus your additions (what you want)"
+    ai_review::err "  none,<profile>...  NO floor; your profile supplies the entire rubric"
+    ai_review::err "  Requiring the choice keeps the floor from being dropped by accident."
+    exit 2
+  fi
+  if [[ -z "${dirs}" ]]; then
+    ai_review::err "AI_REVIEW_PROFILE='${raw}' resolved to no rubric sources at all."
+    ai_review::err "  'none' alone supplies nothing to review against; list a profile after it."
+    exit 2
+  fi
+
+  AI_REVIEW_RUBRIC_DIRS="${dirs}"
+  export AI_REVIEW_RUBRIC_DIRS
+}
+
+# ai_review::rubric_block <rubric_filename> <section_label>
+# Emits the composed body for one rubric section: the first source that
+# supplies the file verbatim, then each later source as an addition that
+# outranks everything above it. Prints nothing when no source supplies it —
+# ai_review::require_rubric is how a caller turns that into an error for a file
+# it cannot run without.
+ai_review::rubric_block() {
+  local file="$1" label="$2"
+  local dir name emitted=0
+  while IFS= read -r dir; do
+    [[ -z "${dir}" ]] && continue
+    [[ -f "${dir}/${file}" ]] || continue
+    if ((emitted == 0)); then
+      cat "${dir}/${file}"
+      emitted=1
+      continue
+    fi
+    name="$(basename "${dir}")"
+    cat <<ADDITION
+
+──────────── ${label} — ${name} ADDITIONS ────────────
+The following supplements the ${label} above for the '${name}' profile. It
+ADDS to everything above it and never replaces it. On any conflict with
+anything above — severity, citation, guidance — this section takes precedence.
+
+$(cat "${dir}/${file}")
+ADDITION
+  done <<<"${AI_REVIEW_RUBRIC_DIRS:-}"
+}
+
+# ai_review::require_rubric <rubric_filename>
+# Fails when no resolved source supplies <rubric_filename>. Use it for the
+# files that carry the OUTPUT CONTRACT (pr-review.md, codebase-audit.md): they
+# define the result marker and the findings JSON, so without one the run
+# produces unparseable output and dies later with a confusing error. Failing
+# here names the real cause.
+ai_review::require_rubric() {
+  local file="$1"
+  local dir
+  while IFS= read -r dir; do
+    [[ -n "${dir}" && -f "${dir}/${file}" ]] && return 0
+  done <<<"${AI_REVIEW_RUBRIC_DIRS:-}"
+  ai_review::err "No rubric source supplies ${file}."
+  ai_review::err "  AI_REVIEW_PROFILE='${AI_REVIEW_PROFILE:-}' resolved to:"
+  printf '%s' "${AI_REVIEW_RUBRIC_DIRS:-}" | while IFS= read -r dir; do
+    [[ -n "${dir}" ]] && ai_review::err "    ${dir}"
+  done
+  ai_review::err "  That file carries the result marker and findings-JSON contract, so the"
+  ai_review::err "  run cannot produce parseable output without it. Add 'base' to the list,"
+  ai_review::err "  or supply ${file} in your own profile."
+  exit 2
+}
+
 # ── Gate verdict ────────────────────────────────────────────────────────────
 # ai_review::gate_blocks <findings_json_file|->
 # Pass a file path, or "-" with the JSON on stdin. Returns 0 when the review
@@ -922,14 +1077,19 @@ ai_review::adjudicate() {
 # the single-call path runs, scoped to its files; adjudication (independent
 # mode) runs once on the merged findings, not per batch.
 
-# ai_review::plan_diff_batches
+# ai_review::group_files_into_batches   (reads file paths, one per line, on stdin)
 # Emits one record per batch:  <key>\t<file>|<file>|...
 # key = directory (default) or the file itself when AI_REVIEW_BATCH_BY=file.
 # bash 3.2 safe: no associative arrays / mapfile — we emit <key>\t<file> pairs,
 # sort (a tab-led sort groups a key's files together), then coalesce with awk.
-ai_review::plan_diff_batches() {
+#
+# Takes its input on stdin rather than calling changed_files itself, so a
+# workflow whose scope is not a diff (the codebase audit walks the working
+# tree) reuses the same grouping, packing and budgeting instead of growing a
+# parallel planner that would drift from this one.
+ai_review::group_files_into_batches() {
   local by="${AI_REVIEW_BATCH_BY:-dir}"
-  ai_review::changed_files | while IFS= read -r f; do
+  while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
     local key
     if [[ "${by}" == "file" ]]; then
@@ -950,6 +1110,12 @@ ai_review::plan_diff_batches() {
     }
     END { if (cur != "") print cur "\t" files }
   '
+}
+
+# ai_review::plan_diff_batches
+# The diff-scoped planner: group the files the diff touches.
+ai_review::plan_diff_batches() {
+  ai_review::changed_files | ai_review::group_files_into_batches
 }
 
 # ai_review::pack_batches <max_bins>   (reads <key>\t<files> records on stdin)
@@ -1014,7 +1180,8 @@ ai_review::context_budget() {
 }
 
 # ai_review::fan_out <record>...
-# Re-invokes this engine's entrypoint (AI_REVIEW_SELF) once per batch via
+# Re-invokes this engine's entrypoint (AI_REVIEW_SELF) with its worker flag
+# (AI_REVIEW_WORKER_FLAG, default --__review-one) once per batch via
 # `xargs -0 -P AI_REVIEW_JOBS`. Each worker prints its human report to stderr
 # (so it streams live) and exactly one sentinel line to stdout (captured here):
 #   AI_REVIEW_BATCH_RESULT\t<key>\t<marker>\t<json_file>
@@ -1053,7 +1220,8 @@ ai_review::fan_out() {
   local sentinels fan_rc=0
   # NUL-delimited records so embedded tabs/spaces in paths survive.
   sentinels="$(printf '%s\0' "${records[@]}" |
-    xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" --__review-one)" || fan_rc=$?
+    xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" \
+      "${AI_REVIEW_WORKER_FLAG:---__review-one}")" || fan_rc=$?
 
   # A batch counts as reviewed only if it emitted a sentinel with a real JSON
   # file (field 4 != "-"). A crashed worker (xargs rc != 0), a missing
