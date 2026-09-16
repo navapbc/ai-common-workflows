@@ -8,6 +8,20 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **[docs/copilot-review-setup.md](docs/copilot-review-setup.md)** — the
+  Copilot review path as six numbered steps, and a row for it in the top-level
+  README, which previously did not mention Copilot at all: the instruction
+  files were reachable only by browsing directories.
+  `copilot-instructions/README.md` explains the base/profile model and the pull
+  distribution before it gets to "copy this file, set two values", so it works
+  as a reference but not as a quickstart. The new page is the how; that one
+  stays the why. It also writes down three things neither doc covered and a
+  first-time consumer hits immediately: the `ACW_READ_TOKEN` a private upstream
+  requires (and that it is droppable once public, and is a *different* switch
+  from the Actions-access setting that governs `uses:`), the ruleset rule name
+  for automatic review plus the Copilot plan and private-repo-on-free-plan
+  limits that can block it, and how to confirm the rubric is actually being
+  applied — a silent miss is indistinguishable from Copilot having no findings.
 - **AI test classifier** — the repo's second workflow: triages each failing
   test of a PR's change into `APPLICATION_BUG` / `TEST_BUG` / `FLAKY_FAILURE`
   / `ENVIRONMENT_ISSUE` and posts one advisory PR comment with the verdicts
