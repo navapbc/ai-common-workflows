@@ -8,6 +8,25 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`max-comments`** — a cap on inline comments per review, default 15
+  (`0` disables it). Above the cap the highest-severity findings stay inline
+  and the rest are listed in the review body with counts by severity. Nothing
+  is dropped, and the gate is unaffected: it reads the engine's findings JSON,
+  so a capped review blocks exactly as it would have uncapped.
+  There was previously no limit, so a large PR could post dozens of inline
+  comments — which is how a review bot gets switched off, a failure that cannot
+  be recovered because the disable is cultural rather than technical.
+  Selection is by severity with the report order as the tie-break, so the
+  chosen subset is stable across re-runs (an unstable cut would post a
+  different subset each time and defeat the idempotency suppression). An
+  unrecognized severity sorts last rather than first, so it cannot evict a
+  known CRITICAL from an inline slot, and the comments are emitted in diff
+  order so they land where the code is.
+- **The review's `--dry-run` now reports the expected AI call count** and the
+  inline cap alongside the batch routing it already printed — fan-out
+  multiplies the first pass per batch and `adjudication: independent` adds one
+  more on a finding-bearing review, which was documented in prose but not
+  visible in the plan. The audit already did this.
 - **Codebase audit** — a second entrypoint on the security-review engine,
   `engines/security-compliance-review/harness/ai-security-compliance-audit`,
   that audits an existing repository (or given paths) rather than a change to
@@ -72,6 +91,12 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/github-action.md` inputs are grouped by when you would reach for
+  them** rather than listed flat: getting it running, deciding how loud it is,
+  keeping the model in your boundary, tuning cost on large diffs, and
+  debugging. It now opens by saying 31 of the 34 inputs are optional and that
+  almost every team needs exactly three, with a copy-paste starting
+  configuration — a flat list of 34 knobs reads as 34 decisions to make.
 - **`profile` is now an ordered list of rubric sources, with the shared floor
   as an explicit member.** `base` | `base,cms-ars` | `base,cms-ars,pci-dss` |
   `none,my-agency-everything`. Sources layer in order, each only ever adding to
