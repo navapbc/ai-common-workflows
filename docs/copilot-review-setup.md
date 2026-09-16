@@ -44,10 +44,10 @@ appears weekly at most, that is a perfectly reasonable place to stop.
 For hands-off PR creation, add a token as **`COPILOT_SYNC_TOKEN`**. The
 workflow prefers it automatically when present.
 
-### Use a machine user, not your own account
+### The PAT must come from a machine user
 
-Create a dedicated GitHub account for automation — a *machine user* — and issue
-the PAT from there:
+Never issue this token from a person's account. Create a dedicated GitHub
+account for automation — a *machine user* — and issue the PAT from there:
 
 1. Create the account (e.g. `acme-ci-bot`) with its own email and 2FA.
 2. Give it **write** access to the repo: add it as a collaborator, or add it to
@@ -57,12 +57,14 @@ the PAT from there:
    - **Permissions:** `Contents: Read and write`, `Pull requests: Read and write`
 4. Store it in the consuming repo as the secret **`COPILOT_SYNC_TOKEN`**.
 
-A PAT from your personal account works identically, and is the wrong choice for
-anything you intend to keep: sync PRs arrive under your name as though you
-wrote them, the token carries your access to everything else you can reach, and
-the automation stops the day you lose access to the repo. A machine user has
-none of those properties — and when someone asks who opened a PR, the answer is
-a bot, not a colleague who did not.
+Three reasons this is a requirement and not a preference. A token issued from a
+person's account attributes every sync PR to them, as though they wrote it. It
+carries their access to everything else they can reach, not just the repo
+running the sync — far more reach than this job needs. And the automation
+breaks the day their access changes, which is exactly when nobody is looking
+for it. A machine user has none of those properties: the PR author is
+unmistakably a bot, the token reaches only the repos you granted, and the
+account outlives any individual.
 
 **Plan for expiry.** Fine-grained PATs expire. When one lapses the run fails at
 the PR step with a `gh` auth error, so it is loud rather than silent, but you

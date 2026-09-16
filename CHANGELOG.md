@@ -39,8 +39,9 @@ follow [Semantic Versioning](https://semver.org/).
   under a colleague's name as though they wrote them, the token carries that
   person's access to everything else they can reach, and the automation stops
   when their access changes. `docs/copilot-review-setup.md` step 3 now gives
-  the machine-user recipe explicitly, covers PAT expiry, and states the two
-  alternatives and their costs — the create-and-approve toggle (grants approve
+  the machine-user recipe as a requirement rather than a preference — a token
+  from a person's account is not offered as an alternative anywhere — covers
+  PAT expiry, and states the two non-personal alternatives and their costs — the create-and-approve toggle (grants approve
   to every workflow in the repo) and a GitHub App (stronger, ~10 steps per org,
   worth it via org-level secrets when rolling out widely). The same steer is
   reflected in `copilot-instructions/README.md`, `docs/copilot-instructions.md`,

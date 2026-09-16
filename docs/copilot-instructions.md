@@ -73,9 +73,10 @@ workflow's header comment):
   compare URL for a human to open the PR. Create-only, human-in-the-loop.
 - **`COPILOT_SYNC_TOKEN` secret (recommended for full automation):** a
   fine-grained PAT scoped to that repo, issued from a dedicated **machine
-  user** rather than a person's account, so sync PRs are not attributed to a
-  colleague and the automation outlives any individual's access. (A GitHub App
-  is the stronger option for an org rolling this out widely — see
+  user** — never from a person's account, so sync PRs are not attributed to a
+  colleague, the token's reach is limited to the repos the sync touches, and
+  the automation outlives any individual's access. (A GitHub App is the
+  stronger option for an org rolling this out widely — see
   [copilot-review-setup.md](copilot-review-setup.md).) PRs auto-create with
   the create-and-approve toggle still **off** (it only governs the built-in
   `GITHUB_TOKEN`), no workflow gains approve rights, and `pull_request` CI runs
