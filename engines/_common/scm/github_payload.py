@@ -33,6 +33,43 @@ AI_ATTRIBUTION = (
 )
 SKIP_SENTINEL = "__AI_REVIEW_SKIP_POST__"
 
+# Inline-comment cap. A PR that trips dozens of findings posts dozens of inline
+# comments, and a bot that buries a diff gets switched off — a failure you
+# cannot recover from, because the disable is cultural rather than technical.
+# Above the cap the highest-severity findings stay inline and the rest are
+# listed in the review body, so nothing is dropped.
+#
+# This changes only what is POSTED. The gate reads the engine's own findings
+# JSON (see gate_verdict.py), so a capped review blocks exactly as it would
+# have uncapped, and the severity counts in the summary are unaffected.
+DEFAULT_MAX_COMMENTS = 15
+
+# Ordering for "highest severity first". Unrecognized severities sort last
+# rather than first: an unreadable severity should not evict a known CRITICAL
+# from the inline slots.
+_SEVERITY_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+def max_comments():
+    """Inline-comment cap from AI_REVIEW_MAX_COMMENTS; 0 or less means no cap."""
+    raw = (os.environ.get("AI_REVIEW_MAX_COMMENTS") or "").strip()
+    if not raw:
+        return DEFAULT_MAX_COMMENTS
+    try:
+        return int(raw)
+    except ValueError:
+        # A typo must not silently uncap or silently cap at 1.
+        print(
+            f"WARN: AI_REVIEW_MAX_COMMENTS={raw!r} is not an integer; "
+            f"using the default of {DEFAULT_MAX_COMMENTS}.",
+            file=sys.stderr,
+        )
+        return DEFAULT_MAX_COMMENTS
+
+
+def _severity_rank(c):
+    return _SEVERITY_RANK.get(str(c.get("severity", "")).strip().upper(), 4)
+
 # Trailing tokens that end in "." without ending a sentence. Without this guard
 # a description like "Use a KMS key, e.g. aws_kms_key.rds.arn, rather than ..."
 # would summarize as "Use a KMS key, e.g." — worse than no summary at all.
@@ -219,6 +256,7 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
         summary = summary.rstrip() + "\n\n" + AI_ATTRIBUTION
 
     comments_out = []
+    inline_sources = []  # the source finding for each entry in comments_out
     suppressed = 0
     out_of_diff = []
     unanchorable = []
@@ -254,10 +292,33 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             "side": side,
             "body": render_body(c),
         })
+        inline_sources.append(c)
 
     if suppressed:
         messages.append(
             f"[security-compliance-review] Suppressed {suppressed} finding(s) already posted on unchanged lines."
+        )
+
+    # Cap the inline comments, keeping the most severe. Sorted by severity rank
+    # with the original position as the tie-break, so the order within a
+    # severity is the order the review reported — stable across re-runs, which
+    # matters because an unstable cut would post a different subset each time
+    # and defeat the idempotency suppression above.
+    capped = []
+    cap = max_comments()
+    if cap > 0 and len(comments_out) > cap:
+        order = sorted(
+            range(len(comments_out)),
+            key=lambda i: (_severity_rank(inline_sources[i]), i),
+        )
+        keep = sorted(order[:cap])
+        drop = sorted(order[cap:])
+        capped = [inline_sources[i] for i in drop]
+        comments_out = [comments_out[i] for i in keep]
+        messages.append(
+            f"[security-compliance-review] {len(capped)} finding(s) over the inline cap of "
+            f"{cap}; the most severe stay inline and the rest are listed in the review body. "
+            f"Raise it with max-comments / AI_REVIEW_MAX_COMMENTS (0 = no cap)."
         )
 
     # Findings that cannot be inline-anchored — either their line is not in the
@@ -270,6 +331,25 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
         if with_line and c.get("line") is not None:
             loc = f"{loc}:{c.get('line')}"
         return f"- **{persp}({sev})** `{loc}` - {c.get('title', 'Finding')}"
+
+    if capped:
+        by_sev = {}
+        for c in capped:
+            by_sev[str(c.get("severity", "LOW")).upper()] = (
+                by_sev.get(str(c.get("severity", "LOW")).upper(), 0) + 1
+            )
+        counts = ", ".join(
+            f"{n} {sev.lower()}"
+            for sev, n in sorted(by_sev.items(), key=lambda kv: _SEVERITY_RANK.get(kv[0], 4))
+        )
+        summary = (
+            summary.rstrip()
+            + f"\n\n---\n\n#### {len(capped)} further finding(s) not posted inline ({counts})\n\n"
+            + "Inline comments are capped so a review cannot bury the diff; these are\n"
+            + "the lower-severity remainder. Nothing was dropped, and the gate verdict\n"
+            + "accounts for every finding.\n\n"
+            + "\n".join(_md(c) for c in capped)
+        )
 
     if out_of_diff:
         messages.append(
@@ -297,7 +377,8 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
     # on unchanged lines, and nothing was moved to the body — skip the redundant
     # empty COMMENT review. APPROVE is left alone: it carries no inline comments
     # and re-approving is harmless.
-    if action == "COMMENT" and not comments_out and not out_of_diff and not unanchorable:
+    if (action == "COMMENT" and not comments_out and not out_of_diff
+            and not unanchorable and not capped):
         if suppressed:
             messages.append(
                 "[security-compliance-review] All findings already posted on unchanged lines; nothing new to comment."

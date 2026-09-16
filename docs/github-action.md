@@ -37,20 +37,50 @@ reviews a pull request and posts inline comments. Pin to a commit SHA
 
 ## Inputs
 
-All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
-`codex`; `vertex` → `claude`; `azure` → `codex`; `copilot-provider-*` → `copilot`.
+There are 34 of them and **31 are optional**. Almost every team needs exactly
+three:
+
+```yaml
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
+        with:
+          ai-tool: claude
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          profile: base            # add ,cms-ars if you track CMS ARS
+```
+
+**Ignore the rest until you have a reason to reach for one.** The groups below
+are ordered by when that tends to happen — most teams never get past the first
+two. Endpoint inputs apply per tool: `bedrock` → `claude` or `codex`;
+`vertex` → `claude`; `azure` → `codex`; `copilot-provider-*` → `copilot`.
+
+### Getting it running
 
 | Input | Default | Description |
 |---|---|---|
 | `ai-tool` | `claude` | `claude` \| `codex` \| `copilot` |
 | `anthropic-api-key` | — | Anthropic key (claude, provider=api) |
 | `openai-api-key` | — | OpenAI key (codex) |
-| `github-token` | `${{ github.token }}` | Token to post the review (`pull-requests: write`) |
-| `post-comments` | `true` | Post inline comments to the PR |
-| `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
-| `dry-run` | `false` | Print the plan; no AI call |
-| `pr-number` | event PR | Override the PR number |
 | `profile` | `base` | Ordered rubric sources, first entry `base` or `none`: `base,cms-ars`. Later entries add and win conflicts — see [profiles.md](profiles.md) |
+| `github-token` | `${{ github.token }}` | Token to post the review (`pull-requests: write`) |
+
+### Deciding how loud it is
+
+Reach for these once you have seen a few real reviews.
+
+| Input | Default | Description |
+|---|---|---|
+| `max-comments` | `15` | Cap on inline comments per review (`0` = no cap). Over the cap, the highest-severity findings stay inline and the rest are listed in the review body — nothing is dropped, and the gate still accounts for every finding |
+| `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
+| `post-comments` | `true` | Post inline comments to the PR |
+| `adjudication` | `self` | False-positive filter: `self` \| `independent` \| `off` |
+
+### Keeping the model and data in your boundary
+
+Only needed if you cannot use the public API — see
+[private-endpoints.md](private-endpoints.md).
+
+| Input | Default | Description |
+|---|---|---|
 | `provider` | `api` | `api` \| `bedrock` \| `vertex` \| `azure` (bedrock→claude or codex; vertex→claude; azure→codex) |
 | `model` | — | Model override; Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `aws-region` | — | Region for provider=bedrock (claude or codex) |
@@ -63,12 +93,26 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `copilot-provider-type` | — | ai-tool=copilot BYOK type: `openai` \| `azure` \| `anthropic` |
 | `copilot-provider-api-key` | — | ai-tool=copilot BYOK model key (`COPILOT_PROVIDER_API_KEY`) |
 | `copilot-model` | — | ai-tool=copilot BYOK model id (`COPILOT_MODEL`) |
-| `adjudication` | `self` | `self` \| `independent` \| `off` |
-| `adjudication-model` | — | Model for the independent pass only. Same provider and endpoint as the first pass — see [Adjudication](#adjudication-and-fan-out) |
+
+### Tuning cost and throughput on large diffs
+
+Defaults are sensible; change them when you have measured a reason to. Each of
+these moves your spend — `--dry-run` prints the expected call count.
+
+| Input | Default | Description |
+|---|---|---|
 | `jobs` | `4` | Fan-out concurrency for large diffs |
 | `batch-by` | `dir` | `dir` \| `file` fan-out batching |
 | `batch-min-files` | `10` | Minimum changed files before fanning out |
-| `context-budget` | `15` | Ceiling on context files the model may load beyond the diff, stated to it directly in the prompt. Fan-out workers narrow it per batch. |
+| `context-budget` | `15` | Ceiling on context files the model may load beyond the diff, stated to it directly in the prompt. Fan-out workers narrow it per batch |
+| `adjudication-model` | — | Model for the independent pass only. Same provider and endpoint as the first pass — see [Adjudication](#adjudication-and-fan-out) |
+
+### Debugging and plumbing
+
+| Input | Default | Description |
+|---|---|---|
+| `dry-run` | `false` | Print the plan, the batch routing and the expected call count; no AI call |
+| `pr-number` | event PR | Override the PR number |
 | `install-cli` / `cli-version` | `true` / `latest` | npm-install the AI CLI on the runner |
 
 ## Outputs
