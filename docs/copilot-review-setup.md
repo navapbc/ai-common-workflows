@@ -37,18 +37,55 @@ A `PROFILE` that doesn't exist fails the run loudly, before anything is copied
 
 ## 3. Optional — `COPILOT_SYNC_TOKEN` for hands-off PRs
 
-Without it, the workflow pushes its branch, fails to open the PR (GitHub blocks
-PR creation by the built-in `GITHUB_TOKEN` by default), and prints a compare
-URL for you to click. The run still succeeds. That is a perfectly reasonable
-human-in-the-loop posture.
+Skip this and the workflow still works: it pushes its branch, fails to open the
+PR, and prints a compare URL for you to click. The run succeeds. For a PR that
+appears weekly at most, that is a perfectly reasonable place to stop.
 
-For full automation, add a fine-grained PAT / App token scoped to **your** repo
-with `Contents: Read and write` + `Pull requests: Read and write`, as
-**`COPILOT_SYNC_TOKEN`**. The workflow prefers it automatically. The
-"Allow GitHub Actions to create and approve pull requests" toggle stays **off**,
-no workflow gains approve rights, and `pull_request` CI runs normally on the
-sync PR — GitHub suppresses CI on PRs opened by the built-in token, but not on
-PAT-opened ones.
+For hands-off PR creation, add a token as **`COPILOT_SYNC_TOKEN`**. The
+workflow prefers it automatically when present.
+
+### Use a machine user, not your own account
+
+Create a dedicated GitHub account for automation — a *machine user* — and issue
+the PAT from there:
+
+1. Create the account (e.g. `acme-ci-bot`) with its own email and 2FA.
+2. Give it **write** access to the repo: add it as a collaborator, or add it to
+   the org and to a team with write on that repo.
+3. Signed in as that account, create a **fine-grained PAT**:
+   - **Repository access:** only the repo(s) running the sync
+   - **Permissions:** `Contents: Read and write`, `Pull requests: Read and write`
+4. Store it in the consuming repo as the secret **`COPILOT_SYNC_TOKEN`**.
+
+A PAT from your personal account works identically, and is the wrong choice for
+anything you intend to keep: sync PRs arrive under your name as though you
+wrote them, the token carries your access to everything else you can reach, and
+the automation stops the day you lose access to the repo. A machine user has
+none of those properties — and when someone asks who opened a PR, the answer is
+a bot, not a colleague who did not.
+
+**Plan for expiry.** Fine-grained PATs expire. When one lapses the run fails at
+the PR step with a `gh` auth error, so it is loud rather than silent, but you
+still want a calendar reminder ahead of the date. Set the longest expiry your
+org policy permits.
+
+### The other two ways, and why not
+
+- **Enable "Allow GitHub Actions to create and approve pull requests"** — no
+  credential at all, but the single toggle grants create **and approve** to
+  every workflow's `GITHUB_TOKEN` in the repo. A workflow that can approve can
+  satisfy a required-review rule.
+- **A GitHub App** — short-lived tokens, no expiry treadmill, survives
+  offboarding. Better security properties than a PAT, at the cost of a ~10-step
+  setup per org. Worth it if you are rolling this out across many repos in one
+  org: create one App, install it on those repos, and hold its id and private
+  key as organization-level variables and secrets so each repo needs no
+  credential setup of its own.
+
+One practical difference beyond permissions: GitHub suppresses `pull_request`
+CI on PRs opened by the built-in `GITHUB_TOKEN`, but not on PRs opened by a PAT
+or App token. So the toggle gets you an automatic PR with no checks on it,
+while a machine-user PAT gets you one that runs CI normally.
 
 ## 4. Run it, merge the sync PR
 
@@ -112,6 +149,7 @@ does it:
 |---|---|
 | `GitHub Actions is not permitted to create or approve pull requests` | Expected without `COPILOT_SYNC_TOKEN` — the branch **is** pushed; open the PR from the printed compare URL (step 3) |
 | `profile '<x>' not found` | `PROFILE` names a directory that doesn't exist under `copilot-instructions/profiles/` |
+| PR creation worked, then started failing with a `gh` auth error | `COPILOT_SYNC_TOKEN` expired — fine-grained PATs do (step 3) |
 | Run is green but no PR and no instructions on your default branch | Your copy predates the open-PR fix; a closed or merged sync PR on the branch kept matching. Take the current example (step 1) |
 | Instructions synced, but reviews look generic | Copilot review isn't enabled, or isn't being requested on the PR (step 5) |
 

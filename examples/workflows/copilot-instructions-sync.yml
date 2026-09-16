@@ -24,9 +24,11 @@
 #    human-in-the-loop, zero configuration.
 #
 # b. Recommended for full automation WITHOUT granting workflows approve
-#    rights: add a `COPILOT_SYNC_TOKEN` repo secret (fine-grained PAT or
-#    GitHub App token scoped to THIS repo, contents:write +
-#    pull-requests:write). The workflow uses it automatically. The
+#    rights: add a `COPILOT_SYNC_TOKEN` repo secret — a fine-grained PAT
+#    scoped to THIS repo (contents:write + pull-requests:write), issued from a
+#    dedicated MACHINE USER rather than a person's account, so sync PRs are
+#    not attributed to a colleague and the automation outlives any one
+#    individual's access. The workflow uses it automatically. The
 #    create-and-approve toggle stays OFF, no other workflow gains any new
 #    capability, GitHub still forbids any identity approving its own PR — and
 #    `pull_request` CI runs normally on the sync PR (GitHub suppresses CI on

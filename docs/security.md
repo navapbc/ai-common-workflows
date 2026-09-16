@@ -172,7 +172,10 @@ with credentials scoped to `contents: write` + `pull-requests: write` on
 `ai-common-workflows` keeps no list of consumers. By default the built-in
 `GITHUB_TOKEN` pushes the branch and a human opens the PR (GitHub blocks PR
 creation by workflows unless a repo toggle is enabled); an optional
-`COPILOT_SYNC_TOKEN` (fine-grained PAT / App token) automates PR creation
-without granting any workflow approve rights. Pin `ACW_REF` to a commit SHA
+`COPILOT_SYNC_TOKEN` automates PR creation without granting any workflow
+approve rights. Issue that PAT from a dedicated **machine user** rather than a
+person's account: it keeps the credential's reach to the repos the sync touches
+instead of everything one human can read, and the automation does not break
+when that human's access changes. Pin `ACW_REF` to a commit SHA
 (or release tag) so upgrades are deliberate. See
 [copilot-instructions.md](copilot-instructions.md).

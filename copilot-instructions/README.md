@@ -87,8 +87,10 @@ and no cross-repo credentials. To change profiles or upgrade, edit `PROFILE` /
 **How the PR gets opened** (the workflow header documents all three): with zero
 config the branch is pushed and a compare URL is printed for a human to open
 the PR (GitHub blocks PR creation by the built-in `GITHUB_TOKEN` by default);
-add a `COPILOT_SYNC_TOKEN` secret (fine-grained PAT / App token) for fully
-automatic PRs with normal CI — without granting any workflow approve rights;
+add a `COPILOT_SYNC_TOKEN` secret — a fine-grained PAT issued from a dedicated
+**machine user**, not from a person's account — for fully automatic PRs with
+normal CI, without granting any workflow approve rights
+([setup](../docs/copilot-review-setup.md#3-optional--copilot_sync_token-for-hands-off-prs));
 or enable "Allow GitHub Actions to create and approve pull requests".
 
 ## Adopt manually (fallback)
