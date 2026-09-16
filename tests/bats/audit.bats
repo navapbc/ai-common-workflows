@@ -236,6 +236,55 @@ EOF
   [[ "$output" == *"Unknown flag"* ]]
 }
 
+# ── endpoint / data path ────────────────────────────────────────────────────
+# An audit sends the whole scope to the endpoint, not a diff, so an ignored
+# provider setting is the worst failure this tool can have: the entire codebase
+# to the wrong place, with nothing reported. configure_endpoint was missing
+# entirely, so AI_REVIEW_PROVIDER was silently discarded.
+
+@test "audit: the dry-run plan names the provider" {
+  run bash "${AUDIT}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Provider:"* ]]
+}
+
+@test "audit: the default provider is flagged as a PUBLIC endpoint" {
+  run bash "${AUDIT}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PUBLIC endpoint"* ]]
+}
+
+@test "audit: an in-boundary provider is not flagged as public" {
+  AI_REVIEW_PROVIDER=bedrock AWS_REGION=us-east-1 run bash "${AUDIT}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Provider:"*"bedrock"* ]]
+  [[ "$output" != *"PUBLIC endpoint"* ]]
+}
+
+@test "audit: provider=bedrock without a region fails rather than using the public API" {
+  AI_REVIEW_PROVIDER=bedrock run bash "${AUDIT}" terraform/
+  # The engine must not quietly fall back to the public endpoint.
+  run bash -c "AI_REVIEW_PROVIDER=bedrock bash '${AUDIT}' terraform/ 2>&1"
+  [[ "$output" == *"requires AWS_REGION"* ]]
+}
+
+@test "audit: provider=azure without an endpoint is a config error" {
+  run bash -c "AI_REVIEW_TOOL=codex AI_REVIEW_PROVIDER=azure bash '${AUDIT}' terraform/ 2>&1"
+  [[ "$output" == *"provider=azure requires"* ]]
+}
+
+@test "audit: an unrecognized provider is rejected" {
+  run bash -c "AI_REVIEW_PROVIDER=nonsense bash '${AUDIT}' terraform/ 2>&1"
+  [[ "$output" == *"not a recognized value"* ]]
+}
+
+@test "audit: --dry-run needs no endpoint credentials" {
+  # Endpoint validation runs after the dry-run gate, so someone can inspect the
+  # plan — including where the code would go — before holding any credential.
+  AI_REVIEW_PROVIDER=bedrock run bash "${AUDIT}" --dry-run
+  [ "$status" -eq 0 ]
+}
+
 # ── a full stubbed run ──────────────────────────────────────────────────────
 
 @test "audit: completes and reports the finding count" {
