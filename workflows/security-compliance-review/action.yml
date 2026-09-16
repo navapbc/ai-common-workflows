@@ -35,7 +35,10 @@ inputs:
     required: false
     default: "true"
   gate:
-    description: "Fail the job (exit 1) on any non-APPROVE result. Default: advisory."
+    description: >-
+      Fail the job on HIGH or CRITICAL findings. Default false (advisory).
+      MEDIUM and LOW still post as comments. For the ends of the scale, accepts
+      `critical` (CRITICAL only) or `any` (every finding, LOW included).
     required: false
     default: "false"
   dry-run:

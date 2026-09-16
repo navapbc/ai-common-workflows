@@ -94,7 +94,7 @@ setup() {
   echo '{"review_action":"REQUEST_CHANGES"}' >"${json}"
   REVIEW_JSON="${json}" GATE=true run ci::gate_result
   [ "$status" -ne 0 ]
-  [[ "$output" == *"gate is enabled"* ]]
+  [[ "$output" == *"AI review result is REQUEST_CHANGES"* ]]
 }
 
 @test "gate_result passes on APPROVE with gate=true" {
@@ -129,6 +129,159 @@ setup() {
   REVIEW_JSON="${json}" GATE=false run ci::gate_result
   [ "$status" -eq 1 ]
   [[ "$output" == *"Refusing to assume APPROVE"* ]]
+}
+
+# ── gate_result: severity levels ────────────────────────────────────────────
+# `gate: true` gates at HIGH + CRITICAL — NOT at `any`. `critical` and `any`
+# are available for the ends of the scale. Everything still posts as a
+# comment; only the pass/fail decision changes.
+
+_findings() { # $1 = file, rest = severities
+  local f="$1"; shift
+  local out='{"review_action":"COMMENT","comments":['
+  local sep=""
+  for sev in "$@"; do
+    out+="${sep}{\"severity\":\"${sev}\",\"title\":\"finding ${sev}\"}"
+    sep=","
+  done
+  echo "${out}]}" >"${f}"
+}
+
+@test "gate=high does not block a MEDIUM-only review" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" MEDIUM LOW
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 0 ]
+  grep -qx "result=COMMENT" "${GITHUB_OUTPUT}"
+}
+
+@test "gate=high blocks on HIGH" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" LOW HIGH
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate=high blocks on CRITICAL" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" CRITICAL
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate=critical does not block on HIGH" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" HIGH
+  REVIEW_JSON="${json}" GATE=critical run ci::gate_result
+  [ "$status" -eq 0 ]
+}
+
+@test "gate=any blocks on a single LOW" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" LOW
+  REVIEW_JSON="${json}" GATE=any run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate=true does NOT block on MEDIUM or LOW" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" MEDIUM LOW
+  REVIEW_JSON="${json}" GATE=true run ci::gate_result
+  [ "$status" -eq 0 ]
+}
+
+@test "gate=true blocks on HIGH" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" HIGH
+  REVIEW_JSON="${json}" GATE=true run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate=true blocks on CRITICAL" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" CRITICAL
+  REVIEW_JSON="${json}" GATE=true run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate is case-insensitive about the severity values" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" critical
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "an unrecognized severity is counted as blocking, not ignored" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" SEV_BANANA
+  REVIEW_JSON="${json}" GATE=critical run ci::gate_result
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unrecognized severity"* ]]
+}
+
+@test "a missing severity field is counted as blocking" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  echo '{"review_action":"COMMENT","comments":[{"title":"no severity"}]}' >"${json}"
+  REVIEW_JSON="${json}" GATE=critical run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "threshold gating never blocks an APPROVE" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  echo '{"review_action":"APPROVE","comments":[]}' >"${json}"
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 0 ]
+}
+
+@test "REQUEST_CHANGES blocks regardless of the threshold" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  echo '{"review_action":"REQUEST_CHANGES","comments":[{"severity":"LOW","title":"x"}]}' >"${json}"
+  REVIEW_JSON="${json}" GATE=critical run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "COMMENT with no comments array does not block under a threshold" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  echo '{"review_action":"COMMENT"}' >"${json}"
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 0 ]
+}
+
+@test "a malformed comments array fails closed rather than passing the gate" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  echo '{"review_action":"COMMENT","comments":["oops"]}' >"${json}"
+  REVIEW_JSON="${json}" GATE=high run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "an unrecognized gate value is a configuration error" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" LOW
+  REVIEW_JSON="${json}" GATE=medium run ci::gate_result
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unrecognized gate"* ]]
+}
+
+@test "gate=off is accepted as a synonym for false" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" CRITICAL
+  REVIEW_JSON="${json}" GATE=off run ci::gate_result
+  [ "$status" -eq 0 ]
+  grep -qx "result=COMMENT" "${GITHUB_OUTPUT}"
+}
+
+@test "gate unset defaults to advisory" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" CRITICAL
+  REVIEW_JSON="${json}" run ci::gate_result
+  [ "$status" -eq 0 ]
+}
+
+@test "gate=false is advisory" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" CRITICAL
+  REVIEW_JSON="${json}" GATE=false run ci::gate_result
+  [ "$status" -eq 0 ]
 }
 
 @test "ensure_base_ref warns (not silently) when the base ref cannot be fetched" {
