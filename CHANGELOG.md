@@ -33,6 +33,19 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`COPILOT_SYNC_TOKEN` is now documented as a machine-user PAT.** The docs
+  previously said "fine-grained PAT / App token" without saying whose account
+  it should come from, which in practice means a person's: sync PRs then arrive
+  under a colleague's name as though they wrote them, the token carries that
+  person's access to everything else they can reach, and the automation stops
+  when their access changes. `docs/copilot-review-setup.md` step 3 now gives
+  the machine-user recipe as a requirement rather than a preference — a token
+  from a person's account is not offered as an alternative anywhere — covers
+  PAT expiry, and states the two non-personal alternatives and their costs — the create-and-approve toggle (grants approve
+  to every workflow in the repo) and a GitHub App (stronger, ~10 steps per org,
+  worth it via org-level secrets when rolling out widely). The same steer is
+  reflected in `copilot-instructions/README.md`, `docs/copilot-instructions.md`,
+  `docs/security.md` and the example workflow's header.
 - **Copilot instructions now sync into `.github/instructions/ai-review/`**
   rather than flat into `.github/instructions/`. Copilot code review reads
   subdirectories of `.github/instructions/`, so this changes nothing about
