@@ -126,7 +126,7 @@ there for a ruleset to require.
 ## Read-only mode (no repository writes)
 
 To run with **no write permission at all**, set `post-comments: false` and act
-on the `result` output (e.g. combine with `gate: true` to fail the check
+on the `result` output (e.g. combine with `gate: high` to fail the check
 without commenting). The token then needs only `contents: read`, and the
 action never calls the PR-write API. Useful where posting bot comments is
 disallowed or the token can't be granted `pull-requests: write`.
