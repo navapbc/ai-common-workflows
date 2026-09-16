@@ -131,13 +131,39 @@ layer around the runner/agent:
    Jenkins) the plugin, the way you'd review any dependency that runs in your
    pipeline. Re-review on upgrade by diffing tags.
 
-2. **Pin to an immutable reference.**
+2. **Pin to an immutable reference — a commit SHA, never a tag.**
+   A git tag is a mutable pointer: it can be deleted and re-created against a
+   different commit, and nothing in the consuming workflow would notice. A
+   release can be edited or replaced the same way. A commit SHA is the only
+   reference that names fixed content, so it is the only acceptable pin —
+   including for the instruction sync, not just the Action.
    - **GitHub Action:** pin `uses:` to a full 40-character commit SHA, not a
      tag or branch:
      ```yaml
      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<40-char-sha> # v1.0.0
      ```
      The `# vX.Y.Z` comment records which release the SHA is.
+   - **Finding the SHA for a release** — the release page shows it, or:
+     ```bash
+     gh api repos/navapbc/ai-common-workflows/git/ref/tags/v1.0.0 --jq .object.sha
+     ```
+     Paste that, and record the release in the trailing comment. Resolve the
+     tag **once, deliberately**, at the moment you choose to upgrade; never let
+     a workflow resolve it at run time.
+   - **Keeping the pin current without re-typing SHAs** — Dependabot updates
+     SHA-pinned `uses:` references and rewrites the `# vX.Y.Z` comment with
+     them, so a pinned action still gets upgrade PRs you review like any other:
+     ```yaml
+     # .github/dependabot.yml
+     version: 2
+     updates:
+       - package-ecosystem: github-actions
+         directory: "/"
+         schedule: { interval: weekly }
+     ```
+     It cannot help with the instruction sync's `ACW_REF`: that is a plain
+     environment variable in a workflow, not a `uses:` reference, so nothing
+     recognizes it as a dependency. Bump it by hand when you take a release.
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its
      build provenance** before uploading (requires `gh` ≥ 2.49):
      ```bash
@@ -179,6 +205,6 @@ authenticates as the built-in `GITHUB_TOKEN` that `actions/checkout` persisted,
 so granting it `Contents` would let it write to any branch for no gain. Issue
 it from a dedicated **machine user** rather than a person's account: it keeps the credential's reach to the repos the sync touches
 instead of everything one human can read, and the automation does not break
-when that human's access changes. Pin `ACW_REF` to a commit SHA
-(or release tag) so upgrades are deliberate. See
+when that human's access changes. Pin `ACW_REF` to a commit SHA — not a tag, for the
+reason in the pinning rule above — so upgrades are deliberate. See
 [copilot-instructions.md](copilot-instructions.md).

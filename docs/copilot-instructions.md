@@ -91,8 +91,8 @@ Just keep the source files correct: edit the base
 `ai-review-*.instructions.md` for a change everyone should get, or a profile's
 `ai-review-*-additions.instructions.md` for one only that profile should get.
 Consumers pick the change up the next time their sync workflow runs against a
-ref they've pinned to. Cut a tag/release so consumers have a stable `ACW_REF`
-to move to.
+ref they've pinned to. Cut a release so consumers have something to move to —
+the release is how they find the SHA; the SHA is what they pin.
 
 When adding a profile, write only the deltas — don't restate base checks in an
 additions file, or the two copies will drift the way the old per-profile

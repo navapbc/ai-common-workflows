@@ -8,6 +8,13 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tests/python/test_pin_hygiene.py`** — CI now enforces the SHA-only pinning
+  rule instead of relying on reviewers to notice. It fails on a tag or branch
+  pin of this repo in any doc, example or README, on a non-SHA `ACW_REF`, and
+  on the prose loophole ("a commit SHA or a release tag") that is how the rule
+  eroded in the first place. Verified against all three regression forms rather
+  than only observed to pass, plus a test asserting the scan matches something
+  at all — a regex that matched nothing would make the rest vacuous.
 - **Codebase audit** — a second entrypoint on the security-review engine,
   `engines/security-compliance-review/harness/ai-security-compliance-audit`,
   that audits an existing repository (or given paths) rather than a change to
@@ -72,6 +79,20 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **A commit SHA is now the only accepted pin, everywhere.** Four places still
+  offered a release tag as an alternative — `copilot-instructions/README.md`,
+  the sync workflow's header, `docs/security.md`'s `ACW_REF` paragraph, and the
+  maintainer guidance in `docs/copilot-instructions.md`. A git tag is a mutable
+  pointer: it can be deleted and re-created against a different commit, and
+  nothing in a consuming workflow would notice. `docs/security.md` now states
+  that reason next to the rule, so the next reader cannot weaken it back
+  without arguing with it.
+  Because the rule is only as good as its friction, the same section now shows
+  how to resolve a release to its SHA in one command, and a Dependabot config
+  that keeps SHA-pinned `uses:` references current and rewrites the `# vX.Y.Z`
+  comment with them — plus the honest note that nothing can do this for
+  `ACW_REF`, which is a plain environment variable rather than a recognized
+  dependency.
 - **`profile` is now an ordered list of rubric sources, with the shared floor
   as an explicit member.** `base` | `base,cms-ars` | `base,cms-ars,pci-dss` |
   `none,my-agency-everything`. Sources layer in order, each only ever adding to
