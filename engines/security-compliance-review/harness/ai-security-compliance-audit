@@ -495,10 +495,21 @@ audit::run() {
     ai_review::log "  Batches:        ${_nbatches} (concurrency ${AI_REVIEW_JOBS})"
     ai_review::log "  Profile:        ${AI_REVIEW_PROFILE}"
     ai_review::log "  Tool:           ${AI_REVIEW_TOOL_RESOLVED}"
+    # The audit sends the whole scope to the endpoint, not a diff, so WHERE it
+    # goes is the most consequential line in this plan. Shown here so it can be
+    # checked before any code leaves the machine — endpoint validation itself
+    # runs after the dry-run gate, so --dry-run needs no credentials.
+    ai_review::log "  Provider:       ${AI_REVIEW_PROVIDER:-api}$([[ -z "${AI_REVIEW_PROVIDER:-}" || "${AI_REVIEW_PROVIDER}" == "api" ]] && printf ' (PUBLIC endpoint — see docs/private-endpoints.md for in-boundary options)')"
     ai_review::log "  Adjudication:   $(ai_review::adjudication_mode)"
     ai_review::log "  Expected calls: ~${_nbatches} first-pass$([[ "$(ai_review::adjudication_mode)" == "independent" ]] && printf ' + 1 adjudication')"
     exit 0
   fi
+
+  # Validate and configure the LLM endpoint now that a real invocation will
+  # happen. Without this, AI_REVIEW_PROVIDER was silently ignored and an audit
+  # configured for Bedrock or Azure went to the public API instead — the whole
+  # scope, to the wrong place, with nothing reported.
+  ai_review::configure_endpoint
 
   # ── Audit ──────────────────────────────────────────────────────────────
   local audit_json result human_output=""

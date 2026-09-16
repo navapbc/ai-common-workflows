@@ -3,6 +3,12 @@
 The review works against the vendor public APIs or a private endpoint. Choose a
 private endpoint when your PR diffs must not leave your network boundary.
 
+
+Everything here applies to the **codebase audit** as well as the PR review —
+same engine, same variables. It matters more there: an audit sends the whole
+scope to the endpoint rather than a diff, so if any run should be in-boundary,
+it is that one. See [codebase-audit.md](codebase-audit.md).
+
 ## Compute placement — read this first
 
 **An in-boundary LLM only keeps your code in-boundary if the review runs
