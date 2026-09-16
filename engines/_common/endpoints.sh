@@ -153,8 +153,28 @@ ai_review::configure_endpoint() {
       fi
       local api_version="${AZURE_OPENAI_API_VERSION:-2024-10-21}"
       # Build the deployment URL only if the caller has not supplied one.
+      #
+      # Azure resolves the model from this URL PATH, not from the CLI's model
+      # flag — which makes a per-pass model override a special case here and
+      # nowhere else. Record what the URL was built from so the independent
+      # adjudication pass can rebuild it for a different deployment
+      # (ai_review::adjudicate). Without this, AI_ADJUDICATION_MODEL was
+      # silently ignored under provider=azure: the flag changed, the URL did
+      # not, and the "second opinion" came from the first-pass deployment.
       if [[ -z "${OPENAI_BASE_URL:-}" ]]; then
         export OPENAI_BASE_URL="${AZURE_OPENAI_ENDPOINT%/}/openai/deployments/${AI_REVIEW_MODEL}?api-version=${api_version}"
+        export AI_REVIEW_AZURE_URL_TEMPLATE="${AZURE_OPENAI_ENDPOINT%/}/openai/deployments/{MODEL}?api-version=${api_version}"
+      elif [[ -n "${AI_ADJUDICATION_MODEL:-}" ]] && [[ "$(ai_review::adjudication_mode)" == "independent" ]]; then
+        # A caller-supplied OPENAI_BASE_URL is opaque: we cannot know where the
+        # deployment name sits in it, so we cannot swap it. Fail now rather
+        # than after the first pass has been paid for and the adjudication
+        # quietly re-runs the same deployment.
+        ai_review::err "provider=azure with a custom OPENAI_BASE_URL cannot honor AI_ADJUDICATION_MODEL:"
+        ai_review::err "  Azure resolves the deployment from the URL path, and a caller-supplied URL"
+        ai_review::err "  cannot be rewritten safely. Either drop AI_ADJUDICATION_MODEL (adjudication"
+        ai_review::err "  then runs on the same deployment), or set AZURE_OPENAI_ENDPOINT and let the"
+        ai_review::err "  engine build the URL so it can swap the deployment for the second pass."
+        exit 2
       fi
       if [[ -z "${OPENAI_API_KEY:-}" && -n "${AZURE_OPENAI_API_KEY:-}" ]]; then
         export OPENAI_API_KEY="${AZURE_OPENAI_API_KEY}"

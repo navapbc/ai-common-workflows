@@ -898,6 +898,20 @@ ai_review::adjudicate() {
   local first_pass_json="$1"
   local prompt
   prompt="$(ai_review::build_adjudication_prompt "${first_pass_json}")"
+
+  # Every provider but Azure selects the model from the CLI's model flag, so
+  # passing AI_ADJUDICATION_MODEL is enough. Azure resolves the deployment from
+  # the URL path, so the second opinion also needs its own URL — otherwise the
+  # flag changes and the request still lands on the first-pass deployment.
+  # endpoints.sh records the template when it built the URL, and refuses the
+  # combination up front when a caller-supplied URL makes the swap impossible.
+  if [[ -n "${AI_ADJUDICATION_MODEL:-}" && -n "${AI_REVIEW_AZURE_URL_TEMPLATE:-}" ]]; then
+    local adj_url="${AI_REVIEW_AZURE_URL_TEMPLATE/\{MODEL\}/${AI_ADJUDICATION_MODEL}}"
+    ai_review::log "  adjudication endpoint: ${adj_url}"
+    OPENAI_BASE_URL="${adj_url}" ai_review::invoke_tool "${prompt}" "${AI_ADJUDICATION_MODEL}"
+    return $?
+  fi
+
   ai_review::invoke_tool "${prompt}" "${AI_ADJUDICATION_MODEL:-}"
 }
 

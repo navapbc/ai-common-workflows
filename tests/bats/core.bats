@@ -246,6 +246,63 @@ report
   [[ "$output" != *"azuresecret"* ]]
 }
 
+# ── azure + a per-pass adjudication model ───────────────────────────────────
+# Azure resolves the deployment from the URL path, not the CLI model flag, so
+# AI_ADJUDICATION_MODEL needs its own URL. Before this it was silently ignored:
+# the flag changed, the URL did not, and the "independent" second opinion ran
+# on the first-pass deployment.
+
+@test "endpoint: azure records a URL template so adjudication can swap the deployment" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure AI_REVIEW_MODEL=gpt-review
+  export AI_REVIEW_TOOL_RESOLVED AI_REVIEW_PROVIDER AI_REVIEW_MODEL
+  export AZURE_OPENAI_ENDPOINT=https://res.openai.azure.com
+  export AZURE_OPENAI_API_KEY=azuresecret
+  ai_review::configure_endpoint >/dev/null 2>&1
+  [[ "${AI_REVIEW_AZURE_URL_TEMPLATE}" == *"deployments/{MODEL}?api-version="* ]]
+}
+
+@test "endpoint: azure with a caller-supplied base URL rejects AI_ADJUDICATION_MODEL" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure AI_REVIEW_MODEL=gpt-review     OPENAI_BASE_URL=https://gw.example/v1     AI_ADJUDICATION=independent AI_ADJUDICATION_MODEL=gpt-audit     run ai_review::configure_endpoint
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"cannot honor AI_ADJUDICATION_MODEL"* ]]
+}
+
+@test "endpoint: azure with a caller-supplied base URL is fine without an adjudication model" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure AI_REVIEW_MODEL=gpt-review     OPENAI_BASE_URL=https://gw.example/v1 AZURE_OPENAI_API_KEY=k     run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "endpoint: azure self-adjudication with a custom URL is not rejected" {
+  # Only the independent pass makes a second call; self-adjudication is one
+  # call on the first-pass deployment, so the model override is irrelevant.
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=azure AI_REVIEW_MODEL=gpt-review     OPENAI_BASE_URL=https://gw.example/v1 AZURE_OPENAI_API_KEY=k     AI_ADJUDICATION=self AI_ADJUDICATION_MODEL=gpt-audit     run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "adjudicate: azure swaps the deployment in the URL for the second pass" {
+  export AI_REVIEW_AZURE_URL_TEMPLATE="https://res.openai.azure.com/openai/deployments/{MODEL}?api-version=2024-10-21"
+  export AI_ADJUDICATION_MODEL=gpt-audit
+  export OPENAI_BASE_URL="https://res.openai.azure.com/openai/deployments/gpt-review?api-version=2024-10-21"
+  # Capture what invoke_tool would see instead of calling a CLI.
+  ai_review::invoke_tool() { printf 'url=%s model=%s\n' "${OPENAI_BASE_URL}" "$2"; }
+  ai_review::build_adjudication_prompt() { printf 'prompt'; }
+  run ai_review::adjudicate '{"review_action":"COMMENT"}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"deployments/gpt-audit"* ]]
+  [[ "$output" == *"model=gpt-audit"* ]]
+}
+
+@test "adjudicate: no template means the URL is left alone (non-azure providers)" {
+  unset AI_REVIEW_AZURE_URL_TEMPLATE || true
+  export AI_ADJUDICATION_MODEL=claude-other
+  ai_review::invoke_tool() { printf 'url=%s model=%s\n' "${OPENAI_BASE_URL:-none}" "$2"; }
+  ai_review::build_adjudication_prompt() { printf 'prompt'; }
+  run ai_review::adjudicate '{"review_action":"COMMENT"}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"url=none"* ]]
+  [[ "$output" == *"model=claude-other"* ]]
+}
+
 @test "endpoint: invalid provider rejected" {
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=nonsense run ai_review::configure_endpoint
   [ "$status" -eq 2 ]

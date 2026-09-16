@@ -64,7 +64,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `copilot-provider-api-key` | — | ai-tool=copilot BYOK model key (`COPILOT_PROVIDER_API_KEY`) |
 | `copilot-model` | — | ai-tool=copilot BYOK model id (`COPILOT_MODEL`) |
 | `adjudication` | `self` | `self` \| `independent` \| `off` |
-| `adjudication-model` | — | Model for the independent pass only |
+| `adjudication-model` | — | Model for the independent pass only. Same provider and endpoint as the first pass — see [Adjudication](#adjudication-and-fan-out) |
 | `jobs` | `4` | Fan-out concurrency for large diffs |
 | `batch-by` | `dir` | `dir` \| `file` fan-out batching |
 | `batch-min-files` | `10` | Minimum changed files before fanning out |
@@ -128,6 +128,19 @@ disallowed or the token can't be granted `pull-requests: write`.
   fresh-agent pass over the findings before posting (optionally on a different
   `adjudication-model`); it roughly doubles cost on finding-bearing PRs but is
   the strongest filter. `off` reports raw first-pass findings.
+- **What `adjudication-model` can vary.** The second opinion runs on the same
+  CLI, the same provider and the same endpoint as the first pass — only the
+  model changes. So it picks another Bedrock model ID, another Vertex model,
+  another Anthropic or OpenAI model, but not a different provider and not a
+  different vendor's CLI. Cross-lab adjudication is not supported; a custom
+  gateway that routes by model name is the nearest thing available.
+- **`provider: azure` is the exception.** Azure resolves the deployment from
+  the request URL, not from a model flag, so the engine rebuilds the URL for
+  the adjudication call. That works when it built the URL from
+  `azure-openai-endpoint`. If you supply `openai-base-url` yourself, the URL is
+  opaque and cannot be rewritten, so pairing it with `adjudication-model`
+  **fails at startup** rather than quietly adjudicating on the first-pass
+  deployment.
 - **Fan-out**: when a PR changes at least `batch-min-files` files, the diff is
   split into batches (`batch-by`) and reviewed by up to `jobs` concurrent AI
   calls, then merged and deduplicated into one review. Small PRs run as a
