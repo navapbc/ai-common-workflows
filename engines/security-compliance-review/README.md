@@ -79,6 +79,41 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 - When posting to GitHub (`--post-comments` / `--post-only`): `gh`, `python3`
 - Fan-out JSON merging: `python3`
 
+## Second entrypoint: codebase audit
+
+`harness/ai-security-compliance-audit` audits an **existing codebase** rather
+than a change to one — same rubric, same severities, same findings JSON,
+different question. It is local and ad-hoc by design: no composite action, no
+Jenkins step, no posting, no SCM token, and it never gates. Run it from the
+root of the repo being audited:
+
+```
+bash <engines>/security-compliance-review/harness/ai-security-compliance-audit [flags] [<path>...]
+```
+
+| Flag | Meaning |
+|---|---|
+| `<path>...` | Limit the audit to these files/directories (default: whole repo) |
+| `--profile <name\|dir>` | Compliance profile (default `baseline`) |
+| `--include <glob>` / `--exclude <glob>` | Narrow within the scope (repeatable) |
+| `--max-file-bytes <n>` | Skip files larger than n bytes (default 262144) |
+| `--list-files` | Print the files in scope; no AI call |
+| `--list-batches` / `--dry-run` | Print the plan and expected call count; no AI call |
+| `--json-out <file>` / `--md-out <file>` | Write artifacts to paths you name |
+| `--json-only` | Print only the findings JSON |
+| `--jobs <n>` / `--no-adjudicate` | Concurrency; skip adjudication |
+
+Scope comes from `git ls-files`, so untracked and gitignored files are never
+audited; binaries and oversized files are skipped with a printed reason.
+`--gate`, `--post-comments`, `--against` and the other PR-scoped flags are
+rejected with a pointer to the review entrypoint.
+
+The audit's result marker vocabulary is `AUDIT_CLEAN|AUDIT_FINDINGS`, but its
+JSON keeps the review's `review_action` values (`APPROVE`/`COMMENT`) so
+`fold_review_json.py`, adjudication and `gate_verdict.py` need no special case.
+
+Consumer-facing quickstart: [docs/codebase-audit.md](../../docs/codebase-audit.md).
+
 ## Exit codes
 
 | Code | Meaning |

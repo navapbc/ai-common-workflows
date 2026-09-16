@@ -44,7 +44,7 @@ sibling of the workflow engines.
 | Results | `ai_review::parse_result` (→ vocab word or `UNPARSEABLE`), `ai_review::extract_review_json` (last closed block), `ai_review::is_max_turns` | Parameterized by `AI_REVIEW_MARKER_VOCAB` / `AI_REVIEW_JSON_MARKER` |
 | Gate | `ai_review::gate_blocks <file\|->` | 0 blocks, 1 does not, **2 could not tell — callers must treat as blocking**. Decision lives in `harness/gate_verdict.py` so every gate surface agrees |
 | Adjudication | `ai_review::adjudication_mode`, `self_adjudication_instructions`, `adjudicate` | The independent pass reads `${ENGINE_HOME}/skills/base/finding-adjudication.md` |
-| Fan-out | `ai_review::plan_diff_batches`, `pack_batches`, `should_batch`, `context_budget`, `fan_out` | Caller exports `AI_REVIEW_SELF` (its own path) and re-enters with `--__review-one`; merge with `harness/fold_review_json.py` |
+| Fan-out | `ai_review::group_files_into_batches` (paths on stdin), `plan_diff_batches`, `pack_batches`, `should_batch`, `context_budget`, `fan_out` | Caller exports `AI_REVIEW_SELF` (its own path) and re-enters with `AI_REVIEW_WORKER_FLAG` (default `--__review-one`); merge with `harness/fold_review_json.py`. Group from any file list — the codebase audit walks the working tree instead of a diff |
 | Help | `ai_review::print_help` | A generic fallback — every entrypoint overrides it after sourcing |
 
 ## endpoints.sh

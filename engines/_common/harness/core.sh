@@ -922,14 +922,19 @@ ai_review::adjudicate() {
 # the single-call path runs, scoped to its files; adjudication (independent
 # mode) runs once on the merged findings, not per batch.
 
-# ai_review::plan_diff_batches
+# ai_review::group_files_into_batches   (reads file paths, one per line, on stdin)
 # Emits one record per batch:  <key>\t<file>|<file>|...
 # key = directory (default) or the file itself when AI_REVIEW_BATCH_BY=file.
 # bash 3.2 safe: no associative arrays / mapfile — we emit <key>\t<file> pairs,
 # sort (a tab-led sort groups a key's files together), then coalesce with awk.
-ai_review::plan_diff_batches() {
+#
+# Takes its input on stdin rather than calling changed_files itself, so a
+# workflow whose scope is not a diff (the codebase audit walks the working
+# tree) reuses the same grouping, packing and budgeting instead of growing a
+# parallel planner that would drift from this one.
+ai_review::group_files_into_batches() {
   local by="${AI_REVIEW_BATCH_BY:-dir}"
-  ai_review::changed_files | while IFS= read -r f; do
+  while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
     local key
     if [[ "${by}" == "file" ]]; then
@@ -950,6 +955,12 @@ ai_review::plan_diff_batches() {
     }
     END { if (cur != "") print cur "\t" files }
   '
+}
+
+# ai_review::plan_diff_batches
+# The diff-scoped planner: group the files the diff touches.
+ai_review::plan_diff_batches() {
+  ai_review::changed_files | ai_review::group_files_into_batches
 }
 
 # ai_review::pack_batches <max_bins>   (reads <key>\t<files> records on stdin)
@@ -1014,7 +1025,8 @@ ai_review::context_budget() {
 }
 
 # ai_review::fan_out <record>...
-# Re-invokes this engine's entrypoint (AI_REVIEW_SELF) once per batch via
+# Re-invokes this engine's entrypoint (AI_REVIEW_SELF) with its worker flag
+# (AI_REVIEW_WORKER_FLAG, default --__review-one) once per batch via
 # `xargs -0 -P AI_REVIEW_JOBS`. Each worker prints its human report to stderr
 # (so it streams live) and exactly one sentinel line to stdout (captured here):
 #   AI_REVIEW_BATCH_RESULT\t<key>\t<marker>\t<json_file>
@@ -1053,7 +1065,8 @@ ai_review::fan_out() {
   local sentinels fan_rc=0
   # NUL-delimited records so embedded tabs/spaces in paths survive.
   sentinels="$(printf '%s\0' "${records[@]}" |
-    xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" --__review-one)" || fan_rc=$?
+    xargs -0 -P "${AI_REVIEW_JOBS}" -n1 bash "${AI_REVIEW_SELF}" \
+      "${AI_REVIEW_WORKER_FLAG:---__review-one}")" || fan_rc=$?
 
   # A batch counts as reviewed only if it emitted a sentinel with a real JSON
   # file (field 4 != "-"). A crashed worker (xargs rc != 0), a missing

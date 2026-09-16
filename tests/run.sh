@@ -18,6 +18,7 @@ if (( RUN_LINT )) && command -v shellcheck &>/dev/null; then
   echo "==> shellcheck"
   shellcheck -x -P SCRIPTDIR \
     engines/security-compliance-review/harness/ai-security-compliance-review \
+    engines/security-compliance-review/harness/ai-security-compliance-audit \
     engines/test-classifier/harness/ai-test-classifier \
     engines/_common/harness/core.sh engines/_common/endpoints.sh \
     engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \
@@ -33,9 +34,9 @@ fi
 echo "==> pytest"
 python3 -m pytest tests/python/ -q || fail=1
 
-echo "==> bats: core + e2e + ci_shared + test_classifier"
+echo "==> bats: core + e2e + ci_shared + test_classifier + audit"
 bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \
-  tests/bats/test_classifier.bats || fail=1
+  tests/bats/test_classifier.bats tests/bats/audit.bats || fail=1
 
 # tests/bats/sandbox.bats covers the experimental (unshipped) sandbox and is
 # not part of the default suite; run it manually with Docker if working on it.
