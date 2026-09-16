@@ -1,9 +1,15 @@
-# AI security & compliance review as a required check — fail the job on any finding.
+# AI security & compliance review as a required check.
 #
-# `gate: true` makes a non-APPROVE result exit non-zero, so this job can be a
-# required status check in branch protection. Use deliberately: the review is
-# advisory by default because findings are second-opinion signal, not a
-# guaranteed-correct gate.
+# `gate` is the severity at which the job fails: off (default) | critical |
+# high | any. Anything but `off` makes this job usable as a required status
+# check in branch protection. Use deliberately: the review is advisory by
+# default because findings are second-opinion signal, not a guaranteed-correct
+# gate.
+#
+# `high` is the usual first gate. `any` fails on a single LOW finding, which
+# most teams cannot live with as a required check. Findings below the gate
+# still post as inline comments — `gate` changes what fails the build, never
+# what gets reported.
 name: AI security & compliance review (gating)
 on:
   pull_request:
@@ -23,6 +29,7 @@ jobs:
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          gate: true
+          # Fail on HIGH and CRITICAL; MEDIUM and LOW still post as comments.
+          gate: high
           # Stronger second opinion before failing a build:
           adjudication: independent

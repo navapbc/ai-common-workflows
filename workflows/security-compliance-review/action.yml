@@ -35,9 +35,12 @@ inputs:
     required: false
     default: "true"
   gate:
-    description: "Fail the job (exit 1) on any non-APPROVE result. Default: advisory."
+    description: >-
+      Severity at which the job starts failing: off (default, advisory) |
+      critical | high | any. `high` fails on HIGH and CRITICAL. Findings below
+      it still post as comments. Accepts true/false for any/off.
     required: false
-    default: "false"
+    default: "off"
   dry-run:
     description: "Print the plan and exit without calling the AI."
     required: false

@@ -47,7 +47,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `openai-api-key` | — | OpenAI key (codex) |
 | `github-token` | `${{ github.token }}` | Token to post the review (`pull-requests: write`) |
 | `post-comments` | `true` | Post inline comments to the PR |
-| `gate` | `false` | Fail the job on any non-APPROVE result |
+| `gate` | `off` | Severity at which the job fails: `off` \| `critical` \| `high` \| `any`. Lower findings still post as comments |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
 | `profile` | `baseline` | Compliance profile: `baseline` \| `cms-ars`, a `skills/profiles/` name, or a custom profile directory path. The floor always applies; a profile only adds to it |
@@ -80,10 +80,48 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 
 ## Advisory vs gating
 
-By default the review is **advisory**: findings post as comments and the job
-stays green. Set `gate: true` to fail the job on any non-APPROVE result — then
-the job can be a required check. See
+`gate` is the severity at which the job starts failing. One setting, four
+values, from most permissive to least:
+
+| `gate` | The job fails when the review finds |
+|---|---|
+| `off` *(default)* | never — findings post as comments and the job stays green |
+| `critical` | a CRITICAL finding |
+| `high` | a HIGH or CRITICAL finding |
+| `any` | anything at all, LOW included |
+
+```yaml
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
+        with:
+          gate: high        # fail on HIGH and CRITICAL
+```
+
+Once `gate` is anything but `off`, the job can be a required status check. See
 [`examples/workflows/ai-security-compliance-review-gating.yml`](../examples/workflows/ai-security-compliance-review-gating.yml).
+
+Most teams should not start at `any`: the review emits a finding-bearing result
+for a single LOW observation, so `any` blocks merges on nits. `high` is the
+usual first gate.
+
+**Findings below the gate still post as inline comments.** The setting changes
+what fails the build, never what gets reported.
+
+`true` and `false` are accepted as aliases for `any` and `off`, so an existing
+boolean config keeps working.
+
+Two behaviours to know before relying on it, both chosen so the gate cannot
+silently pass:
+
+- A finding whose severity is missing or unrecognized counts as **blocking**,
+  with a warning naming how many. An unreadable severity never buys a pass.
+- The gate is evaluated against the engine's own findings JSON, so a finding
+  that could not be anchored to a diff line still counts. Whether a comment
+  could be placed does not change the verdict.
+
+This is also the **only** path in this repo that can gate. Copilot's native
+review (see [copilot-review-setup.md](copilot-review-setup.md)) posts comments
+but submits no blocking review and emits no status check, so there is nothing
+there for a ruleset to require.
 
 ## Read-only mode (no repository writes)
 

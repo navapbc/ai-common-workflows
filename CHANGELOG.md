@@ -8,6 +8,21 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`gate` now takes a severity instead of a boolean**: `off` (default) |
+  `critical` | `high` | `any`. It reads as one scale — the severity at which
+  the job starts failing — rather than an on/off switch plus a separate floor.
+  `true` and `false` still work as aliases for `any` and `off`, so existing
+  configs are unaffected.
+  Previously `gate: true` failed on any non-`APPROVE` result, and the review
+  emits a finding-bearing result for a single LOW observation, so gating was
+  all-or-nothing and effectively unadoptable as a required check. `high` is
+  the usual first gate. Findings below the gate still post as inline comments —
+  the setting changes what fails the build, never what is reported.
+  Two deliberate behaviors: a finding whose severity is missing or
+  unrecognized counts as **blocking** (with a warning naming how many) rather
+  than being read as LOW, and the gate is evaluated against the engine's own
+  findings JSON so a finding that could not be anchored to a diff line still
+  counts.
 - **[docs/copilot-review-setup.md](docs/copilot-review-setup.md)** — the
   Copilot review path as five numbered steps, and a row for it in the top-level
   README, which previously did not mention Copilot at all: the instruction
