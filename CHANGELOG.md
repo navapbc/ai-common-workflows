@@ -8,6 +8,22 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tests/python/test_entrypoint_invariants.py`** — static guards for the
+  obligations an engine entrypoint inherits from `_common`, written after the
+  audit shipped without `ai_review::configure_endpoint`. That bug was invisible
+  to every existing suite: the engine ran, the JSON parsed, the marker was
+  found — the only symptom was that `AI_REVIEW_PROVIDER` did nothing and the
+  traffic went somewhere the operator had not chosen. A missing *setup call*
+  has no failing assertion unless something checks for the call itself.
+  Seven invariants: any entrypoint that invokes a model must configure the
+  endpoint and resolve the tool; every entrypoint must call `parse_args` (or
+  the shared flags look broken rather than unimplemented), override the generic
+  `print_help` (or print help for a workflow the reader is not running), set
+  `SKILL_NAME` before logging (or the first `info` call dies on an unbound
+  variable under `set -u`), and derive `ENGINE_HOME` from `BASH_SOURCE` rather
+  than the CWD (or the rubric is read from the *audited* repo). Plus one
+  asserting the entrypoint glob matched something, since a glob that matched
+  nothing would make the rest vacuous.
 - **`tests/corpus/`** — a detection corpus: fixture diffs with expected
   findings, plus a runner and a scorer. It is the only thing in the repo that
   measures whether the **review** is any good; everything in `tests/bats/` and
@@ -121,6 +137,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/codebase-audit.md` leads with the endpoint decision**, before the
+  quickstart: Bedrock, Azure OpenAI, Vertex and self-hosted gateways first with
+  copy-paste exports, the public API after. The reason is specific to the audit
+  — a PR review exposes the lines someone changed, an audit of `src/` exposes
+  `src/` — so the data path is the first decision, not a later tuning step.
+  It also notes that the endpoint is per-invocation: an audit run without the
+  exports goes to the public API, so they belong in a shell profile.
+  `docs/private-endpoints.md` now states up front that it covers the audit too.
 - **`docs/security-compliance-review.md` opens with the division of labor**
   against SAST, SCA and secret scanning, before the quickstart: what each tool
   is best at, and the four things this review structurally cannot do
@@ -314,6 +338,18 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The codebase audit ignored `AI_REVIEW_PROVIDER` entirely.** It never called
+  `ai_review::configure_endpoint`, so an audit configured for Bedrock, Vertex
+  or Azure OpenAI went to the **public API** with whatever key happened to be
+  in the environment — and reported nothing about it. This is the worst shape
+  of failure the audit can have: unlike the PR review it sends the whole scope
+  rather than a diff, so an ignored endpoint setting means an entire codebase
+  to the wrong place. A misconfiguration is now a hard error before the model
+  is called (`provider=bedrock requires AWS_REGION`) rather than a silent
+  fallback, and `--dry-run` prints a `Provider:` line — flagged
+  `(PUBLIC endpoint …)` on the default — so the data path can be checked
+  before anything leaves the machine. Endpoint validation still runs after the
+  dry-run gate, so inspecting the plan needs no credentials.
 - **The review body's feedback ask is now the last line.** It was appended to
   the summary before the overflow sections, so "was this helpful?" appeared
   above the out-of-diff, unanchored and capped findings and read as the end of

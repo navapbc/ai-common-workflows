@@ -3,17 +3,89 @@
 Audit a whole repo (or one directory) for security and compliance issues.
 Local, ad-hoc, read-only. Nothing is installed in the repo you audit.
 
-## Run it
+Because an audit sends the whole scope to a model, **decide the endpoint before
+you decide anything else** — Bedrock, Azure OpenAI, Vertex or your own gateway
+keep it inside your boundary.
 
-Three lines, once:
+## Before you run it: where does the code go?
+
+**An audit sends the whole scope to the model endpoint, not a diff.** That is
+the difference that matters. A PR review exposes the lines someone changed; an
+audit of `src/` exposes `src/`. Decide the data path first — it is a harder
+question to unwind afterwards.
+
+`--dry-run` tells you what it would use, before anything leaves the machine:
+
+```
+  Provider:       api (PUBLIC endpoint — see docs/private-endpoints.md for in-boundary options)
+```
+
+### In your boundary (recommended)
+
+Same engine, same rubric — only the endpoint changes. Set it once in your
+shell and the audit stays inside your account:
+
+**AWS Bedrock** — Claude in your own AWS account and region:
 
 ```bash
-git clone https://github.com/navapbc/ai-common-workflows ~/ai-common-workflows
+export AI_REVIEW_TOOL=claude
+export AI_REVIEW_PROVIDER=bedrock
+export AWS_REGION=us-east-1                     # the region you are allowed to use
+export AI_REVIEW_MODEL=us.anthropic.claude-sonnet-4-5
+# credentials from your ambient AWS source: SSO, a profile, IRSA, instance role
+```
+
+**Azure OpenAI** — a deployment in your own resource:
+
+```bash
+export AI_REVIEW_TOOL=codex
+export AI_REVIEW_PROVIDER=azure
+export AZURE_OPENAI_ENDPOINT=https://my-resource.openai.azure.com
+export AZURE_OPENAI_API_KEY=...                 # or let a gateway handle auth
+export AI_REVIEW_MODEL=my-deployment            # the Azure *deployment* name
+```
+
+**Google Vertex AI**:
+
+```bash
+export AI_REVIEW_TOOL=claude
+export AI_REVIEW_PROVIDER=vertex
+export ANTHROPIC_VERTEX_PROJECT_ID=my-project
+export CLOUD_ML_REGION=us-east5
+# credentials from ambient GCP ADC
+```
+
+**A gateway you run** (LiteLLM and similar) — set `ANTHROPIC_BASE_URL` or
+`OPENAI_BASE_URL` and keep `AI_REVIEW_PROVIDER=api`.
+
+Full matrix, credential handling and least-privilege guidance:
+[private-endpoints.md](private-endpoints.md).
+
+Two things worth knowing whichever you pick. A misconfiguration is now a hard
+error rather than a silent fallback — `provider=bedrock` without a region fails
+before the model is called, instead of quietly using the public API. And
+**in-boundary only holds if the machine is too**: running this on a laptop
+means the code was already on the laptop, but the *egress* is what you are
+controlling here, and this tool enforces no network boundary of its own.
+
+### Public API
+
+If your program permits it, this is the shortest path:
+
+```bash
 export AI_REVIEW_TOOL=claude          # or codex, or copilot
 export ANTHROPIC_API_KEY=sk-...       # OPENAI_API_KEY for codex
 ```
 
-Then, from the repo you want to audit:
+## Run it
+
+Once, to get the engine:
+
+```bash
+git clone https://github.com/navapbc/ai-common-workflows ~/ai-common-workflows
+```
+
+Then, with the endpoint configured above, from the repo you want to audit:
 
 ```bash
 cd ~/code/my-repo
@@ -29,7 +101,9 @@ echo "alias audit='bash ~/ai-common-workflows/engines/security-compliance-review
 source ~/.zshrc
 ```
 
-Now it's `audit` from any repo.
+Now it's `audit` from any repo. Put the provider exports in your shell profile
+next to it, so an in-boundary endpoint is the default rather than something you
+remember.
 
 ## The four things you'll actually use
 
@@ -100,12 +174,19 @@ and files over 256 KB. Each skip is printed so you know what wasn't examined.
 - **Not for CI.** A full-repo audit costs roughly one model call per batch
   every run, which is fine by hand and expensive on every push. It warns if it
   detects CI, and there's deliberately no GitHub Action for it.
+- **The endpoint is per-invocation, not baked in.** Nothing remembers your
+  provider between runs, so an audit run without the exports goes to the
+  public API. Put them in your shell profile, and check the `Provider:` line
+  in `--dry-run` when it matters.
 
 ## If something goes wrong
 
 | Message | Fix |
 |---|---|
 | `AI_REVIEW_TOOL must be set` | `export AI_REVIEW_TOOL=claude` |
+| `provider=bedrock requires AWS_REGION` | `export AWS_REGION=…` — it fails rather than falling back to the public API |
+| `provider=azure requires AZURE_OPENAI_ENDPOINT` | Set the resource endpoint; `AI_REVIEW_MODEL` is the deployment name |
+| `provider=vertex requires …PROJECT_ID` | Set `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` |
 | `Not a git repository` | Run it from the repo root |
 | `No files in scope` | Check the path, `--include`/`--exclude`, `--max-file-bytes` |
 | `must start with 'base' or 'none'` | Prefix the list: `--profile base,cms-ars` |
