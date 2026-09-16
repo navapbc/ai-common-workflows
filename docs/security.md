@@ -173,8 +173,11 @@ with credentials scoped to `contents: write` + `pull-requests: write` on
 `GITHUB_TOKEN` pushes the branch and a human opens the PR (GitHub blocks PR
 creation by workflows unless a repo toggle is enabled); an optional
 `COPILOT_SYNC_TOKEN` automates PR creation without granting any workflow
-approve rights. Issue that PAT from a dedicated **machine user** rather than a
-person's account: it keeps the credential's reach to the repos the sync touches
+approve rights. Scope that PAT to **`Pull requests: Read and write` only** — it
+is read solely by `gh pr list` / `gh pr create`, while the branch push
+authenticates as the built-in `GITHUB_TOKEN` that `actions/checkout` persisted,
+so granting it `Contents` would let it write to any branch for no gain. Issue
+it from a dedicated **machine user** rather than a person's account: it keeps the credential's reach to the repos the sync touches
 instead of everything one human can read, and the automation does not break
 when that human's access changes. Pin `ACW_REF` to a commit SHA
 (or release tag) so upgrades are deliberate. See

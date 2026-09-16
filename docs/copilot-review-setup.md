@@ -54,8 +54,20 @@ account for automation — a *machine user* — and issue the PAT from there:
    the org and to a team with write on that repo.
 3. Signed in as that account, create a **fine-grained PAT**:
    - **Repository access:** only the repo(s) running the sync
-   - **Permissions:** `Contents: Read and write`, `Pull requests: Read and write`
+   - **Permissions:** `Pull requests: Read and write` — and nothing else
+     (`Metadata: Read-only` is added automatically and is required)
 4. Store it in the consuming repo as the secret **`COPILOT_SYNC_TOKEN`**.
+
+**`Contents` is deliberately not granted.** This token never pushes anything.
+`actions/checkout` persists the built-in `GITHUB_TOKEN` into `.git/config`, so
+`git push` authenticates as that token under the workflow's own
+`contents: write` permission. `COPILOT_SYNC_TOKEN` is read only by `gh pr list`
+and `gh pr create` — both pull-request operations. Granting it `Contents: Read
+and write` would let it push to any branch in the repo, `main` included, for no
+gain.
+
+If `gh pr create` fails with a 404 after tightening — `gh` may verify the head
+ref before posting — add `Contents: Read-only`, never write.
 
 Three reasons this is a requirement and not a preference. A token issued from a
 person's account attributes every sync PR to them, as though they wrote it. It
@@ -151,6 +163,7 @@ does it:
 |---|---|
 | `GitHub Actions is not permitted to create or approve pull requests` | Expected without `COPILOT_SYNC_TOKEN` — the branch **is** pushed; open the PR from the printed compare URL (step 3) |
 | `profile '<x>' not found` | `PROFILE` names a directory that doesn't exist under `copilot-instructions/profiles/` |
+| `gh pr create` 404s right after tightening the PAT scope | `gh` may verify the head ref; add `Contents: Read-only` — never write (step 3) |
 | PR creation worked, then started failing with a `gh` auth error | `COPILOT_SYNC_TOKEN` expired — fine-grained PATs do (step 3) |
 | Run is green but no PR and no instructions on your default branch | Your copy predates the open-PR fix; a closed or merged sync PR on the branch kept matching. Take the current example (step 1) |
 | Instructions synced, but reviews look generic | Copilot review isn't enabled, or isn't being requested on the PR (step 5) |

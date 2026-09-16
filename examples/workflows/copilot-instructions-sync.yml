@@ -25,7 +25,10 @@
 #
 # b. Recommended for full automation WITHOUT granting workflows approve
 #    rights: add a `COPILOT_SYNC_TOKEN` repo secret — a fine-grained PAT
-#    scoped to THIS repo (contents:write + pull-requests:write), issued from a
+#    scoped to THIS repo with pull-requests:write ONLY (this token never
+#    pushes: the branch is pushed by the built-in GITHUB_TOKEN that
+#    actions/checkout persisted, so granting contents is pure over-reach),
+#    issued from a
 #    dedicated MACHINE USER rather than a person's account, so sync PRs are
 #    not attributed to a colleague and the automation outlives any one
 #    individual's access. The workflow uses it automatically. The

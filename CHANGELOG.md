@@ -123,6 +123,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`COPILOT_SYNC_TOKEN` is scoped to `Pull requests: Read and write` only.**
+  It was documented with `Contents: Read and write`, which it never uses: the
+  sync token authenticates only `gh pr list` and `gh pr create`, while the
+  branch push authenticates as the built-in `GITHUB_TOKEN` that
+  `actions/checkout` persists into `.git/config`, under the workflow's own
+  `contents: write`. `Contents: Read-only` is named as the fallback if
+  `gh pr create` turns out to verify the head ref. The Jenkins SCM token is
+  unaffected and still needs `Contents: Read` — it reads the repo.
 - **The `Suggestion:` line in a posted comment carries its one-line summary
   again.** The pre-restructure reviewer
   (`navapbc/ai-transformation-delivery-systems`, `security/review`) rendered
