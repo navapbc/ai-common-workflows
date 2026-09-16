@@ -19,12 +19,14 @@ per-profile additions:
   severity items, the FIPS algorithm posture, and CMS-specific checks.
 
 Consumer repos receive the base files plus their profile's additions (if any)
-in `.github/instructions/`, where GitHub Copilot's code review reads any
-`*.instructions.md` that carries an `applyTo:` frontmatter glob. Each
-additions file is scoped to the same `applyTo` paths as the base file it
-supplements, and says so in its own text — including which of its points
-override the base on conflict — since Copilot has no notion of file
-precedence and only sees a flat directory.
+in `.github/instructions/ai-review/`, where GitHub Copilot's code review reads
+any `*.instructions.md` that carries an `applyTo:` frontmatter glob — it reads
+subdirectories of `.github/instructions/` as well as the directory itself, so
+the whole integration lives in one directory the sync owns, alongside (never
+mixed into) a consumer's own instruction files. Each additions file is scoped
+to the same `applyTo` paths as the base file it supplements, and says so in its
+own text — including which of its points override the base on conflict — since
+Copilot has no notion of precedence between instruction files.
 
 The `ai-review-` prefix keeps them collision-free with a consumer's own files
 and makes upgrades a whole-file replacement; the `-additions` suffix is what
@@ -47,9 +49,10 @@ runs a small sync workflow in its own repo that *pulls* the files:
 [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
 — copied into a consumer's `.github/workflows/`, it checks out this repo at a
 pinned `ACW_REF`, copies the base `ai-review-*.instructions.md` plus the chosen
-`PROFILE`'s `*-additions` files (if it has any) into `.github/instructions/`,
-removes any `*-additions` left over from a profile the repo no longer tracks,
-and opens (or updates) a PR on the branch `ai-review/instructions-sync`. It
+`PROFILE`'s `*-additions` files (if it has any) into
+`.github/instructions/ai-review/`, removes any `*-additions` left over from a
+profile the repo no longer tracks, and opens (or updates) a PR on the branch
+`ai-review/instructions-sync`. It
 never pushes to the default branch — every change is a reviewable PR. It is
 idempotent: no diff → no PR.
 
@@ -89,7 +92,7 @@ When adding a profile, write only the deltas — don't restate base checks in an
 additions file, or the two copies will drift the way the old per-profile
 standalone sets did. Give an additions file the same `applyTo` glob as the
 base file it supplements, and state in its body that it supplements rather
-than replaces (Copilot sees a flat directory with no precedence rules).
+than replaces (Copilot applies no precedence between instruction files).
 
 ## Validating a change
 
