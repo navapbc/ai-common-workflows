@@ -1,39 +1,68 @@
 # Compliance profiles
 
-The review always applies a **security** perspective (secrets, PII, OWASP Top 10,
-general defects) and a **compliance** perspective — a framework-neutral IaC
-security floor (CIS Benchmarks / NIST CSF / OWASP) that also always applies.
-A selectable **profile** may *add* agency- or framework-specific checks and
-control-ID citations on top of that floor, so the same engine serves a CMS
-system, a different federal agency, a state agency, or a team with no specific
-mandate, without any of them losing baseline coverage.
-
-A profile only ever **adds**. Every base rubric file always reaches the prompt;
-a profile's copy of the same filename is appended after it, never substituted
-for it. There is no override path, so **no profile can remove or weaken any
-base coverage** — security or compliance. The review mechanics (fan-out,
-adjudication, comment format, gating) are identical across profiles.
-
-**Profiles compose.** `profile` takes one name or a comma-separated list, so a
-program subject to two frameworks applies both:
+`profile` is an **ordered list of rubric sources**. The shared floor is an
+explicit member of that list, not an implicit extra:
 
 ```yaml
-    profile: cms-ars,pci-dss
+    profile: base                        # the floor alone
+    profile: base,cms-ars                # floor + CMS additions
+    profile: base,cms-ars,pci-dss        # floor + CMS + PCI; PCI wins a conflict
+    profile: none,my-agency-everything   # NO floor; you supply the whole rubric
 ```
 
-Additions layer in list order, and each one is told it outranks everything
-above it — so on a genuine conflict the **last profile listed wins**.
+The floor is the framework-neutral rubric in `skills/base/`: a **security**
+perspective (secrets, PII/PHI, OWASP Top 10, general defects) and a
+**compliance** perspective (CIS Benchmarks / NIST CSF / OWASP for IaC). A
+profile layers agency- or framework-specific checks and control-ID citations on
+top, so one engine serves a CMS system, another federal agency, a state agency,
+or a team with no mandate.
+
+**Sources only ever add.** Each one is appended after the ones before it and
+told that it outranks everything above it, so on a genuine conflict the **last
+entry wins**. A source cannot remove or weaken what is above it — it can
+contradict a check, but the earlier text still reaches the model. If you need a
+base check switched off, that is a signal it belongs behind a base-level
+condition rather than in a profile.
+
+**The first entry must be `base` or `none`.** That is not ceremony. Omitting
+the floor is a silent, severe failure — the review still runs, still posts,
+still reports a verdict, and has checked almost nothing against 1,200-odd lines
+of rubric that are no longer there. `profile: cms-ars` is a natural thing to
+type, so it is a configuration error rather than a quiet downgrade:
+
+```
+::error::AI_REVIEW_PROFILE must start with 'base' or 'none' (got 'cms-ars').
+```
+
+`base` must also be *first*: listed later it would outrank the overlays layered
+before it, which is never what anyone means.
+
+**`none` is the full-control escape hatch.** A program that needs to own the
+entire rubric declares it, in the config, where a reviewer can see it — rather
+than reaching for a per-file override that silently replaced a base file. If
+you use it, your profile must supply the file carrying the output contract
+(`pr-review.md` for the review, `codebase-audit.md` for the audit) or the run
+fails up front with a message saying so: those files define the result marker
+and the findings JSON, so without one nothing downstream can parse the output.
+
+**`finding-adjudication.md` sits outside this list** and is always read from
+`skills/base/`. It governs how findings are *judged*, not what is looked for,
+so `none` must not cost a program its false-positive filter. Adjudication
+behaves identically under every profile.
+
+The review mechanics — fan-out, adjudication modes, comment format, gating —
+are identical across all sources.
 
 ## Bundled profiles
 
 | Profile | Adds | Use when |
 |---|---|---|
-| `baseline` *(default)* | Nothing — no rubric additions. You get the framework-neutral CIS/NIST CSF/OWASP floor only. | You want a solid security baseline with no specific agency mandate |
+| `base` *(required first entry)* | Nothing to add — it IS the framework-neutral CIS/NIST CSF/OWASP floor only. | You want a solid security baseline with no specific agency mandate |
 | `cms-ars` | CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations for the floor's findings, plus CMS/HIPAA-specific checks the floor doesn't cover (MFA, vulnerability/posture monitoring, WAF/DoS, malware/image provenance, pipeline integrity, and a detailed PHI/PII log-content review) | CMS systems and contractors |
 
 ## Selecting a profile
 
-Everything defaults to `baseline`; set it explicitly to add a framework-specific
+Everything defaults to `base`; add a profile after it to layer a framework-specific
 overlay.
 
 - **GitHub Action** — the `profile` input:
@@ -48,7 +77,10 @@ overlay.
   ```
 - **Engine directly** — the `AI_REVIEW_PROFILE` environment variable.
 - **Copilot instructions** — the `PROFILE` in your copy of the sync workflow
-  ([`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)):
+  ([`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)).
+  Note this one is a **single value, not a list**, and its base set always
+  syncs — the sync copies files rather than assembling a prompt, so it has not
+  adopted the list form:
   ```yaml
   env:
     PROFILE: baseline   # or cms-ars, or your own profile

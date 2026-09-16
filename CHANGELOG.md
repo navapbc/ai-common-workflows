@@ -72,30 +72,38 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Profiles are additive everywhere, and several can be combined.** Every base
-  rubric file now always reaches the prompt, with each profile's copy of the
-  same filename appended after it as an addition. The whole-file override path
-  for `code-security.md`, `pr-review.md` and `codebase-audit.md` is **deleted**,
-  not merely bypassed, so a profile can no longer replace or suppress base
-  coverage — only add to it. `iac-compliance.md` already worked this way.
-  Why: an override forced a profile that wanted one extra check to copy ~20 KB
-  of rubric it then had to maintain forever — the drift that per-profile
-  standalone rubrics already caused once — and two overrides cannot compose,
-  because one silently wins.
-  `profile` / `AI_REVIEW_PROFILE` now accepts a **comma-separated list**
-  (`cms-ars,my-overlay`, bundled names and directory paths freely mixed).
-  Additions layer in list order and each is instructed that it outranks
-  everything above it, so the **last profile listed wins** a genuine conflict.
-  The resolution and layering live in `ai_review::resolve_profiles` /
-  `ai_review::profile_additions` in `_common`, shared by the review and audit
+- **`profile` is now an ordered list of rubric sources, with the shared floor
+  as an explicit member.** `base` | `base,cms-ars` | `base,cms-ars,pci-dss` |
+  `none,my-agency-everything`. Sources layer in order, each only ever adding to
+  what is above it, and the **last entry wins** a genuine conflict. The
+  whole-file override path is **deleted** — `pr_review::rubric` and
+  `audit::rubric` are gone, with a test that fails if either returns — so no
+  source can replace or suppress what precedes it.
+  **The first entry must be `base` or `none`.** Omitting the floor is a silent,
+  severe failure: the review still runs, still posts, still reports a verdict,
+  having checked almost nothing against ~1,250 lines of rubric that are no
+  longer there. `profile: cms-ars` is a natural thing to type, so it is a
+  configuration error rather than a quiet downgrade. `base` must also be first —
+  listed later it would outrank the overlays layered before it.
+  `none` is the full-control escape hatch, declared in the config where a
+  reviewer can see it, replacing a per-file override that silently substituted a
+  base file. A `none` list must still supply the file carrying the output
+  contract (`pr-review.md`, or `codebase-audit.md` for the audit); otherwise the
+  run fails up front naming that file, rather than dying later on unparseable
+  output.
+  `finding-adjudication.md` is deliberately **outside** the list and always read
+  from `skills/base/`: it governs how findings are judged, not what is looked
+  for, so `none` does not cost a program its false-positive filter.
+  Composition lives in `ai_review::resolve_profiles`, `ai_review::rubric_block`
+  and `ai_review::require_rubric` in `_common`, shared by the review and audit
   entrypoints rather than duplicated in each.
-  Behaviorally inert for `baseline` and `cms-ars` — neither ships a file that
-  was previously overridden. A bring-your-own profile that shipped
-  `code-security.md` or `pr-review.md` will now have it appended rather than
-  substituted; nothing in-tree did.
-  **Not changed:** the Copilot instructions sync still takes a single
-  `PROFILE`. Its layering is file-copying rather than prompt assembly, so list
-  support there is a separate change.
+  **Removed:** the `baseline` profile directory, which was a 10-line README
+  standing in for "the floor alone" — now spelled `base`. The `profile` input
+  and `AI_REVIEW_PROFILE` default from `baseline` to `base`.
+  **Not changed:** the Copilot instructions sync still takes a single `PROFILE`
+  whose base set always syncs. It copies files rather than assembling a prompt,
+  so the list form is a separate change with its own stale-overlay problem.
+
 - **`ai_review::plan_diff_batches` split into a generic grouper plus a
   diff-scoped caller.** `ai_review::group_files_into_batches` takes file paths
   on stdin, so a workflow whose scope is not a diff reuses the same grouping,

@@ -52,14 +52,16 @@ inputs:
   # ── Compliance profile ────────────────────────────────────────────────────
   profile:
     description: >-
-      Compliance profile: baseline (default, no agency overlay) | cms-ars
-      (adds CMS ARS 5.1 / NIST 800-53 citations + CMS/HIPAA checks), a name
-      under the engine's skills/profiles/, or a path to a custom profile
-      directory. Several may be combined with commas (cms-ars,my-overlay);
-      additions layer in order and the last listed wins a conflict. Every base
-      rubric always applies — a profile only ever adds, never replaces.
+      Ordered list of rubric sources, starting with `base` (the shared
+      framework-neutral floor) or `none` (no floor — your profile supplies the
+      whole rubric). Then any profile names under the engine's skills/profiles/
+      or paths to custom profile directories: `base`, `base,cms-ars`,
+      `base,cms-ars,pci-dss`, `none,my-agency-everything`. Sources layer in
+      order and the last listed wins a conflict; a source only ever adds to
+      what is above it. The first entry must be `base` or `none`, so the floor
+      cannot be dropped by accident.
     required: false
-    default: "baseline"
+    default: "base"
 
   # ── LLM endpoint ──────────────────────────────────────────────────────────
   provider:

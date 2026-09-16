@@ -70,20 +70,28 @@ teardown() {
   [[ "$output" == *"DRY-RUN"* ]]
 }
 
-@test "profile: defaults to baseline" {
+@test "profile: defaults to base" {
   run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"Profile:"* ]]
-  [[ "$output" == *"baseline"* ]]
+  [[ "$output" == *"base"* ]]
 }
 
-@test "profile: cms-ars selected via AI_REVIEW_PROFILE" {
-  AI_REVIEW_PROFILE=cms-ars run bash "${ENGINE}" --against origin/main --dry-run
+@test "profile: base,cms-ars selected via AI_REVIEW_PROFILE" {
+  AI_REVIEW_PROFILE=base,cms-ars run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"Profile:"*"cms-ars"* ]]
 }
 
-@test "profile: baseline compliance floor always applies; cms-ars only adds to it" {
+@test "profile: a bare profile name without base is refused" {
+  # Dropping the floor has to be deliberate: the review would otherwise run,
+  # report a verdict, and have checked almost nothing.
+  AI_REVIEW_PROFILE=cms-ars run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must start with 'base' or 'none'"* ]]
+}
+
+@test "profile: the compliance floor applies under base; cms-ars only adds to it" {
   local log_baseline="${WORK}/prompt-baseline.log"
   STUB_PROMPT_LOG="${log_baseline}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
     run bash "${ENGINE}" --against origin/main --json-only
@@ -92,7 +100,7 @@ teardown() {
   ! grep -q -- "ADDITIONS" "${log_baseline}"
 
   local log_cms="${WORK}/prompt-cms.log"
-  AI_REVIEW_PROFILE=cms-ars STUB_PROMPT_LOG="${log_cms}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+  AI_REVIEW_PROFILE=base,cms-ars STUB_PROMPT_LOG="${log_cms}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
     run bash "${ENGINE}" --against origin/main --json-only
   [ "$status" -eq 0 ]
   grep -q -- "COMPLIANCE PERSPECTIVE ────" "${log_cms}"
@@ -100,7 +108,7 @@ teardown() {
 }
 
 @test "profile: unknown name is a config error (exit 2)" {
-  AI_REVIEW_PROFILE=nope run bash "${ENGINE}" --against origin/main --dry-run
+  AI_REVIEW_PROFILE=base,nope run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 2 ]
   [[ "$output" == *"not a known profile"* ]]
 }
@@ -120,7 +128,7 @@ teardown() {
   local byo="${WORK}/myprofile"
   mkdir -p "${byo}"
   echo "# custom compliance rubric" > "${byo}/iac-compliance.md"
-  AI_REVIEW_PROFILE="${byo}" run bash "${ENGINE}" --against origin/main --dry-run
+  AI_REVIEW_PROFILE="base,${byo}" run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"${byo}"* ]]
 }

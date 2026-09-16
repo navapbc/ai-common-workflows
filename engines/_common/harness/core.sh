@@ -735,39 +735,77 @@ ai_review::extract_review_json() {
   '
 }
 
-# ── Compliance profiles ─────────────────────────────────────────────────────
-# A profile only ever ADDS to the rubric. The base skill in
-# ${ENGINE_HOME}/skills/base/ always applies; a profile's copy of the same
-# filename is appended after it as an addition, never substituted for it.
+# ── Rubric composition (profiles) ───────────────────────────────────────────
+# AI_REVIEW_PROFILE is an ordered, comma-separated list of rubric sources. The
+# shared base is an explicit member of that list, not an implicit extra:
 #
-# That is a deliberate policy, not an implementation detail: a profile exists
-# to layer an agency's requirements onto a floor everybody gets, so it must not
-# be able to remove coverage. The earlier override semantics let a profile
-# replace a base file, which meant copying ~20KB of rubric it then had to
-# maintain forever — the drift that per-profile standalone rubrics already
-# caused once.
+#   base                       the framework-neutral floor, alone
+#   base,cms-ars               floor + CMS additions
+#   base,cms-ars,pci-dss       floor + CMS + PCI; PCI wins a conflict
+#   none,my-agency-everything  NO floor — the program supplies the whole rubric
 #
-# AI_REVIEW_PROFILE takes one profile or a comma-separated list. Additions are
-# appended in list order, and each one is told it outranks everything above it,
-# so the LAST profile listed wins any conflict.
+# Sources layer in list order and each is told it outranks everything above it,
+# so the LAST entry wins a genuine conflict.
+#
+# Why base is listed rather than always-on: a program that needs full control
+# used to reach for a per-file override, which was invisible and forced it to
+# copy ~20KB of rubric it then maintained forever. Declaring `none` is the same
+# capability, visible in the config.
+#
+# Why `none` is required rather than inferred from base's absence: omitting the
+# floor by accident is a silent, severe failure — the review still runs, still
+# posts, still reports a verdict, and checked almost nothing. `profile: cms-ars`
+# is a natural thing to type, so it must be an error rather than a quiet
+# downgrade. The first entry has to be `base` or `none`; there is no way to
+# type your way into dropping the floor.
+#
+# finding-adjudication.md is deliberately OUTSIDE this mechanism: it governs how
+# findings are judged, not what is looked for, so `none` must not cost a program
+# its false-positive filter. ai_review::build_adjudication_prompt reads it from
+# skills/base/ directly.
 
 # ai_review::resolve_profiles
-# Reads AI_REVIEW_PROFILE (default "baseline"); publishes the resolved
-# directories, newline-separated and in order, as AI_REVIEW_PROFILE_DIRS.
-# Exits 2 on a name that is neither a bundled profile nor a directory.
+# Publishes AI_REVIEW_RUBRIC_DIRS (newline-separated, in order) — the resolved
+# sources, with the base directory included when `base` was listed. Exits 2 on
+# a malformed list.
 ai_review::resolve_profiles() {
-  local raw="${AI_REVIEW_PROFILE:-baseline}"
-  local dirs="" name resolved
+  local raw="${AI_REVIEW_PROFILE:-base}"
+  local dirs="" name resolved first=1 saw_base=0 saw_none=0
   local oldifs="${IFS}"
   IFS=','
   # shellcheck disable=SC2086  # deliberate split on the comma list
   set -- ${raw}
   IFS="${oldifs}"
+
   for name in "$@"; do
-    # Trim surrounding whitespace so "cms-ars, pci-dss" works.
     name="${name#"${name%%[![:space:]]*}"}"
     name="${name%"${name##*[![:space:]]}"}"
     [[ -z "${name}" ]] && continue
+
+    case "${name}" in
+      base)
+        if ((first == 0)); then
+          ai_review::err "'base' must be the FIRST entry in AI_REVIEW_PROFILE (got '${raw}')."
+          ai_review::err "  Listed later, the floor would outrank the overlays layered before it,"
+          ai_review::err "  which is never what is meant. Use: base,<profile>[,<profile>...]"
+          exit 2
+        fi
+        saw_base=1
+        dirs="${dirs}${ENGINE_HOME}/skills/base"$'\n'
+        first=0
+        continue
+        ;;
+      none)
+        if ((first == 0)); then
+          ai_review::err "'none' must be the FIRST entry in AI_REVIEW_PROFILE (got '${raw}')."
+          exit 2
+        fi
+        saw_none=1
+        first=0
+        continue
+        ;;
+    esac
+
     if [[ -d "${name}" ]]; then
       resolved="$(cd "${name}" && pwd)"
     elif [[ -d "${ENGINE_HOME}/skills/profiles/${name}" ]]; then
@@ -776,44 +814,80 @@ ai_review::resolve_profiles() {
       ai_review::err "profile '${name}' is not a known profile or an existing directory."
       ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
       ai_review::log "  Or pass a path to a custom profile directory."
-      ai_review::log "  Several may be combined: AI_REVIEW_PROFILE=cms-ars,my-overlay"
       exit 2
     fi
     dirs="${dirs}${resolved}"$'\n'
+    first=0
   done
-  if [[ -z "${dirs}" ]]; then
-    ai_review::err "AI_REVIEW_PROFILE resolved to no profiles."
+
+  if ((saw_base == 0 && saw_none == 0)); then
+    ai_review::err "AI_REVIEW_PROFILE must start with 'base' or 'none' (got '${raw}')."
+    ai_review::err "  base,<profile>...  the shared rubric floor plus your additions (what you want)"
+    ai_review::err "  none,<profile>...  NO floor; your profile supplies the entire rubric"
+    ai_review::err "  Requiring the choice keeps the floor from being dropped by accident."
     exit 2
   fi
-  AI_REVIEW_PROFILE_DIRS="${dirs}"
-  export AI_REVIEW_PROFILE_DIRS
+  if [[ -z "${dirs}" ]]; then
+    ai_review::err "AI_REVIEW_PROFILE='${raw}' resolved to no rubric sources at all."
+    ai_review::err "  'none' alone supplies nothing to review against; list a profile after it."
+    exit 2
+  fi
+
+  AI_REVIEW_RUBRIC_DIRS="${dirs}"
+  export AI_REVIEW_RUBRIC_DIRS
 }
 
-# ai_review::profile_additions <rubric_filename> <section_label>
-# Prints the addition block for every resolved profile that supplies
-# <rubric_filename>, in list order. Prints nothing when none do — so a caller
-# can always interpolate it directly after the base file.
-#
-# Each block states that it outranks everything above it rather than just "the
-# base": with two profiles layered, a block that only claimed precedence over
-# the base would leave two sections both claiming to win.
-ai_review::profile_additions() {
+# ai_review::rubric_block <rubric_filename> <section_label>
+# Emits the composed body for one rubric section: the first source that
+# supplies the file verbatim, then each later source as an addition that
+# outranks everything above it. Prints nothing when no source supplies it —
+# ai_review::require_rubric is how a caller turns that into an error for a file
+# it cannot run without.
+ai_review::rubric_block() {
   local file="$1" label="$2"
-  local dir base
+  local dir name emitted=0
   while IFS= read -r dir; do
     [[ -z "${dir}" ]] && continue
     [[ -f "${dir}/${file}" ]] || continue
-    base="$(basename "${dir}")"
+    if ((emitted == 0)); then
+      cat "${dir}/${file}"
+      emitted=1
+      continue
+    fi
+    name="$(basename "${dir}")"
     cat <<ADDITION
 
-──────────── ${label} — ${base} ADDITIONS ────────────
-The following supplements the ${label} above for the '${base}' profile. It
+──────────── ${label} — ${name} ADDITIONS ────────────
+The following supplements the ${label} above for the '${name}' profile. It
 ADDS to everything above it and never replaces it. On any conflict with
 anything above — severity, citation, guidance — this section takes precedence.
 
 $(cat "${dir}/${file}")
 ADDITION
-  done <<<"${AI_REVIEW_PROFILE_DIRS:-}"
+  done <<<"${AI_REVIEW_RUBRIC_DIRS:-}"
+}
+
+# ai_review::require_rubric <rubric_filename>
+# Fails when no resolved source supplies <rubric_filename>. Use it for the
+# files that carry the OUTPUT CONTRACT (pr-review.md, codebase-audit.md): they
+# define the result marker and the findings JSON, so without one the run
+# produces unparseable output and dies later with a confusing error. Failing
+# here names the real cause.
+ai_review::require_rubric() {
+  local file="$1"
+  local dir
+  while IFS= read -r dir; do
+    [[ -n "${dir}" && -f "${dir}/${file}" ]] && return 0
+  done <<<"${AI_REVIEW_RUBRIC_DIRS:-}"
+  ai_review::err "No rubric source supplies ${file}."
+  ai_review::err "  AI_REVIEW_PROFILE='${AI_REVIEW_PROFILE:-}' resolved to:"
+  printf '%s' "${AI_REVIEW_RUBRIC_DIRS:-}" | while IFS= read -r dir; do
+    [[ -n "${dir}" ]] && ai_review::err "    ${dir}"
+  done
+  ai_review::err "  That file carries the result marker and findings-JSON contract, so the"
+  ai_review::err "  run cannot produce parseable output without it. Add 'base' to the list,"
+  ai_review::err "  or supply ${file} in your own profile."
+  exit 2
 }
 
 # ── Gate verdict ────────────────────────────────────────────────────────────

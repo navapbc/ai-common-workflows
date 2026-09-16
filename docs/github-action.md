@@ -50,7 +50,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
-| `profile` | `baseline` | Compliance profile: `baseline` \| `cms-ars`, a `skills/profiles/` name, or a custom profile directory path. The floor always applies; a profile only adds to it |
+| `profile` | `base` | Ordered rubric sources, first entry `base` or `none`: `base,cms-ars`. Later entries add and win conflicts — see [profiles.md](profiles.md) |
 | `provider` | `api` | `api` \| `bedrock` \| `vertex` \| `azure` (bedrock→claude or codex; vertex→claude; azure→codex) |
 | `model` | — | Model override; Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `aws-region` | — | Region for provider=bedrock (claude or codex) |

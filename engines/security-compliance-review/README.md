@@ -52,7 +52,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 |---|---|---|
 | `AI_REVIEW_TOOL` | yes | `claude` \| `codex` \| `copilot` |
 | `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` (claude or codex) \| `vertex` (claude) \| `azure` (codex) |
-| `AI_REVIEW_PROFILE` | no | Compliance profile: `baseline` (default) \| `cms-ars` \| a `skills/profiles/` name or a directory path, or a comma-separated list of any of those. Every `skills/base/` rubric always applies; each listed profile's copy of a rubric filename is appended after it as an addition, never a replacement, and the last listed wins a conflict — see [docs/profiles.md](../../docs/profiles.md) |
+| `AI_REVIEW_PROFILE` | no | Ordered list of rubric sources, first entry `base` (default) or `none`, then profile names / directory paths: `base`, `base,cms-ars`, `none,my-everything`. Sources layer in order, each only adding to what is above it, and the last listed wins a conflict. `finding-adjudication.md` is always read from `skills/base/` and is outside this list — see [docs/profiles.md](../../docs/profiles.md) |
 | `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `ANTHROPIC_API_KEY` | claude+api | Public Anthropic API key |
 | `OPENAI_API_KEY` | codex | Public OpenAI API key |
@@ -94,7 +94,7 @@ bash <engines>/security-compliance-review/harness/ai-security-compliance-audit [
 | Flag | Meaning |
 |---|---|
 | `<path>...` | Limit the audit to these files/directories (default: whole repo) |
-| `--profile <name\|dir>[,...]` | Compliance profile(s), default `baseline`. Additions layer in order; last wins |
+| `--profile <list>` | Rubric sources, default `base`. Must start with `base` or `none`; later entries add and win conflicts |
 | `--include <glob>` / `--exclude <glob>` | Narrow within the scope (repeatable) |
 | `--max-file-bytes <n>` | Skip files larger than n bytes (default 262144) |
 | `--list-files` | Print the files in scope; no AI call |

@@ -51,12 +51,14 @@ source "${AI_COMMON_HOME}/endpoints.sh"
 SKILL_NAME="security-compliance-audit"
 SKILL_HUMAN_NAME="AI Security & Compliance Audit"
 
-# ── Compliance profile resolution ───────────────────────────────────────────
-# A profile only ever ADDS to the rubric — see ai_review::resolve_profiles and
-# ai_review::profile_additions in _common. AI_REVIEW_PROFILE (or --profile)
-# takes one profile or a comma-separated list; additions layer in list order
-# and the last one listed wins any conflict.
-AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-baseline}"
+# ── Rubric composition ──────────────────────────────────────────────────────
+# AI_REVIEW_PROFILE (or --profile) is an ordered list of rubric sources, and the shared
+# base is an explicit member of it: `base`, `base,cms-ars`, or `none,<profile>`
+# to supply the whole rubric yourself. Sources layer in order and the last one
+# wins a conflict. See ai_review::resolve_profiles in _common — including why
+# the first entry must be `base` or `none`, and why finding-adjudication.md
+# sits outside this mechanism.
+AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-base}"
 
 # ── Flags ───────────────────────────────────────────────────────────────────
 SCOPE_PATHS=()
@@ -91,11 +93,13 @@ Scope:
   --max-file-bytes <n>      Skip files larger than n bytes (default ${MAX_FILE_BYTES}).
 
 Rubric:
-  --profile <name|dir>      Compliance profile (default baseline). A bundled
-                            name under skills/profiles/, or a directory path.
-                            Comma-separate several (cms-ars,my-overlay); every
-                            base rubric always applies, additions layer in
-                            order, and the last listed wins a conflict.
+  --profile <list>          Ordered rubric sources, default $(base). The first
+                            entry must be $(base) (the shared floor) or $(none)
+                            (no floor — you supply the whole rubric), then any
+                            profile names or directory paths:
+                              base | base,cms-ars | none,my-everything
+                            Sources layer in order and the last listed wins a
+                            conflict; each only adds to what is above it.
 
 Output (nothing is written into the audited repo):
   --json-out <file>         Write the findings JSON to a file.
@@ -320,14 +324,13 @@ ${AI_REVIEW_SCOPE_PATHS}
 SCOPE
   )"
 
-  # Base ALWAYS applies; each profile's copy is appended as an addition.
+  # Composed from the listed rubric sources in order (base first when listed).
   local audit_block
   audit_block="$(
     cat <<AUDIT
 
 ──────────────────── CODEBASE-AUDIT INSTRUCTIONS ────────────────────
-$(cat "${ENGINE_HOME}/skills/base/codebase-audit.md")
-$(ai_review::profile_additions codebase-audit.md "CODEBASE-AUDIT INSTRUCTIONS")
+$(ai_review::rubric_block codebase-audit.md "CODEBASE-AUDIT INSTRUCTIONS")
 AUDIT
   )"
 
@@ -340,8 +343,7 @@ AUDIT
       cat <<COMPLIANCE
 
 ──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
-$(cat "${ENGINE_HOME}/skills/base/iac-compliance.md")
-$(ai_review::profile_additions iac-compliance.md "COMPLIANCE PERSPECTIVE")
+$(ai_review::rubric_block iac-compliance.md "COMPLIANCE PERSPECTIVE")
 COMPLIANCE
     )"
   fi
@@ -365,8 +367,7 @@ diff. Your full instructions follow.
 ${audit_block}
 
 ──────────────────── SECURITY PERSPECTIVE ────────────────────
-$(cat "${ENGINE_HOME}/skills/base/code-security.md")
-$(ai_review::profile_additions code-security.md "SECURITY PERSPECTIVE")
+$(ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE")
 ${compliance_block}
 ${budget_block}
 ${scope_block}
@@ -430,6 +431,8 @@ audit::worker_main() {
 # ── Main ────────────────────────────────────────────────────────────────────
 audit::run() {
   ai_review::resolve_profiles
+  # codebase-audit.md carries the result marker and findings-JSON contract.
+  ai_review::require_rubric codebase-audit.md
 
   if [[ -n "${CI:-}" ]]; then
     ai_review::warn "CI is set. This is an ad-hoc local tool: a full-repo audit costs"

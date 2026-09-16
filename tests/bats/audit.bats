@@ -140,29 +140,42 @@ EOF
 
 # ── profile ─────────────────────────────────────────────────────────────────
 
-@test "audit: --profile selects a bundled profile" {
-  run bash "${AUDIT}" --profile cms-ars --dry-run
+@test "audit: --profile selects a bundled profile after base" {
+  run bash "${AUDIT}" --profile base,cms-ars --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"Profile:"*"cms-ars"* ]]
 }
 
-@test "audit: default profile is baseline" {
+@test "audit: default profile is base" {
   run bash "${AUDIT}" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"baseline"* ]]
+  [[ "$output" == *"Profile:"*"base"* ]]
+}
+
+@test "audit: a bare profile name without base is refused" {
+  run bash "${AUDIT}" --profile cms-ars --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must start with 'base' or 'none'"* ]]
 }
 
 @test "audit: an unknown profile is a config error listing the bundled ones" {
-  run bash "${AUDIT}" --profile nope --dry-run
+  run bash "${AUDIT}" --profile base,nope --dry-run
   [ "$status" -eq 2 ]
   [[ "$output" == *"not a known profile"* ]]
-  [[ "$output" == *"baseline"* ]]
+  [[ "$output" == *"cms-ars"* ]]
 }
 
-@test "audit: --profile accepts a custom directory path" {
+@test "audit: --profile accepts a custom directory path after base" {
   mkdir -p "${BATS_TEST_TMPDIR}/myprofile"
-  run bash "${AUDIT}" --profile "${BATS_TEST_TMPDIR}/myprofile" --dry-run
+  run bash "${AUDIT}" --profile "base,${BATS_TEST_TMPDIR}/myprofile" --dry-run
   [ "$status" -eq 0 ]
+}
+
+@test "audit: none without a profile supplying codebase-audit.md is refused" {
+  mkdir -p "${BATS_TEST_TMPDIR}/empty"
+  run bash "${AUDIT}" --profile "none,${BATS_TEST_TMPDIR}/empty" --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"No rubric source supplies codebase-audit.md"* ]]
 }
 
 # ── no AI call on the planning paths ────────────────────────────────────────

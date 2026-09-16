@@ -98,7 +98,7 @@ it never replaces or weakens the floor:
 
 ```yaml
         with:
-          profile: baseline   # default — floor only, no agency overlay
+          profile: base       # default — floor only, no agency overlay
         # profile: cms-ars    # adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 citations + CMS/HIPAA checks
         # profile: ./my-org-profile   # bring your own — additions only, layered the same way
 ```

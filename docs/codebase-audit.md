@@ -48,7 +48,7 @@ $ audit --dry-run
   Scope:          repository root
   Files:          98
   Batches:        4 (concurrency 4)
-  Profile:        baseline
+  Profile:        base
   Adjudication:   self
   Expected calls: ~4 first-pass
 ```
@@ -108,7 +108,8 @@ and files over 256 KB. Each skip is printed so you know what wasn't examined.
 | `AI_REVIEW_TOOL must be set` | `export AI_REVIEW_TOOL=claude` |
 | `Not a git repository` | Run it from the repo root |
 | `No files in scope` | Check the path, `--include`/`--exclude`, `--max-file-bytes` |
-| `--profile 'x' is not a known profile` | Use `baseline` or `cms-ars`, or a directory path |
+| `must start with 'base' or 'none'` | Prefix the list: `--profile base,cms-ars` |
+| `--profile 'x' is not a known profile` | Use `cms-ars`, or a directory path |
 | `--gate is not supported by the audit` | By design — use the PR review action for gating |
 
 Full flag list: `audit --help`, or the
