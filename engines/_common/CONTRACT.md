@@ -42,6 +42,7 @@ sibling of the workflow engines.
 | Diff | `ai_review::require_against`, `has_changes`, `changed_files`, `diff_command_description`, `diff_has_iac` | base→HEAD, base→index (`--unpushed`), or staged-only when no base |
 | Invocation | `ai_review::invoke_ai` (uses `SKILL_PROMPT`), `ai_review::invoke_tool <prompt> [model]` | Read-only posture by default; `AI_RUN_SUITE=1` switches to the agentic posture (write grants, `AI_SUITE_MAX_TURNS` / `AI_SUITE_TIMEOUT_SECS`, streaming on local TTYs, `CI=true` exported to the suite) |
 | Results | `ai_review::parse_result` (→ vocab word or `UNPARSEABLE`), `ai_review::extract_review_json` (last closed block), `ai_review::is_max_turns` | Parameterized by `AI_REVIEW_MARKER_VOCAB` / `AI_REVIEW_JSON_MARKER` |
+| Gate | `ai_review::gate_blocks <file\|->` | 0 blocks, 1 does not, **2 could not tell — callers must treat as blocking**. Decision lives in `harness/gate_verdict.py` so every gate surface agrees |
 | Adjudication | `ai_review::adjudication_mode`, `self_adjudication_instructions`, `adjudicate` | The independent pass reads `${ENGINE_HOME}/skills/base/finding-adjudication.md` |
 | Fan-out | `ai_review::plan_diff_batches`, `pack_batches`, `should_batch`, `context_budget`, `fan_out` | Caller exports `AI_REVIEW_SELF` (its own path) and re-enters with `--__review-one`; merge with `harness/fold_review_json.py` |
 | Help | `ai_review::print_help` | A generic fallback — every entrypoint overrides it after sourcing |
@@ -65,6 +66,10 @@ own `gh` calls instead; the seam is for review-style inline posting.)
 ## Promises
 
 - **Exit codes:** 0 clean/advisory, 1 gate or runtime failure, 2 configuration.
+- **Gating never fails open.** `harness/gate_verdict.py` is the one decision on
+  whether a review blocks (HIGH or CRITICAL findings, or a REQUEST_CHANGES
+  verdict). An unreadable findings file or an unrecognized severity counts as
+  blocking, never as a pass.
 - **stdout discipline:** artifacts only (reports, JSON); status goes to stderr.
 - **No SCM token needed by the AI phase** — nothing in the invocation path
   reads `GITHUB_TOKEN`/`GH_TOKEN`; only posting does.

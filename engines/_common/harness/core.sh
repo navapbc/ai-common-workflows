@@ -735,6 +735,44 @@ ai_review::extract_review_json() {
   '
 }
 
+# ── Gate verdict ────────────────────────────────────────────────────────────
+# ai_review::gate_blocks <findings_json_file|->
+# Pass a file path, or "-" with the JSON on stdin. Returns 0 when the review
+# should fail the build, 1 when it should not, and 2 when the verdict could not
+# be determined — which a caller MUST treat as blocking, never as a pass. Logs
+# the reason and the blocking findings.
+#
+# The decision itself lives in harness/gate_verdict.py so the composite action,
+# this engine and the sandbox wrapper cannot drift apart on what "blocks" means.
+ai_review::gate_blocks() {
+  local json="$1"
+  local out rc
+  out="$(python3 "${AI_COMMON_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/harness/gate_verdict.py" "${json}" 2>&1)"
+  rc=$?
+  if ((rc != 0)); then
+    ai_review::err "could not determine a gate verdict from ${json}: ${out}"
+    return 2
+  fi
+
+  local unknown_count
+  unknown_count="$(grep -c '^UNKNOWN' <<<"${out}" || true)"
+  if [[ "${unknown_count}" -gt 0 ]]; then
+    ai_review::warn "${unknown_count} finding(s) carry an unrecognized severity; counting them as blocking."
+  fi
+
+  local reason
+  reason="$(grep '^REASON' <<<"${out}" | cut -f2-)"
+  if grep -q '^VERDICT	BLOCK' <<<"${out}"; then
+    grep '^BLOCK' <<<"${out}" | cut -f2- | while IFS= read -r t; do
+      ai_review::log "  blocking: ${t}"
+    done
+    ai_review::log "gate verdict: BLOCK (${reason})"
+    return 0
+  fi
+  ai_review::log "gate verdict: PASS (${reason})"
+  return 1
+}
+
 # ── Adjudication: false-positive reduction ──────────────────────────────────
 # Three modes, selected by AI_ADJUDICATION (default "self"):
 #

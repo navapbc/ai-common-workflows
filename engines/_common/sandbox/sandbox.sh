@@ -303,12 +303,29 @@ if ((POST_COMMENTS == 1)); then
 fi
 
 # ── Gate ────────────────────────────────────────────────────────────────────
-if ((GATE_MODE == 1)) && [[ "${RESULT}" != "APPROVE" ]]; then
+# Same verdict as the engine and the composite action — see
+# harness/gate_verdict.py. A verdict that cannot be determined blocks; never
+# fail open on the decision that fails the build.
+GATE_BLOCKS=0
+if ((GATE_MODE == 1)); then
+  GATE_OUT="$(python3 "${SANDBOX_DIR}/../harness/gate_verdict.py" "${OUT_DIR}/review.json" 2>&1)"
+  GATE_RC=$?
+  if ((GATE_RC != 0)); then
+    err "could not determine a gate verdict: ${GATE_OUT}"
+    GATE_BLOCKS=1
+  elif grep -q '^VERDICT	BLOCK' <<<"${GATE_OUT}"; then
+    GATE_BLOCKS=1
+  else
+    GATE_BLOCKS=0
+    log "gate verdict: PASS ($(grep '^REASON' <<<"${GATE_OUT}" | cut -f2-))"
+  fi
+fi
+if ((GATE_MODE == 1)) && ((GATE_BLOCKS == 1)); then
   if ((NO_BLOCK == 1)); then
     log "--no-block in effect: exiting 0 despite --gate and result ${RESULT}."
     exit 0
   fi
-  err "--gate mode: review result is ${RESULT}, exiting non-zero to fail the build."
+  err "--gate mode: review blocks (result ${RESULT}), exiting non-zero to fail the build."
   exit 1
 fi
 

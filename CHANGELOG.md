@@ -47,6 +47,27 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`--gate` on the engine now matches the composite action**: it fails on a
+  HIGH or CRITICAL finding rather than on any non-`APPROVE` result. Local runs,
+  the sandbox wrapper and the Action previously disagreed — the Action gated at
+  HIGH while the other two blocked on a single LOW finding.
+  The decision moved into `engines/_common/harness/gate_verdict.py`, the one
+  implementation of "does this review block", reached through
+  `ai_review::gate_blocks`. It replaces three separate
+  `review_action != "APPROVE"` comparisons (engine entrypoint, sandbox wrapper,
+  action gate step), which is what let them drift in the first place. The
+  action's gate step no longer parses the findings JSON itself either: one call
+  returns both the `result` output and the verdict.
+  It cannot fail open by construction — an unreadable findings file or an
+  unrecognized severity is reported as blocking, and a caller that cannot get a
+  verdict must block.
+  **The Jenkins plugin is deliberately not converted yet** and still fails on
+  any non-`APPROVE` result, so it gates stricter than the Action rather than
+  looser. Converting it means changing its smoke-test stub too — the stub emits
+  `{"review_action":"COMMENT","comments":[]}`, which the shared evaluator
+  correctly reads as PASS, so three gate tests would need a blocking finding to
+  keep testing what they were written to test. The reactor is CI-verified only,
+  so that belongs in its own change where the Jenkins job is the whole signal.
 - **`COPILOT_SYNC_TOKEN` is now documented as a machine-user PAT.** The docs
   previously said "fine-grained PAT / App token" without saying whose account
   it should come from, which in practice means a person's: sync PRs then arrive

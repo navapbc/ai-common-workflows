@@ -702,13 +702,21 @@ pr_review::run() {
   fi
 
   # ── Gate ──────────────────────────────────────────────────────────────────
-  if ((GATE_MODE == 1)) && [[ "${result}" != "APPROVE" ]]; then
-    if ((AI_REVIEW_NO_BLOCK == 1)); then
-      ai_review::warn "--no-block in effect: exiting 0 despite --gate and result ${result}."
-      exit 0
+  # --gate fails the build on HIGH or CRITICAL findings. Lower findings are
+  # still reported; the gate decides what fails, not what is reported. The
+  # verdict comes from _common so this agrees with the composite action and the
+  # sandbox wrapper. A verdict that cannot be determined (exit 2) blocks.
+  if ((GATE_MODE == 1)); then
+    local gate_rc=0
+    printf '%s' "${review_json}" | ai_review::gate_blocks - || gate_rc=$?
+    if ((gate_rc == 0 || gate_rc == 2)); then
+      if ((AI_REVIEW_NO_BLOCK == 1)); then
+        ai_review::warn "--no-block in effect: exiting 0 despite --gate and result ${result}."
+        exit 0
+      fi
+      ai_review::err "--gate mode: review blocks (result ${result}), exiting non-zero to fail the build."
+      exit 1
     fi
-    ai_review::err "--gate mode: review result is ${result}, exiting non-zero to fail the build."
-    exit 1
   fi
 
   exit 0

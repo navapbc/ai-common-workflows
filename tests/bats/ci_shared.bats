@@ -94,7 +94,7 @@ setup() {
   echo '{"review_action":"REQUEST_CHANGES"}' >"${json}"
   REVIEW_JSON="${json}" GATE=true run ci::gate_result
   [ "$status" -ne 0 ]
-  [[ "$output" == *"AI review result is REQUEST_CHANGES"* ]]
+  [[ "$output" == *"review_action is REQUEST_CHANGES"* ]]
 }
 
 @test "gate_result passes on APPROVE with gate=true" {
