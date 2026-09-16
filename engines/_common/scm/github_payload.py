@@ -33,6 +33,41 @@ AI_ATTRIBUTION = (
 )
 SKIP_SENTINEL = "__AI_REVIEW_SKIP_POST__"
 
+# Trailing tokens that end in "." without ending a sentence. Without this guard
+# a description like "Use a KMS key, e.g. aws_kms_key.rds.arn, rather than ..."
+# would summarize as "Use a KMS key, e.g." — worse than no summary at all.
+_ABBREVIATIONS = frozenset(
+    ["e.g.", "i.e.", "etc.", "vs.", "cf.", "approx.", "resp.",
+     "inc.", "no.", "fig.", "al.", "ca."]
+)
+
+# A first sentence shorter than this is almost never a usable summary (it is
+# usually an abbreviation or a bare control ID), so keep scanning.
+_MIN_SUMMARY_CHARS = 20
+
+
+def first_sentence(text):
+    """Best-effort first sentence of `text`, for the one-line Suggestion header.
+
+    Returns the whole string when no sentence boundary is found, and "" for
+    empty input. Deliberately conservative: a wrong split reads as a truncated
+    thought in every posted comment, so ambiguous boundaries are skipped rather
+    than guessed at.
+    """
+    flat = " ".join((text or "").split())
+    if not flat:
+        return ""
+    for match in re.finditer(r"[.!?](?=\s|$)", flat):
+        candidate = flat[: match.end()]
+        words = candidate.split()
+        last = words[-1].lower() if words else ""
+        if last in _ABBREVIATIONS:
+            continue
+        if len(candidate) < _MIN_SUMMARY_CHARS and match.end() < len(flat):
+            continue
+        return candidate
+    return flat
+
 
 def perspective_of(body):
     """Extract the perspective label from a rendered comment's first line."""
@@ -85,11 +120,17 @@ def render_body(c):
         fence = "suggestion"
     else:
         fence = c.get("suggestion_language", "")
+    # One-line summary after "Suggestion:". The AI may supply it explicitly as
+    # `suggestion_summary`; otherwise it is derived from the first sentence of
+    # the description. Omitted entirely rather than rendered empty when neither
+    # is available, so the header never trails a stray space.
+    summary = (c.get("suggestion_summary") or "").strip() or first_sentence(description)
+    suggestion_line = f"Suggestion: {summary}" if summary else "Suggestion:"
     return (
         f"{perspective}({sev_lc}): {title}\n\n"
         f"Description: {description}\n\n"
         f"Severity: {severity}\n\n"
-        f"Suggestion:\n\n"
+        f"{suggestion_line}\n\n"
         f"```{fence}\n{body}\n```\n\n"
         f"{AI_ATTRIBUTION}\n"
     )
