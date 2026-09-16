@@ -37,8 +37,7 @@ inputs:
   gate:
     description: >-
       Fail the job on HIGH or CRITICAL findings. Default false (advisory).
-      MEDIUM and LOW still post as comments. For the ends of the scale, accepts
-      `critical` (CRITICAL only) or `any` (every finding, LOW included).
+      MEDIUM and LOW still post as comments either way.
     required: false
     default: "false"
   dry-run:

@@ -6,9 +6,7 @@
 # guaranteed-correct gate.
 #
 # MEDIUM and LOW still post as inline comments — gating changes what fails the
-# build, never what gets reported. (`gate: critical` and `gate: any` are
-# available if you want an end of the scale explicitly; `any` fails on a single
-# LOW finding, which most teams cannot live with as a required check.)
+# build, never what gets reported.
 name: AI security & compliance review (gating)
 on:
   pull_request:
