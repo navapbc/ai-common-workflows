@@ -132,8 +132,9 @@ setup() {
 }
 
 # ── gate_result: severity levels ────────────────────────────────────────────
-# GATE is one knob: off | critical | high | any (true/false alias any/off).
-# Everything still posts as a comment; only the pass/fail decision changes.
+# `gate: true` gates at HIGH + CRITICAL — NOT at `any`. `critical` and `any`
+# are available for the ends of the scale. Everything still posts as a
+# comment; only the pass/fail decision changes.
 
 _findings() { # $1 = file, rest = severities
   local f="$1"; shift
@@ -175,9 +176,30 @@ _findings() { # $1 = file, rest = severities
   [ "$status" -eq 0 ]
 }
 
-@test "gate=any (default) still blocks on a single LOW" {
+@test "gate=any blocks on a single LOW" {
   local json="${BATS_TEST_TMPDIR}/f.json"
   _findings "${json}" LOW
+  REVIEW_JSON="${json}" GATE=any run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate=true does NOT block on MEDIUM or LOW" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" MEDIUM LOW
+  REVIEW_JSON="${json}" GATE=true run ci::gate_result
+  [ "$status" -eq 0 ]
+}
+
+@test "gate=true blocks on HIGH" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" HIGH
+  REVIEW_JSON="${json}" GATE=true run ci::gate_result
+  [ "$status" -eq 1 ]
+}
+
+@test "gate=true blocks on CRITICAL" {
+  local json="${BATS_TEST_TMPDIR}/f.json"
+  _findings "${json}" CRITICAL
   REVIEW_JSON="${json}" GATE=true run ci::gate_result
   [ "$status" -eq 1 ]
 }
@@ -240,7 +262,7 @@ _findings() { # $1 = file, rest = severities
   [[ "$output" == *"unrecognized gate"* ]]
 }
 
-@test "gate=off is advisory even with CRITICAL findings" {
+@test "gate=off is accepted as a synonym for false" {
   local json="${BATS_TEST_TMPDIR}/f.json"
   _findings "${json}" CRITICAL
   REVIEW_JSON="${json}" GATE=off run ci::gate_result
@@ -255,14 +277,7 @@ _findings() { # $1 = file, rest = severities
   [ "$status" -eq 0 ]
 }
 
-@test "gate=true remains an alias for any" {
-  local json="${BATS_TEST_TMPDIR}/f.json"
-  _findings "${json}" LOW
-  REVIEW_JSON="${json}" GATE=true run ci::gate_result
-  [ "$status" -eq 1 ]
-}
-
-@test "gate=false remains an alias for off" {
+@test "gate=false is advisory" {
   local json="${BATS_TEST_TMPDIR}/f.json"
   _findings "${json}" CRITICAL
   REVIEW_JSON="${json}" GATE=false run ci::gate_result

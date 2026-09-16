@@ -47,7 +47,7 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 | `openai-api-key` | — | OpenAI key (codex) |
 | `github-token` | `${{ github.token }}` | Token to post the review (`pull-requests: write`) |
 | `post-comments` | `true` | Post inline comments to the PR |
-| `gate` | `off` | Severity at which the job fails: `off` \| `critical` \| `high` \| `any`. Lower findings still post as comments |
+| `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments. Also accepts `critical` or `any` |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number |
 | `profile` | `baseline` | Compliance profile: `baseline` \| `cms-ars`, a `skills/profiles/` name, or a custom profile directory path. The floor always applies; a profile only adds to it |
@@ -80,34 +80,29 @@ All inputs are active. Endpoint inputs apply per tool: `bedrock` → `claude` or
 
 ## Advisory vs gating
 
-`gate` is the severity at which the job starts failing. One setting, four
-values, from most permissive to least:
-
-| `gate` | The job fails when the review finds |
-|---|---|
-| `off` *(default)* | never — findings post as comments and the job stays green |
-| `critical` | a CRITICAL finding |
-| `high` | a HIGH or CRITICAL finding |
-| `any` | anything at all, LOW included |
+By default the review is **advisory**: findings post as comments and the job
+stays green.
 
 ```yaml
-      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
-        with:
-          gate: high        # fail on HIGH and CRITICAL
+          gate: true      # fail the job on HIGH or CRITICAL findings
 ```
 
-Once `gate` is anything but `off`, the job can be a required status check. See
+That makes the job usable as a required status check. See
 [`examples/workflows/ai-security-compliance-review-gating.yml`](../examples/workflows/ai-security-compliance-review-gating.yml).
 
-Most teams should not start at `any`: the review emits a finding-bearing result
-for a single LOW observation, so `any` blocks merges on nits. `high` is the
-usual first gate.
+`gate: true` blocks on **HIGH and CRITICAL only**. MEDIUM and LOW still post as
+inline comments — gating changes what fails the build, never what gets
+reported. That is deliberate: the review emits a finding-bearing result for a
+single LOW observation, so blocking on everything would fail merges on nits.
 
-**Findings below the gate still post as inline comments.** The setting changes
-what fails the build, never what gets reported.
+If you want an end of the scale explicitly, `gate` also takes:
 
-`true` and `false` are accepted as aliases for `any` and `off`, so an existing
-boolean config keeps working.
+| `gate` | The job fails on |
+|---|---|
+| `false` *(default)* | nothing — advisory |
+| `true` | HIGH or CRITICAL |
+| `critical` | CRITICAL only |
+| `any` | every finding, LOW included |
 
 Two behaviours to know before relying on it, both chosen so the gate cannot
 silently pass:
@@ -126,7 +121,7 @@ there for a ruleset to require.
 ## Read-only mode (no repository writes)
 
 To run with **no write permission at all**, set `post-comments: false` and act
-on the `result` output (e.g. combine with `gate: high` to fail the check
+on the `result` output (e.g. combine with `gate: true` to fail the check
 without commenting). The token then needs only `contents: read`, and the
 action never calls the PR-write API. Useful where posting bot comments is
 disallowed or the token can't be granted `pull-requests: write`.

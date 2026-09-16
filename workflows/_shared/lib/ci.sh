@@ -176,17 +176,19 @@ print(a)' "${REVIEW_JSON}")"; then
   echo "result=${result}" >>"${GITHUB_OUTPUT}"
   echo "[ai-review] result: ${result}"
 
-  # One knob. `gate` is the severity at which the job starts failing; `off` and
-  # `any` are the two ends of the same scale. true/false are accepted so the
-  # boolean form keeps working.
+  # `gate: true` means "gate at the level worth gating on" — HIGH and CRITICAL.
+  # It deliberately does NOT mean `any`: the review emits a finding-bearing
+  # result for a single LOW observation, so `any` blocks merges on nits and is
+  # not what someone switching gating on is asking for. `critical` and `any`
+  # remain available for teams that want the ends of the scale explicitly.
   local gate
-  gate="$(printf '%s' "${GATE:-off}" | tr '[:upper:]' '[:lower:]')"
+  gate="$(printf '%s' "${GATE:-false}" | tr '[:upper:]' '[:lower:]')"
   case "${gate}" in
-    off | false | no | 0 | "") return 0 ;;
-    any | all | true | 1) gate="any" ;;
-    high | critical) ;;
+    false | off | no | 0 | "") return 0 ;;
+    true | yes | 1 | high) gate="high" ;;
+    critical | any | all) ;;
     *)
-      echo "::error::unrecognized gate '${GATE}' (expected: off | critical | high | any)."
+      echo "::error::unrecognized gate '${GATE}' (expected: true | false, or critical | high | any)."
       return 1
       ;;
   esac

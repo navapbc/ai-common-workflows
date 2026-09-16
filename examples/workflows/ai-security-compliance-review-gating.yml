@@ -1,15 +1,14 @@
 # AI security & compliance review as a required check.
 #
-# `gate` is the severity at which the job fails: off (default) | critical |
-# high | any. Anything but `off` makes this job usable as a required status
-# check in branch protection. Use deliberately: the review is advisory by
-# default because findings are second-opinion signal, not a guaranteed-correct
-# gate.
+# `gate: true` fails the job on HIGH or CRITICAL findings, so this job can be a
+# required status check in branch protection. Use deliberately: the review is
+# advisory by default because findings are second-opinion signal, not a
+# guaranteed-correct gate.
 #
-# `high` is the usual first gate. `any` fails on a single LOW finding, which
-# most teams cannot live with as a required check. Findings below the gate
-# still post as inline comments — `gate` changes what fails the build, never
-# what gets reported.
+# MEDIUM and LOW still post as inline comments — gating changes what fails the
+# build, never what gets reported. (`gate: critical` and `gate: any` are
+# available if you want an end of the scale explicitly; `any` fails on a single
+# LOW finding, which most teams cannot live with as a required check.)
 name: AI security & compliance review (gating)
 on:
   pull_request:
@@ -30,6 +29,6 @@ jobs:
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Fail on HIGH and CRITICAL; MEDIUM and LOW still post as comments.
-          gate: high
+          gate: true
           # Stronger second opinion before failing a build:
           adjudication: independent

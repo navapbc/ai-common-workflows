@@ -36,11 +36,11 @@ inputs:
     default: "true"
   gate:
     description: >-
-      Severity at which the job starts failing: off (default, advisory) |
-      critical | high | any. `high` fails on HIGH and CRITICAL. Findings below
-      it still post as comments. Accepts true/false for any/off.
+      Fail the job on HIGH or CRITICAL findings. Default false (advisory).
+      MEDIUM and LOW still post as comments. For the ends of the scale, accepts
+      `critical` (CRITICAL only) or `any` (every finding, LOW included).
     required: false
-    default: "off"
+    default: "false"
   dry-run:
     description: "Print the plan and exit without calling the AI."
     required: false

@@ -8,16 +8,15 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **`gate` now takes a severity instead of a boolean**: `off` (default) |
-  `critical` | `high` | `any`. It reads as one scale — the severity at which
-  the job starts failing — rather than an on/off switch plus a separate floor.
-  `true` and `false` still work as aliases for `any` and `off`, so existing
-  configs are unaffected.
-  Previously `gate: true` failed on any non-`APPROVE` result, and the review
-  emits a finding-bearing result for a single LOW observation, so gating was
-  all-or-nothing and effectively unadoptable as a required check. `high` is
-  the usual first gate. Findings below the gate still post as inline comments —
-  the setting changes what fails the build, never what is reported.
+- **`gate: true` now fails the job on HIGH or CRITICAL findings**, not on any
+  finding. It stays a boolean and still defaults to `false`; only what `true`
+  means has changed. Previously `gate: true` failed on any non-`APPROVE`
+  result, and the review emits a finding-bearing result for a single LOW
+  observation — so gating blocked merges on nits and was effectively
+  unadoptable as a required check. MEDIUM and LOW still post as inline
+  comments: gating changes what fails the build, never what is reported.
+  For an end of the scale explicitly, `gate` also accepts `critical` (CRITICAL
+  only) or `any` (the old `true` behavior).
   Two deliberate behaviors: a finding whose severity is missing or
   unrecognized counts as **blocking** (with a warning naming how many) rather
   than being read as LOW, and the gate is evaluated against the engine's own
