@@ -30,6 +30,23 @@ follow [Semantic Versioning](https://semver.org/).
   is not relitigated as an oversight, and `docs/profiles.md` notes that a
   profile is the right home for framework rules a program does need: knowledge
   with a short half-life belongs near the people who will notice it ageing.
+- **`--doctor` on the codebase audit** — a preflight that checks bash, git,
+  `python3`, the selected AI CLI, the provider credentials, the endpoint, the
+  profile, the repo and the output directory, and reports what is missing.
+  It reports **every** problem in one pass rather than stopping at the first,
+  because a fresh machine usually has two or three at once; it makes no model
+  call and needs no git repository, so a setup can be checked before `cd`-ing
+  anywhere. Exit 1 when something is missing, 0 when ready. A public endpoint
+  and an unchosen output directory are reported but do not fail it — those are
+  choices, not defects.
+  Credential and endpoint validation is delegated to
+  `ai_review::configure_endpoint` in a subshell, and profile resolution to
+  `ai_review::resolve_profiles`, so the whole provider matrix is not duplicated
+  here where it would drift. Their messages are surfaced verbatim, indented.
+  Aimed at the friction a Mac laptop actually has: the system `python3` is a
+  stub that prompts for the Xcode command line tools, and a wrong
+  `AI_REVIEW_PROVIDER` is the failure that silently sends the whole scope to a
+  public endpoint.
 - **`--resume` for the codebase audit**, restoring the one capability the
   earlier iteration had that the new bundle format dropped. It continues the
   newest existing bundle for the repo instead of allocating a new run

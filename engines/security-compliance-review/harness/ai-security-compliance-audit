@@ -72,6 +72,7 @@ ASSUME_YES="${AI_AUDIT_ASSUME_YES:-0}"
 RESUME=0
 RESUME_DIR=""
 ALL_DIRECTORIES=""
+DOCTOR=0
 JSON_ONLY=0
 LIST_FILES=0
 WORKER_MODE=0
@@ -124,6 +125,12 @@ Output (nothing is written into the audited repo):
   --md-out <file>           Also write the narrative report to this exact path.
   --json-only               Print only the findings JSON to stdout; write no
                             bundle.
+
+Getting set up:
+  --doctor                  Check everything this needs — bash, git, python3,
+                            the AI CLI, credentials, the endpoint, the output
+                            directory — and report what is missing. Runs no
+                            audit, calls no model, needs no git repo.
 
 Confirmation:
   --yes / -y                Skip the "this will cost tokens" prompt. Also
@@ -227,6 +234,10 @@ audit::parse_flags() {
         ;;
       --resume)
         RESUME=1
+        shift
+        ;;
+      --doctor)
+        DOCTOR=1
         shift
         ;;
       --yes | -y)
@@ -524,6 +535,122 @@ audit::allocate_run_dir() {
     ((10#${n} >= next)) && next=$((10#${n} + 1))
   done
   printf '%s/%s-%s-%02d' "${parent}" "${repo}" "${date}" "${next}"
+}
+
+# ── Preflight (--doctor) ────────────────────────────────────────────────────
+# One answer instead of four separate "it did not work" moments. Deliberately
+# non-fatal per check: it reports EVERYTHING wrong in one pass rather than
+# stopping at the first, because the common case on a fresh laptop is two or
+# three missing at once.
+#
+# Exits 0 when ready to audit, 1 when something is missing. Warnings (a public
+# endpoint, no output directory yet) do not fail it — they are choices, not
+# defects.
+AUDIT_DOCTOR_FAIL=0
+
+audit::doctor_row() { # <name> <status> <detail>
+  printf '  %-26s %-9s %s\n' "$1" "$2" "${3:-}" >&2
+}
+
+audit::doctor_missing() {
+  AUDIT_DOCTOR_FAIL=1
+  audit::doctor_row "$1" "MISSING" "$2"
+}
+
+audit::doctor() {
+  ai_review::info "Checking what this needs..."
+
+  # ── shell and tools ──
+  audit::doctor_row "bash" "ok" "${BASH_VERSION}"
+  if command -v git >/dev/null 2>&1; then
+    audit::doctor_row "git" "ok" "$(git --version | awk '{print $3}')"
+  else
+    audit::doctor_missing "git" "xcode-select --install (macOS), or your package manager"
+  fi
+  # python3 is the one macOS does not really ship: the stub prompts for Xcode.
+  if command -v python3 >/dev/null 2>&1; then
+    audit::doctor_row "python3" "ok" "$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo present)"
+  else
+    audit::doctor_missing "python3" "brew install python, or xcode-select --install"
+  fi
+
+  # ── the AI CLI ──
+  local tool="${AI_REVIEW_TOOL:-}"
+  if [[ -z "${tool}" ]]; then
+    audit::doctor_missing "AI_REVIEW_TOOL" "export AI_REVIEW_TOOL=claude   (or codex, or copilot)"
+  else
+    case "${tool}" in
+      claude | codex | copilot)
+        if command -v "${tool}" >/dev/null 2>&1; then
+          audit::doctor_row "${tool} CLI" "ok" "$(command -v "${tool}")"
+        else
+          audit::doctor_missing "${tool} CLI" "npm install -g @anthropic-ai/claude-code (or the CLI for your tool)"
+        fi
+        ;;
+      *)
+        audit::doctor_missing "AI_REVIEW_TOOL" "'${tool}' is not one of: claude | codex | copilot"
+        ;;
+    esac
+  fi
+
+  # ── endpoint and credentials ──
+  # configure_endpoint validates the whole provider/credential matrix and exits
+  # on failure, so run it in a subshell and read the verdict rather than
+  # duplicating the matrix here — the duplicate would drift.
+  local provider="${AI_REVIEW_PROVIDER:-api}" endpoint_out endpoint_rc=0
+  if [[ -n "${AI_REVIEW_TOOL:-}" ]]; then
+    endpoint_out="$(ai_review::resolve_tool >/dev/null 2>&1 && ai_review::configure_endpoint 2>&1)" || endpoint_rc=$?
+    if ((endpoint_rc == 0)); then
+      if [[ "${provider}" == "api" ]]; then
+        audit::doctor_row "endpoint" "ok" "api — PUBLIC; set AI_REVIEW_PROVIDER for in-boundary"
+      else
+        audit::doctor_row "endpoint" "ok" "${provider} — in your boundary"
+      fi
+    else
+      AUDIT_DOCTOR_FAIL=1
+      audit::doctor_row "endpoint" "FAILED" "provider=${provider}"
+      printf '%s\n' "${endpoint_out}" | sed 's/^/      /' >&2
+    fi
+  else
+    audit::doctor_row "endpoint" "-" "set AI_REVIEW_TOOL first"
+  fi
+
+  # ── rubric ──
+  local profile_out profile_rc=0
+  profile_out="$(ai_review::resolve_profiles 2>&1)" || profile_rc=$?
+  if ((profile_rc == 0)); then
+    audit::doctor_row "profile" "ok" "${AI_REVIEW_PROFILE}"
+  else
+    AUDIT_DOCTOR_FAIL=1
+    audit::doctor_row "profile" "FAILED" "${AI_REVIEW_PROFILE}"
+    printf '%s\n' "${profile_out}" | sed 's/^/      /' >&2
+  fi
+
+  # ── where it would run, and where the report would go ──
+  if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    audit::doctor_row "repo" "ok" "$(git rev-parse --show-toplevel)"
+  else
+    # Not a defect: you can check your setup before cd-ing into a repo.
+    audit::doctor_row "repo" "-" "not inside a git repository (cd into one to audit)"
+  fi
+  if [[ -z "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_row "output dir" "-" "--output-parent-dir is required for a real run"
+  elif [[ ! -d "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' does not exist; mkdir -p it"
+  elif [[ ! -w "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' is not writable"
+  else
+    audit::doctor_row "output dir" "ok" "${OUTPUT_PARENT}"
+  fi
+
+  ai_review::log ""
+  if ((AUDIT_DOCTOR_FAIL == 1)); then
+    ai_review::err "Not ready — fix the MISSING/FAILED rows above."
+    exit 1
+  fi
+  ai_review::ok "Ready to audit."
+  ai_review::log "  Next:  --dry-run to see scope and cost, then drop it to run."
+  exit 0
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -913,4 +1040,8 @@ if ((WORKER_MODE == 1)); then
 fi
 
 ai_review::parse_args "${REMAINING_FOR_LIB[@]+"${REMAINING_FOR_LIB[@]}"}"
+
+# --doctor runs before anything that needs a git repo, a scope, or credentials.
+((DOCTOR == 1)) && audit::doctor
+
 audit::run
