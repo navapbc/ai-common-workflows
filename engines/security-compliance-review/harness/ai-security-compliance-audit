@@ -69,6 +69,9 @@ JSON_OUT=""
 MD_OUT=""
 OUTPUT_PARENT=""
 ASSUME_YES="${AI_AUDIT_ASSUME_YES:-0}"
+RESUME=0
+RESUME_DIR=""
+ALL_DIRECTORIES=""
 JSON_ONLY=0
 LIST_FILES=0
 WORKER_MODE=0
@@ -104,6 +107,12 @@ Rubric:
                             conflict; each only adds to what is above it.
 
 Output (nothing is written into the audited repo):
+  --resume                  Continue the newest existing bundle for this repo
+                            instead of starting a new one: directories that
+                            already have a report are skipped, and their
+                            findings are carried into the regenerated index.
+                            For picking a long audit back up after an
+                            interruption. Requires --output-parent-dir.
   --output-parent-dir <dir> REQUIRED for a real run. An EXISTING directory to
                             write the report bundle into. A new subdirectory is
                             created per run, named <repo>-<YYYYMMDD>-<NN>, so
@@ -214,6 +223,10 @@ audit::parse_flags() {
         ;;
       --json-only)
         JSON_ONLY=1
+        shift
+        ;;
+      --resume)
+        RESUME=1
         shift
         ;;
       --yes | -y)
@@ -471,6 +484,23 @@ audit::worker_main() {
 # audit of the same repo on the same day never overwrites the first. Reports get
 # attached to tickets and compared week to week; an overwritten one is worse
 # than a missing one because nobody notices.
+# audit::find_resume_dir <parent>
+# Echoes the newest existing <parent>/<repo>-* bundle, or nothing.
+#
+# Deliberately not restricted to today: an audit interrupted last night should
+# be resumable this morning, and the directory's date records when the audit
+# STARTED, which is the more useful fact about it.
+audit::find_resume_dir() {
+  local parent="$1" repo newest=""
+  repo="$(basename "$(git rev-parse --show-toplevel)")"
+  for candidate in "${parent}/${repo}-"*; do
+    [[ -d "${candidate}" && -f "${candidate}/_INDEX.md" ]] || continue
+    # Lexical order works: the names are <repo>-YYYYMMDD-NN, zero-padded.
+    [[ -z "${newest}" || "${candidate}" > "${newest}" ]] && newest="${candidate}"
+  done
+  printf '%s' "${newest}"
+}
+
 audit::allocate_run_dir() {
   local parent="$1"
   if [[ ! -d "${parent}" ]]; then
@@ -548,6 +578,52 @@ audit::run() {
     ai_review::err ""
     ai_review::err "  Or --json-only to print findings to stdout and write nothing."
     exit 2
+  fi
+
+  # ── Resume, if asked ───────────────────────────────────────────────────
+  # Resume works at DIRECTORY granularity, matching the earlier iteration: a
+  # directory whose report already exists is skipped. It deliberately does not
+  # work at batch granularity — packing coalesces directories into at most
+  # --jobs bins, so a batch is not a stable unit and "already done" would mean
+  # something different at --jobs 4 than at --jobs 8.
+  ALL_DIRECTORIES="$(printf '%s\n' "${files_nl}" | python3 -c '
+import posixpath, sys
+print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.strip()})))')"
+
+  if ((RESUME == 1)); then
+    if [[ -z "${OUTPUT_PARENT}" ]]; then
+      ai_review::err "--resume needs --output-parent-dir: it has to know which bundle to continue."
+      exit 2
+    fi
+    RESUME_DIR="$(audit::find_resume_dir "${OUTPUT_PARENT}")"
+    if [[ -z "${RESUME_DIR}" ]]; then
+      ai_review::warn "--resume: no existing bundle for this repo in ${OUTPUT_PARENT}; starting a new one."
+      RESUME=0
+    else
+      ai_review::info "Resuming ${RESUME_DIR}"
+      local kept="" skipped=0 slug
+      while IFS= read -r f; do
+        [[ -z "${f}" ]] && continue
+        slug="$(printf '%s' "$(dirname "${f}")" | sed 's|^\.$|_root|; s|/|__|g')"
+        if [[ -f "${RESUME_DIR}/${slug}.md" ]]; then
+          skipped=$((skipped + 1))
+          continue
+        fi
+        kept="${kept}${f}"$'\n'
+      done <<<"${files_nl}"
+      files_nl="${kept%$'\n'}"
+      nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
+      ai_review::info "  ${skipped} file(s) already covered by an existing report; ${nfiles} remaining."
+
+      if ((nfiles == 0)); then
+        # Nothing left to audit. Regenerate the index from what is already
+        # there rather than reporting success having done nothing — a resumed
+        # run that finds the work complete should still leave a current index.
+        ai_review::ok "Nothing left to audit; the bundle is already complete."
+        ai_review::log "  ${RESUME_DIR}/_INDEX.md"
+        exit 0
+      fi
+    fi
   fi
 
   # ── Batch plan ─────────────────────────────────────────────────────────
@@ -715,20 +791,64 @@ audit::run() {
   # ── Report bundle ───────────────────────────────────────────────────────
   if [[ -n "${OUTPUT_PARENT}" ]]; then
     local run_dir meta_file findings_file report_file
-    run_dir="$(audit::allocate_run_dir "${OUTPUT_PARENT}")"
+    if ((RESUME == 1)) && [[ -n "${RESUME_DIR}" ]]; then
+      run_dir="${RESUME_DIR}"
+    else
+      run_dir="$(audit::allocate_run_dir "${OUTPUT_PARENT}")"
+    fi
     meta_file="$(mktemp)"
     findings_file="$(mktemp)"
     report_file="$(mktemp)"
     printf '%s\n' "${audit_json}" >"${findings_file}"
-    printf '%s\n' "${human_output}" >"${report_file}"
+
+    # On resume, carry the previous findings forward. Without this the
+    # regenerated index would list only this segment's findings and the
+    # already-written directory docs would be rewritten empty — a resumed run
+    # would quietly DELETE the results it was meant to preserve.
+    if ((RESUME == 1)) && [[ -f "${run_dir}/findings.json" ]]; then
+      python3 - "${run_dir}/findings.json" "${findings_file}" <<'MERGE'
+import json, sys
+prev = json.load(open(sys.argv[1])).get("comments") or []
+new = json.load(open(sys.argv[2]))
+seen = set()
+merged = []
+for f in prev + (new.get("comments") or []):
+    if not isinstance(f, dict):
+        continue
+    key = (f.get("path"), f.get("line"), str(f.get("perspective", "")).lower(), f.get("title"))
+    if key in seen:
+        continue
+    seen.add(key)
+    merged.append(f)
+new["comments"] = merged
+if merged and new.get("review_action") == "APPROVE":
+    # A clean segment must not downgrade a bundle that already has findings.
+    new["review_action"] = "COMMENT"
+json.dump(new, open(sys.argv[2], "w"))
+MERGE
+      ai_review::info "  merged with the findings already in the bundle"
+    fi
+
+    # The narrative covers only this segment, so append rather than replace.
+    if ((RESUME == 1)) && [[ -f "${run_dir}/report.md" ]]; then
+      {
+        cat "${run_dir}/report.md"
+        printf '\n\n---\n\n## Resumed segment (%s)\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '%s\n' "${human_output}"
+      } >"${report_file}"
+    else
+      printf '%s\n' "${human_output}" >"${report_file}"
+    fi
 
     # Every audited directory, so the index can say "audited and clean" rather
     # than leaving it ambiguous with "not audited".
+    # Every directory in the ORIGINAL scope, so a resumed run's index still
+    # lists the directories it skipped rather than implying they were never
+    # audited.
     local dirs_json
-    dirs_json="$(printf '%s\n' "${files_nl}" | python3 -c '
-import json, posixpath, sys
-dirs = sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.strip()})
-print(json.dumps(dirs))')"
+    dirs_json="$(printf '%s\n' "${ALL_DIRECTORIES}" | python3 -c '
+import json, sys
+print(json.dumps(sorted({l.strip() for l in sys.stdin if l.strip()})))')"
 
     python3 - "${meta_file}" "${dirs_json}" <<META
 import json, sys

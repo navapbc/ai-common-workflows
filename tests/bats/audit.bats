@@ -243,6 +243,105 @@ EOF
   [[ "$output" == *"Unknown flag"* ]]
 }
 
+# ── resume ──────────────────────────────────────────────────────────────────
+# Picking a long audit back up. The failure that matters is a resumed run
+# DELETING the segment it was meant to preserve, so most of these assert that
+# prior results survive.
+
+_seg() { # $1 = path, $2 = severity, $3 = title
+  cat >"${STUB_RESPONSE_FILE}" <<EOF
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"s","comments":[{"path":"$1","line":1,"side":"RIGHT","perspective":"security","severity":"$2","title":"$3","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+}
+
+_bundle() { find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | head -1; }
+
+@test "audit: --resume reuses the existing bundle instead of creating one" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  _seg "terraform/rds.tf" HIGH "second"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Resuming"* ]]
+  [ "$(find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "audit: --resume skips directories that already have a report" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  _seg "terraform/rds.tf" HIGH "second"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
+  [[ "$output" == *"already covered by an existing report"* ]]
+}
+
+@test "audit: --resume does not delete the earlier segment's findings" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  _seg "terraform/rds.tf" HIGH "second"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  grep -q "first" "${dir}/findings.json"
+  grep -q "second" "${dir}/findings.json"
+  # the earlier directory doc must still carry its finding
+  grep -q '^#### ' "${dir}/src.md"
+}
+
+@test "audit: --resume regenerates the index covering both segments" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  _seg "terraform/rds.tf" HIGH "second"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  grep -q 'src.md#findings' "${dir}/_INDEX.md"
+  grep -q 'terraform.md#findings' "${dir}/_INDEX.md"
+}
+
+@test "audit: a clean resumed segment does not downgrade the bundle to APPROVE" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"APPROVE","summary":"clean","comments":[]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>
+EOF
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  grep -q '"review_action": *"COMMENT"' "${dir}/findings.json"
+}
+
+@test "audit: --resume appends the new narrative rather than replacing it" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  _seg "terraform/rds.tf" HIGH "second"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume >/dev/null 2>&1
+  grep -q 'Resumed segment' "$(_bundle)/report.md"
+}
+
+@test "audit: --resume with nothing left says so and exits 0" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" >/dev/null 2>&1
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already complete"* ]]
+}
+
+@test "audit: --resume with no existing bundle starts a new one and says so" {
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no existing bundle"* ]]
+  [ "$(find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "audit: --resume without an output parent is a config error" {
+  run bash "${AUDIT}" --resume --json-only
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"needs --output-parent-dir"* ]]
+}
+
 # ── confirmation before spending ────────────────────────────────────────────
 
 @test "audit: refuses to start non-interactively without --yes" {

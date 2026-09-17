@@ -139,6 +139,39 @@ $ audit --dry-run
 A directory is usually the right scope. `audit terraform/` on a large repo is a
 couple of calls; `audit` on the same repo can be dozens.
 
+## Judging against a compliance framework
+
+`--profile` is an **ordered list of rubric sources**, and the shared floor is an
+explicit member of it. The first entry must be `base` or `none`:
+
+```bash
+audit --output-parent-dir ~/audits --profile base              # the default — floor only
+audit --output-parent-dir ~/audits --profile base,cms-ars      # floor + CMS ARS 5.1 / NIST 800-53
+audit --output-parent-dir ~/audits --profile base,cms-ars,./my-overlay
+```
+
+Sources layer in order and each only ever *adds* to what precedes it, so the
+last entry wins a genuine conflict. `base` is the default, so you can leave
+`--profile` off entirely.
+
+A bare `--profile cms-ars` is a **configuration error**, not a shortcut —
+omitting the floor is a quiet way to audit against citations for checks you no
+longer have, so it has to be deliberate:
+
+```
+ERROR: AI_REVIEW_PROFILE must start with 'base' or 'none' (got 'cms-ars').
+```
+
+`none,<your-profile>` is the escape hatch if your program supplies the entire
+rubric itself. It must then include a `codebase-audit.md`, since that file
+carries the report's output contract.
+
+A profile may also ship a `codebase-audit.md` of its own — layered on top of
+the base audit instructions, never replacing them — if your framework needs
+audit-specific guidance beyond the compliance checks.
+
+Full detail, including how to write a profile: [profiles.md](profiles.md).
+
 ## It asks before it spends
 
 A full-repo audit is the most expensive thing here by a wide margin — roughly
@@ -234,6 +267,40 @@ The bundle is generated from the merged findings, so it is identical whether
 the audit ran as one call or fanned out across eight — a report whose shape
 depends on `--jobs` is one you cannot compare against last week's.
 
+### Picking a long audit back up
+
+A large repo takes a while, and an interrupted run leaves a partial bundle.
+`--resume` continues the newest bundle for this repo instead of starting a new
+one:
+
+```bash
+audit --output-parent-dir ~/audits --resume
+```
+
+Directories that already have a report are skipped, and their findings are
+carried into the regenerated `_INDEX.md` — so resuming never discards the
+segment it was meant to preserve. The narrative is appended under a
+`## Resumed segment` divider rather than replaced.
+
+```
+[security-compliance-audit] Resuming /home/you/audits/my-repo-20260917-01
+[security-compliance-audit]   380 file(s) already covered by an existing report; 32 remaining.
+```
+
+Resume works at **directory** granularity, matching the shape of the reports.
+It deliberately does not work per batch: packing coalesces directories into at
+most `--jobs` bins, so "already done" would mean something different at
+`--jobs 4` than at `--jobs 8`.
+
+If nothing is left, it says so and leaves the bundle alone. If there is no
+existing bundle, it starts a fresh one and tells you. To re-audit a directory
+you have since fixed, delete its doc and resume:
+
+```bash
+rm ~/audits/my-repo-20260917-01/src__api.md
+audit --output-parent-dir ~/audits --resume
+```
+
 ### Other output options
 
 ```bash
@@ -296,9 +363,10 @@ and files over 256 KB. Each skip is printed so you know what wasn't examined.
 | `No files in scope` | Check the path, `--include`/`--exclude`, `--max-file-bytes` |
 | `--output-parent-dir is required` | Pass an existing directory, or `--json-only` to write nothing |
 | `stdin is not a TTY` | Add `--yes` for a scripted run |
+| `--resume needs --output-parent-dir` | Resume has to know which bundle to continue |
 | `--output-parent-dir '…' does not exist` | `mkdir -p` it first — the audit will not create it |
 | `must start with 'base' or 'none'` | Prefix the list: `--profile base,cms-ars` |
-| `--profile 'x' is not a known profile` | Use `cms-ars`, or a directory path |
+| `--profile 'x' is not a known profile` | After `base`, use `cms-ars` or a directory path — see [profiles.md](profiles.md) |
 | `--gate is not supported by the audit` | By design — use the PR review action for gating |
 
 Full flag list: `audit --help`, or the

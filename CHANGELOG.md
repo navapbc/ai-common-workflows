@@ -8,6 +8,25 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`--resume` for the codebase audit**, restoring the one capability the
+  earlier iteration had that the new bundle format dropped. It continues the
+  newest existing bundle for the repo instead of allocating a new run
+  directory: directories that already have a report are skipped, and their
+  findings are merged into the regenerated index.
+  The failure worth guarding was a resumed run **deleting** what it was meant
+  to preserve — the bundle is regenerated from the findings JSON, so without
+  carrying the previous findings forward the already-written directory docs
+  would have been rewritten empty. Prior findings are merged and de-duplicated
+  by (path, line, perspective, title), a clean resumed segment cannot downgrade
+  a bundle that already has findings to `APPROVE`, and the narrative is
+  appended under a `## Resumed segment` divider rather than replaced.
+  Resume works at **directory** granularity, matching the reports. Not per
+  batch: packing coalesces directories into at most `--jobs` bins, so "already
+  done" would mean something different at `--jobs 4` than at `--jobs 8`.
+  Nothing left to audit says so and leaves the bundle alone; no existing bundle
+  starts a fresh one and says that too. Searching is not restricted to today —
+  an audit interrupted last night should be resumable this morning, and the
+  directory's date records when the audit started.
 - **The audit confirms before it spends.** It prints the plan — scope, file
   count, batch count, expected model calls, endpoint (flagged when public) and
   report destination — then waits on `Proceed? [y/N]`. Anything but `y` aborts
@@ -170,6 +189,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/codebase-audit.md` documents profiles properly.** It showed
+  `--profile base,cms-ars` in one example, never explained that the value is an
+  ordered list whose first entry must be `base` or `none`, never linked
+  `docs/profiles.md`, and had a troubleshooting row reading as though a bare
+  `cms-ars` were valid — which is now a configuration error. It now has a short
+  section covering the list form, why the bare form is refused, `none` as the
+  escape hatch, and that a profile may ship its own `codebase-audit.md`
+  additions.
 - **`docs/codebase-audit.md` leads with the endpoint decision**, before the
   quickstart: Bedrock, Azure OpenAI, Vertex and self-hosted gateways first with
   copy-paste exports, the public API after. The reason is specific to the audit

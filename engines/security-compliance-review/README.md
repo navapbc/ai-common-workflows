@@ -101,6 +101,7 @@ bash <engines>/security-compliance-review/harness/ai-security-compliance-audit [
 | `--max-file-bytes <n>` | Skip files larger than n bytes (default 262144) |
 | `--list-files` | Print the files in scope; no AI call |
 | `--list-batches` / `--dry-run` | Print the plan and expected call count; no AI call |
+| `--resume` | Continue the newest existing bundle for this repo: directories with a report are skipped, their findings carried into the regenerated index. Requires `--output-parent-dir` |
 | `--yes` / `-y` | Skip the token-cost confirmation (also `AI_AUDIT_ASSUME_YES=1`). Required when stdin is not a TTY |
 | `--output-parent-dir <dir>` | **Required** for a real run. An existing directory; a `<repo>-<YYYYMMDD>-<NN>` bundle is created inside it per run. Not required by `--dry-run` / `--list-files` / `--list-batches` / `--json-only` |
 | `--json-out <file>` / `--md-out <file>` | Also write artifacts to paths you name |
