@@ -44,7 +44,18 @@ inputs:
     required: false
     default: "false"
   pr-number:
-    description: "PR number. Defaults to the pull_request event's number."
+    description: >-
+      PR number. Defaults to the pull_request event's number. On any other
+      event (workflow_dispatch, schedule, issue_comment) set this AND base-ref;
+      neither is derivable from the payload there.
+    required: false
+    default: ""
+  base-ref:
+    description: >-
+      Base branch to diff against, e.g. main. Defaults to the pull_request
+      event's base ref. Required when pr-number is set on a non-pull_request
+      event. Check the PR head out yourself in that case (refs/pull/<n>/head)
+      so the diff has a head to compare.
     required: false
     default: ""
 
@@ -172,6 +183,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         PR_NUMBER_INPUT: ${{ inputs.pr-number }}
         EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+        BASE_REF_INPUT: ${{ inputs.base-ref }}
         EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
       run: |
         set -euo pipefail

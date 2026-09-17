@@ -57,19 +57,25 @@ ci::validate_inputs() {
 }
 
 # ci::resolve_pr_context — determine the PR number + base ref and write
-# skip/pr/base to $GITHUB_OUTPUT. Reads: PR_NUMBER_INPUT, EVENT_PR_NUMBER,
-# EVENT_BASE_REF.
+# skip/pr/base to $GITHUB_OUTPUT.
+# Reads: PR_NUMBER_INPUT, EVENT_PR_NUMBER, BASE_REF_INPUT, EVENT_BASE_REF.
+#
+# Both halves of the context take an explicit input that wins over the event
+# payload, and they must stay symmetric. `pr-number` alone used to be
+# overridable, which made it look usable on workflow_dispatch while the base
+# ref silently stayed empty — so every manual run died here instead of at the
+# input it was actually missing.
 ci::resolve_pr_context() {
   local pr base
   pr="${PR_NUMBER_INPUT:-${EVENT_PR_NUMBER:-}}"
-  base="${EVENT_BASE_REF:-}"
+  base="${BASE_REF_INPUT:-${EVENT_BASE_REF:-}}"
   if [[ -z "${pr}" ]]; then
     echo "::notice::No PR context (not a pull_request event and no pr-number given). Skipping review."
     echo "skip=true" >>"${GITHUB_OUTPUT}"
     return 0
   fi
   if [[ -z "${base}" ]]; then
-    echo "::error::Could not determine the PR base ref. On non-pull_request events, run on a PR or provide the base via checkout."
+    echo "::error::Could not determine the PR base ref for PR #${pr}. On a pull_request event it comes from the payload; on any other event (workflow_dispatch, schedule, issue_comment) pass it explicitly with the 'base-ref' input alongside 'pr-number' — e.g. base-ref: \${{ github.event.repository.default_branch }}, or resolve it with 'gh pr view ${pr} --json baseRefName -q .baseRefName'."
     return 1
   fi
   {
