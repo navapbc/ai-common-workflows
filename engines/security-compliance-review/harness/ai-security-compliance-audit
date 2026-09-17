@@ -67,6 +67,8 @@ EXCLUDE_GLOBS=()
 MAX_FILE_BYTES="${AI_AUDIT_MAX_FILE_BYTES:-262144}"
 JSON_OUT=""
 MD_OUT=""
+OUTPUT_PARENT=""
+ASSUME_YES="${AI_AUDIT_ASSUME_YES:-0}"
 JSON_ONLY=0
 LIST_FILES=0
 WORKER_MODE=0
@@ -102,9 +104,22 @@ Rubric:
                             conflict; each only adds to what is above it.
 
 Output (nothing is written into the audited repo):
-  --json-out <file>         Write the findings JSON to a file.
-  --md-out <file>           Write the human-readable report to a file.
-  --json-only               Print only the findings JSON to stdout.
+  --output-parent-dir <dir> REQUIRED for a real run. An EXISTING directory to
+                            write the report bundle into. A new subdirectory is
+                            created per run, named <repo>-<YYYYMMDD>-<NN>, so
+                            runs never overwrite each other. Start at its
+                            _INDEX.md.
+                            Not required by --dry-run, --list-files,
+                            --list-batches or --json-only.
+  --json-out <file>         Also write the findings JSON to this exact path.
+  --md-out <file>           Also write the narrative report to this exact path.
+  --json-only               Print only the findings JSON to stdout; write no
+                            bundle.
+
+Confirmation:
+  --yes / -y                Skip the "this will cost tokens" prompt. Also
+                            AI_AUDIT_ASSUME_YES=1. Required when stdin is not a
+                            TTY, so a scripted run cannot spend by accident.
 
 Cost control — check scope before spending:
   --list-files              Print the files in scope and exit. No AI call.
@@ -171,6 +186,14 @@ audit::parse_flags() {
         MAX_FILE_BYTES="$2"
         shift 2
         ;;
+      --output-parent-dir)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--output-parent-dir requires an existing directory."
+          exit 2
+        fi
+        OUTPUT_PARENT="$2"
+        shift 2
+        ;;
       --json-out)
         # `$# -ge 2` alone would accept a following FLAG as the value.
         if [[ $# -lt 2 || "$2" == -* ]]; then
@@ -191,6 +214,10 @@ audit::parse_flags() {
         ;;
       --json-only)
         JSON_ONLY=1
+        shift
+        ;;
+      --yes | -y)
+        ASSUME_YES=1
         shift
         ;;
       --list-files)
@@ -433,6 +460,42 @@ audit::worker_main() {
   printf 'AI_REVIEW_BATCH_RESULT\t%s\t%s\t%s\n' "${key}" "${marker}" "${json_file}"
 }
 
+# ── Report bundle ───────────────────────────────────────────────────────────
+# audit::allocate_run_dir — echoes a fresh <parent>/<repo>-<YYYYMMDD>-<NN>.
+#
+# The parent must ALREADY EXIST and is never created: an audit is pointed at a
+# place someone chose to keep reports, and silently creating a deep path is how
+# a typo becomes a directory nobody looks in again.
+#
+# The run number is per-day and allocated by scanning the parent, so a second
+# audit of the same repo on the same day never overwrites the first. Reports get
+# attached to tickets and compared week to week; an overwritten one is worse
+# than a missing one because nobody notices.
+audit::allocate_run_dir() {
+  local parent="$1"
+  if [[ ! -d "${parent}" ]]; then
+    ai_review::err "--output-parent-dir '${parent}' does not exist."
+    ai_review::err "  It must be an existing directory; the audit will not create it."
+    exit 2
+  fi
+  if [[ ! -w "${parent}" ]]; then
+    ai_review::err "--output-parent-dir '${parent}' is not writable."
+    exit 2
+  fi
+
+  local repo date n next
+  repo="$(basename "$(git rev-parse --show-toplevel)")"
+  date="$(date +%Y%m%d)"
+  next=1
+  for existing in "${parent}/${repo}-${date}-"*; do
+    [[ -e "${existing}" ]] || continue
+    n="${existing##*-}"
+    [[ "${n}" =~ ^[0-9]+$ ]] || continue
+    ((10#${n} >= next)) && next=$((10#${n} + 1))
+  done
+  printf '%s/%s-%s-%02d' "${parent}" "${repo}" "${date}" "${next}"
+}
+
 # ── Main ────────────────────────────────────────────────────────────────────
 audit::run() {
   ai_review::resolve_profiles
@@ -469,6 +532,23 @@ audit::run() {
   fi
 
   ai_review::resolve_tool
+
+  # Required for a real run. Checked here — after --list-files has had its
+  # chance to exit, before any model call — so inspecting scope needs no
+  # output directory but producing findings cannot happen without somewhere to
+  # put them.
+  if [[ -z "${OUTPUT_PARENT}" && ${JSON_ONLY} -eq 0 &&
+    ${AI_REVIEW_DRY_RUN} -eq 0 && ${AI_REVIEW_LIST_BATCHES} -eq 0 ]]; then
+    ai_review::err "--output-parent-dir is required."
+    ai_review::err "  An audit produces a report bundle; it needs an existing directory to"
+    ai_review::err "  write it into. A new subdirectory <repo>-<YYYYMMDD>-<NN> is created"
+    ai_review::err "  there per run."
+    ai_review::err ""
+    ai_review::err "    ai-security-compliance-audit --output-parent-dir ~/audits ${SCOPE_PATHS[*]:-}"
+    ai_review::err ""
+    ai_review::err "  Or --json-only to print findings to stdout and write nothing."
+    exit 2
+  fi
 
   # ── Batch plan ─────────────────────────────────────────────────────────
   local -a _batch_records=()
@@ -510,6 +590,41 @@ audit::run() {
   # configured for Bedrock or Azure went to the public API instead — the whole
   # scope, to the wrong place, with nothing reported.
   ai_review::configure_endpoint
+
+  # ── Confirm before spending ────────────────────────────────────────────
+  # A full-repo audit reads every file in scope and is the most expensive thing
+  # in this repo by a wide margin — roughly one model call per batch, each
+  # carrying a large rubric plus the files it reviews. Someone who typed
+  # `audit` at the root of a monorepo expecting the speed of a lint run should
+  # find out before the bill, not after.
+  if ((ASSUME_YES == 0)); then
+    if [[ ! -t 0 ]]; then
+      ai_review::err "Refusing to start without confirmation: stdin is not a TTY."
+      ai_review::err "  This would audit ${nfiles} file(s) across ${_nbatches} batch(es) —"
+      ai_review::err "  roughly ${_nbatches} model call(s), each reading the files in its batch."
+      ai_review::err "  Pass --yes (or AI_AUDIT_ASSUME_YES=1) to run non-interactively."
+      exit 2
+    fi
+    ai_review::warn "This audit will send code to a model and consume tokens."
+    ai_review::log "  Scope:          $(audit::scope_description)"
+    ai_review::log "  Files:          ${nfiles}"
+    ai_review::log "  Batches:        ${_nbatches} (concurrency ${AI_REVIEW_JOBS})"
+    ai_review::log "  Expected calls: ~${_nbatches} first-pass$([[ "$(ai_review::adjudication_mode)" == "independent" ]] && printf ' + 1 adjudication')"
+    ai_review::log "  Endpoint:       ${AI_REVIEW_PROVIDER:-api}$([[ -z "${AI_REVIEW_PROVIDER:-}" || "${AI_REVIEW_PROVIDER}" == "api" ]] && printf ' (PUBLIC — the whole scope leaves your machine)')"
+    ai_review::log "  Report:         ${OUTPUT_PARENT:-(stdout only)}"
+    ai_review::log ""
+    ai_review::log "  --dry-run shows this plan without spending anything."
+    printf '  Proceed? [y/N] ' >&2
+    local reply=""
+    read -r reply || reply=""
+    case "${reply}" in
+      y | Y | yes | YES) ;;
+      *)
+        ai_review::log "Aborted; nothing was sent."
+        exit 0
+        ;;
+    esac
+  fi
 
   # ── Audit ──────────────────────────────────────────────────────────────
   local audit_json result human_output=""
@@ -595,6 +710,53 @@ audit::run() {
     else
       ai_review::warn "Adjudication failed (rc=${adj_rc}); keeping the first-pass findings."
     fi
+  fi
+
+  # ── Report bundle ───────────────────────────────────────────────────────
+  if [[ -n "${OUTPUT_PARENT}" ]]; then
+    local run_dir meta_file findings_file report_file
+    run_dir="$(audit::allocate_run_dir "${OUTPUT_PARENT}")"
+    meta_file="$(mktemp)"
+    findings_file="$(mktemp)"
+    report_file="$(mktemp)"
+    printf '%s\n' "${audit_json}" >"${findings_file}"
+    printf '%s\n' "${human_output}" >"${report_file}"
+
+    # Every audited directory, so the index can say "audited and clean" rather
+    # than leaving it ambiguous with "not audited".
+    local dirs_json
+    dirs_json="$(printf '%s\n' "${files_nl}" | python3 -c '
+import json, posixpath, sys
+dirs = sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.strip()})
+print(json.dumps(dirs))')"
+
+    python3 - "${meta_file}" "${dirs_json}" <<META
+import json, sys
+json.dump({
+    "repo": "$(basename "$(git rev-parse --show-toplevel)")",
+    "date": "$(date +%Y-%m-%d)",
+    "run": "$(basename "${run_dir}" | sed 's/.*-//')",
+    "scope": "$(audit::scope_description)",
+    "profile": "${AI_REVIEW_PROFILE}",
+    "tool": "${AI_REVIEW_TOOL_RESOLVED}",
+    "provider": "${AI_REVIEW_PROVIDER:-api}",
+    "adjudication": "$(ai_review::adjudication_mode)",
+    "files": ${nfiles},
+    "directories": json.loads(sys.argv[2]),
+}, open(sys.argv[1], "w"))
+META
+
+    local index
+    if index="$(python3 "${AI_COMMON_HOME}/harness/write_audit_report.py" \
+      "${run_dir}" "${findings_file}" "${meta_file}" "${report_file}")"; then
+      ai_review::ok "Report bundle written. Start here:"
+      ai_review::log "  ${index}"
+    else
+      ai_review::err "Could not write the report bundle to ${run_dir}."
+      rm -f "${meta_file}" "${findings_file}" "${report_file}"
+      exit 1
+    fi
+    rm -f "${meta_file}" "${findings_file}" "${report_file}"
   fi
 
   # ── Artifacts, only where asked ─────────────────────────────────────────

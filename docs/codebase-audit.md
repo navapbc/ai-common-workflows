@@ -88,11 +88,14 @@ git clone https://github.com/navapbc/ai-common-workflows ~/ai-common-workflows
 Then, with the endpoint configured above, from the repo you want to audit:
 
 ```bash
+mkdir -p ~/audits
 cd ~/code/my-repo
-bash ~/ai-common-workflows/engines/security-compliance-review/harness/ai-security-compliance-audit
+bash ~/ai-common-workflows/engines/security-compliance-review/harness/ai-security-compliance-audit \
+  --output-parent-dir ~/audits
 ```
 
-That's it. The report prints to your terminal.
+That's it. It prints the report to your terminal and writes a bundle to
+`~/audits/<repo>-<date>-01/` — start at its `_INDEX.md`.
 
 **Make it a one-word command** (optional, worth the 10 seconds):
 
@@ -108,10 +111,16 @@ remember.
 ## The four things you'll actually use
 
 ```bash
-audit                          # whole repo
-audit terraform/               # just one directory — much cheaper
-audit --dry-run                # what would it cost? no AI call
-audit --profile cms-ars        # judge against CMS ARS 5.1 / NIST 800-53
+audit --output-parent-dir ~/audits              # whole repo
+audit --output-parent-dir ~/audits terraform/   # one directory — much cheaper
+audit --dry-run                                 # what would it cost? no AI call
+audit --output-parent-dir ~/audits --profile base,cms-ars   # CMS ARS / NIST 800-53
+```
+
+Worth folding the output directory into the alias so you never type it:
+
+```bash
+alias audit='bash ~/ai-common-workflows/engines/security-compliance-review/harness/ai-security-compliance-audit --output-parent-dir ~/audits'
 ```
 
 **Check cost before a big run.** `--dry-run` tells you how many model calls to
@@ -130,16 +139,112 @@ $ audit --dry-run
 A directory is usually the right scope. `audit terraform/` on a large repo is a
 couple of calls; `audit` on the same repo can be dozens.
 
-## Save the output
+## It asks before it spends
 
-```bash
-audit --md-out audit.md                  # the readable report
-audit --json-out findings.json           # machine-readable findings
-audit --json-only > findings.json        # JSON only, nothing else on stdout
+A full-repo audit is the most expensive thing here by a wide margin — roughly
+one model call per batch, each carrying the rubric plus the files in its batch.
+So it shows you the plan and waits:
+
+```
+[security-compliance-audit] This audit will send code to a model and consume tokens.
+  Scope:          repository root
+  Files:          412
+  Batches:        4 (concurrency 4)
+  Expected calls: ~4 first-pass
+  Endpoint:       api (PUBLIC — the whole scope leaves your machine)
+  Report:         /home/you/audits
+
+  --dry-run shows this plan without spending anything.
+  Proceed? [y/N]
 ```
 
-Write these **outside** the audited repo if you don't want them committed by
-accident — the audit itself never creates a file in your repo.
+Anything but `y` aborts and sends nothing. Skip it with `--yes` (or
+`-y`, or `AI_AUDIT_ASSUME_YES=1`) once you know what a run costs you.
+
+**Non-interactive runs must pass `--yes`.** When stdin is not a TTY the audit
+refuses rather than prompting into the void — a scripted run should not be able
+to spend by accident — and the refusal names the file and batch count it would
+have used. `--dry-run`, `--list-files` and `--list-batches` never prompt.
+
+## Going faster on a big repo
+
+Batches run concurrently; `--jobs` sets how many at once (default 4, same knob
+as `AI_REVIEW_JOBS`):
+
+```bash
+audit --output-parent-dir ~/audits --jobs 8      # 8 batches in flight
+audit --output-parent-dir ~/audits --jobs 1      # fully serial
+```
+
+Batch *planning* is single-threaded and deterministic, so the set of reports and
+the `_INDEX.md` are identical regardless of `--jobs` — only execution fans out.
+The practical ceiling is your provider's rate limit; too high invites HTTP 429s.
+`--dry-run` shows the batch count and concurrency before you commit.
+
+## Where the report goes
+
+`--output-parent-dir` is **required** for a real run. Point it at a directory
+that already exists — the audit will not create it, because a typo that
+silently creates a deep path is how a report ends up somewhere nobody looks
+again.
+
+```bash
+mkdir -p ~/audits
+audit --output-parent-dir ~/audits
+```
+
+Each run gets its own subdirectory, so runs never overwrite each other:
+
+```
+~/audits/
+└── my-repo-20260917-01/          ← <repo>-<YYYYMMDD>-<NN>
+    ├── _INDEX.md                 ← start here
+    ├── report.md                 the auditor's narrative, including the posture summary
+    ├── findings.json             machine-readable, same schema as the PR review
+    ├── src__api.md               one doc per directory ('/' becomes '__')
+    └── infra.md
+```
+
+The run number is allocated by scanning the parent for existing
+`<repo>-<date>-*` directories and taking the highest plus one, starting at
+`01`. It is per repo *and* per day, since the date already distinguishes days —
+so a second audit today is `-02`, and tomorrow's first is `-01` again.
+
+### Reading it
+
+Open `_INDEX.md`. It is **findings-first**, so you never hunt through clean
+directories:
+
+- A **directories-with-findings** table at the top, worst first (critical, then
+  high, medium, low), each linking straight to that directory's findings.
+- A suggested triage order — criticals today, highs in security-sensitive
+  directories next, and a note that a recurring Medium across many files is
+  usually one systemic gap rather than N tickets.
+- Clean directories collapsed into a `<details>` list at the bottom, present
+  for completeness and out of the way.
+- A ✅ note instead of the table when nothing was found.
+
+Every finding is a `####` heading, so you can list just the docs worth opening:
+
+```bash
+cd ~/audits/my-repo-20260917-01 && grep -rl '^#### ' .
+```
+
+The bundle is generated from the merged findings, so it is identical whether
+the audit ran as one call or fanned out across eight — a report whose shape
+depends on `--jobs` is one you cannot compare against last week's.
+
+### Other output options
+
+```bash
+audit --output-parent-dir ~/audits --md-out ~/latest.md    # an extra copy, exact path
+audit --output-parent-dir ~/audits --json-out ~/f.json     # same, for a script
+audit --json-only > findings.json                          # no bundle at all
+```
+
+`--json-only` needs no output directory, and neither do `--dry-run`,
+`--list-files` or `--list-batches` — inspecting scope and cost should not
+require deciding where a report goes.
 
 ## What you get
 
@@ -189,6 +294,9 @@ and files over 256 KB. Each skip is printed so you know what wasn't examined.
 | `provider=vertex requires …PROJECT_ID` | Set `ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` |
 | `Not a git repository` | Run it from the repo root |
 | `No files in scope` | Check the path, `--include`/`--exclude`, `--max-file-bytes` |
+| `--output-parent-dir is required` | Pass an existing directory, or `--json-only` to write nothing |
+| `stdin is not a TTY` | Add `--yes` for a scripted run |
+| `--output-parent-dir '…' does not exist` | `mkdir -p` it first — the audit will not create it |
 | `must start with 'base' or 'none'` | Prefix the list: `--profile base,cms-ars` |
 | `--profile 'x' is not a known profile` | Use `cms-ars`, or a directory path |
 | `--gate is not supported by the audit` | By design — use the PR review action for gating |

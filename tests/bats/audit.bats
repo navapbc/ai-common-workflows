@@ -25,6 +25,13 @@ setup() {
   echo 'third party' >vendor/lib.py
   git add -A
   git commit -qm init
+  # Every real run now needs somewhere to write its bundle.
+  OUT_PARENT="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${OUT_PARENT}"
+  # bats is not a TTY, and the audit refuses to spend without confirmation
+  # there. Set once here rather than on every invocation; the refusal itself is
+  # tested explicitly below.
+  export AI_AUDIT_ASSUME_YES=1
   export STUB_RESPONSE_FILE="${BATS_TEST_TMPDIR}/resp.txt"
   cat >"${STUB_RESPONSE_FILE}" <<'EOF'
 ## Codebase Audit Report
@@ -236,6 +243,167 @@ EOF
   [[ "$output" == *"Unknown flag"* ]]
 }
 
+# ── confirmation before spending ────────────────────────────────────────────
+
+@test "audit: refuses to start non-interactively without --yes" {
+  unset AI_AUDIT_ASSUME_YES
+  run bash -c "bash '${AUDIT}' --output-parent-dir '${OUT_PARENT}' </dev/null 2>&1"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"stdin is not a TTY"* ]]
+  [[ "$output" == *"--yes"* ]]
+}
+
+@test "audit: the refusal names the cost it would have incurred" {
+  unset AI_AUDIT_ASSUME_YES
+  run bash -c "bash '${AUDIT}' --output-parent-dir '${OUT_PARENT}' </dev/null 2>&1"
+  [[ "$output" == *"file(s) across"* ]]
+  [[ "$output" == *"batch(es)"* ]]
+}
+
+@test "audit: --yes skips the prompt" {
+  unset AI_AUDIT_ASSUME_YES
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --yes
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Proceed?"* ]]
+}
+
+@test "audit: -y is accepted too" {
+  unset AI_AUDIT_ASSUME_YES
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" -y
+  [ "$status" -eq 0 ]
+}
+
+@test "audit: AI_AUDIT_ASSUME_YES=1 skips the prompt" {
+  AI_AUDIT_ASSUME_YES=1 run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Proceed?"* ]]
+}
+
+@test "audit: the no-AI-call paths never prompt" {
+  # Inspecting scope or cost must not require confirming a spend.
+  unset AI_AUDIT_ASSUME_YES
+  run bash "${AUDIT}" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Proceed?"* ]]
+  run bash "${AUDIT}" --list-files
+  [ "$status" -eq 0 ]
+  run bash "${AUDIT}" --list-batches
+  [ "$status" -eq 0 ]
+}
+
+@test "audit: --jobs controls fan-out concurrency" {
+  run bash "${AUDIT}" --jobs 8 --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"concurrency 8"* ]]
+  run bash "${AUDIT}" --jobs 1 --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"concurrency 1"* ]]
+}
+
+# ── report bundle ───────────────────────────────────────────────────────────
+
+@test "audit: --output-parent-dir is required for a real run" {
+  run bash "${AUDIT}" terraform/
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--output-parent-dir is required"* ]]
+}
+
+@test "audit: a missing parent directory is an error and is NOT created" {
+  local parent="${BATS_TEST_TMPDIR}/nope/deeper"
+  run bash "${AUDIT}" --output-parent-dir "${parent}" terraform/
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"does not exist"* ]]
+  [ ! -d "${parent}" ]
+}
+
+@test "audit: --output-parent-dir with no value does not swallow the next flag" {
+  run bash "${AUDIT}" --output-parent-dir --dry-run
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"requires an existing directory"* ]]
+}
+
+@test "audit: --json-only needs no output directory" {
+  run bash "${AUDIT}" --json-only
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"review_action"'* ]]
+}
+
+@test "audit: --dry-run and --list-files need no output directory" {
+  run bash "${AUDIT}" --dry-run
+  [ "$status" -eq 0 ]
+  run bash "${AUDIT}" --list-files
+  [ "$status" -eq 0 ]
+}
+
+@test "audit: the bundle is written to <repo>-<date>-NN with an _INDEX.md" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"_INDEX.md"* ]]
+  local dir
+  dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  [[ "$(basename "${dir}")" =~ ^audit-repo-[0-9]{8}-01$ ]]
+  [ -f "${dir}/_INDEX.md" ]
+  [ -f "${dir}/findings.json" ]
+  [ -f "${dir}/report.md" ]
+}
+
+@test "audit: the run number increments rather than overwriting" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  [ "$(find "${parent}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 2 ]
+  [ -d "${parent}/$(basename "$(git rev-parse --show-toplevel)")-$(date +%Y%m%d)-02" ]
+}
+
+@test "audit: a two-digit run number is parsed as base 10, not octal" {
+  # 08 and 09 are invalid octal; without 10# the ninth run of a day crashes.
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  local repo; repo="$(basename "$(git rev-parse --show-toplevel)")"
+  mkdir -p "${parent}/${repo}-$(date +%Y%m%d)-08"
+  run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  [ -d "${parent}/${repo}-$(date +%Y%m%d)-09" ]
+}
+
+@test "audit: per-directory docs use __ for slashes and carry the findings" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  [ -f "${dir}/src.md" ]
+  grep -q '^#### ' "${dir}/src.md"
+}
+
+@test "audit: the grep convention lists only docs with findings" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  # terraform/ has no finding in the stub response, so it must not match.
+  run bash -c "cd '${dir}' && grep -rl '^#### ' . | sort"
+  [[ "$output" != *"terraform"* ]]
+}
+
+@test "audit: the index carries the advisory disclaimer" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Advisory, not exhaustive" "${dir}/_INDEX.md"
+  grep -q "control IDs" "${dir}/_INDEX.md"
+}
+
+@test "audit: nothing is written into the audited repo when a bundle is produced" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local before; before="$(git status --porcelain; git ls-files)"
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  [ "$(git status --porcelain; git ls-files)" = "${before}" ]
+}
+
 # ── endpoint / data path ────────────────────────────────────────────────────
 # An audit sends the whole scope to the endpoint, not a diff, so an ignored
 # provider setting is the worst failure this tool can have: the entire codebase
@@ -262,19 +430,18 @@ EOF
 }
 
 @test "audit: provider=bedrock without a region fails rather than using the public API" {
-  AI_REVIEW_PROVIDER=bedrock run bash "${AUDIT}" terraform/
   # The engine must not quietly fall back to the public endpoint.
-  run bash -c "AI_REVIEW_PROVIDER=bedrock bash '${AUDIT}' terraform/ 2>&1"
+  run bash -c "AI_REVIEW_PROVIDER=bedrock bash '${AUDIT}' --output-parent-dir '${OUT_PARENT}' terraform/ 2>&1"
   [[ "$output" == *"requires AWS_REGION"* ]]
 }
 
 @test "audit: provider=azure without an endpoint is a config error" {
-  run bash -c "AI_REVIEW_TOOL=codex AI_REVIEW_PROVIDER=azure bash '${AUDIT}' terraform/ 2>&1"
+  run bash -c "AI_REVIEW_TOOL=codex AI_REVIEW_PROVIDER=azure bash '${AUDIT}' --output-parent-dir '${OUT_PARENT}' terraform/ 2>&1"
   [[ "$output" == *"provider=azure requires"* ]]
 }
 
 @test "audit: an unrecognized provider is rejected" {
-  run bash -c "AI_REVIEW_PROVIDER=nonsense bash '${AUDIT}' terraform/ 2>&1"
+  run bash -c "AI_REVIEW_PROVIDER=nonsense bash '${AUDIT}' --output-parent-dir '${OUT_PARENT}' terraform/ 2>&1"
   [[ "$output" == *"not a recognized value"* ]]
 }
 
@@ -288,14 +455,14 @@ EOF
 # ── a full stubbed run ──────────────────────────────────────────────────────
 
 @test "audit: completes and reports the finding count" {
-  run bash "${AUDIT}"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
   [ "$status" -eq 0 ]
   [[ "$output" == *"Audit complete: 1 finding(s)"* ]]
 }
 
 @test "audit: --json-out writes the findings JSON outside the audited repo" {
   local out="${BATS_TEST_TMPDIR}/findings.json"
-  run bash "${AUDIT}" --json-out "${out}"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --json-out "${out}"
   [ "$status" -eq 0 ]
   [ -s "${out}" ]
   grep -q '"review_action"' "${out}"
@@ -311,7 +478,7 @@ EOF
 @test "audit: writes nothing into the audited repo" {
   local before after
   before="$(git status --porcelain; git ls-files)"
-  run bash "${AUDIT}"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
   [ "$status" -eq 0 ]
   after="$(git status --porcelain; git ls-files)"
   [ "${before}" = "${after}" ]
@@ -322,7 +489,7 @@ EOF
 ## Codebase Audit Report
 no marker here
 EOF
-  run bash "${AUDIT}"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
   [ "$status" -eq 1 ]
 }
 
@@ -331,12 +498,12 @@ EOF
 ## Codebase Audit Report
 <<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
 EOF
-  run bash "${AUDIT}"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
   [ "$status" -eq 1 ]
 }
 
 @test "audit: an AI CLI failure is a runtime error" {
-  STUB_EXIT=9 run bash "${AUDIT}"
+  STUB_EXIT=9 run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
   [ "$status" -eq 1 ]
 }
 
@@ -348,7 +515,7 @@ EOF
 
 @test "audit: the prompt carries the audit rubric and the scope, not a diff" {
   export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
-  run bash "${AUDIT}" terraform/
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" terraform/
   [ "$status" -eq 0 ]
   grep -q "CODEBASE-AUDIT INSTRUCTIONS" "${STUB_PROMPT_LOG}"
   grep -q "AUDIT SCOPE" "${STUB_PROMPT_LOG}"
@@ -357,14 +524,14 @@ EOF
 
 @test "audit: the compliance perspective is included when IaC is in scope" {
   export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
-  run bash "${AUDIT}" terraform/
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" terraform/
   [ "$status" -eq 0 ]
   grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
 }
 
 @test "audit: the compliance perspective is omitted when no IaC is in scope" {
   export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
-  run bash "${AUDIT}" src/
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/
   [ "$status" -eq 0 ]
   ! grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
 }
