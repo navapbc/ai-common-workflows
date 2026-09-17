@@ -345,6 +345,38 @@ if the diff contains only CSS). Be explicit about what was skipped and why.
 - **Prototype pollution** (JS/TS) — Unsafe object merges or assignments
 - **Insecure randomness** — Use of `Math.random()` or `rand()` for security purposes
 
+### 3D — Language and Framework Hazards
+
+The checks above are deliberately language-neutral. Every language also has its
+own well-known footguns, and **you are expected to apply them** — this rubric
+does not enumerate them, because a list of framework specifics would be stale
+within a release or two and a confidently outdated citation is worse than
+silence.
+
+So, for whatever languages and frameworks are actually in this diff:
+
+- Apply the hazards idiomatic to them, at the same standard as the checks
+  above. Unsafe deserialization, XML parsers with unsafe defaults, template
+  engines that do not escape by default, shell interpolation, ORM escape
+  hatches that take raw SQL, weak crypto defaults, request clients with
+  verification disabled — the particular names differ by language, the
+  category does not.
+- **Name the language or framework in the finding** when the issue is specific
+  to it, so the reader can tell a general principle from a framework rule
+  ("Spring Security's `permitAll()` on this matcher" rather than "missing
+  authorization").
+- Take framework identity from the evidence, not the file extension: a
+  manifest already in your context (`pom.xml`, `go.mod`, `Gemfile`,
+  `pyproject.toml`, `package.json`) or an import in the diff. If you cannot
+  tell which framework is in use, review it as plain language code rather than
+  guessing at framework behaviour.
+- **Do not invent version-specific claims.** If a hazard depends on a default
+  that changed between versions and the diff does not show the version, say
+  the finding is conditional on it rather than asserting one.
+
+Severity comes from the ladder below, unchanged. A language-specific finding is
+not more or less severe for being language-specific.
+
 ---
 
 ## Severity Definitions

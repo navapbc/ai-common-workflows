@@ -132,6 +132,13 @@ profile.
 
 ## Adding a profile (agency or state variant)
 
+> Profiles are the right home for **framework- or language-specific** rules
+> too, if you need them. The shared rubric deliberately has none — see
+> [why there are no language-specific rubrics](security-compliance-review.md#why-there-are-no-language-specific-rubrics).
+> Knowledge with a short half-life belongs near the people who will notice it
+> ageing, not in a floor everyone inherits.
+
+
 1. Create `skills/profiles/<name>/iac-compliance.md` (under the review engine)
    containing only your **additions** to the floor — control-ID citations for
    findings the floor already covers (a cross-reference table is enough; don't

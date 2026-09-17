@@ -126,6 +126,47 @@ The review runs natively on your runner; there is no built-in network sandbox
 yet, so egress control is your infrastructure's responsibility — see
 [security.md](security.md).
 
+## Why there are no language-specific rubrics
+
+There is one security rubric, and it is deliberately language-neutral. There is
+no `java.md`, no `python.md`, no per-language skill — and that is a decision,
+not a gap.
+
+**A rubric is a poor place to keep framework knowledge.** Spring Security's
+defaults change between majors. `yaml.load` becomes unsafe, then deprecated,
+then removed. A Rails callback is renamed. Each of those turns a confident line
+of rubric into a confidently wrong one — and a wrong citation is worse than
+silence, because the finding arrives with the same authority as the parts that
+are still right. A markdown file has no way to know it has gone stale, and
+nobody re-reads 2,000 lines of pattern catalogue looking for rot.
+
+**The model already knows this, and its knowledge is newer than ours.** The
+rubric's job is to say what to prioritise, how to rank severity, what to cite,
+and how to report — the parts that are *ours* and that a model has no way to
+infer. Enumerating language footguns on top of that spends maintenance to
+restate something the model holds more currently than we can. So instead, the
+security perspective's **§ 3D** instructs the reviewer to apply the hazards
+idiomatic to whatever is in the diff, to name the language or framework in the
+finding so a reader can tell a general principle from a framework rule, to take
+framework identity from a manifest or an import rather than a file extension,
+and not to assert version-specific behaviour it cannot see. That instruction is
+stable: it delegates rather than enumerates, so there is nothing in it to go
+out of date.
+
+**And language depth is what the deterministic scanners are genuinely better
+at.** Semgrep and CodeQL ship maintained Java, Go, Python and Ruby rulesets,
+kept current by people whose job that is. This is the division of labour from
+[the section above](#run-it-alongside-your-scanners-not-instead-of-them) doing
+real work: pairing this review with SAST is *why* we do not need to own a
+per-language pattern catalogue.
+
+**If you need it anyway, profiles are the escape hatch.** A program with
+genuine framework-specific requirements can add its own rubric additions in its
+profile directory — see [profiles.md](profiles.md) — and own the upkeep locally,
+where someone is close enough to the framework to notice when the advice ages.
+That is the right place for knowledge with a short half-life: near the people
+it belongs to, not in a shared floor everyone inherits.
+
 ## Compliance profiles
 
 The security perspective is universal. The **compliance** perspective always

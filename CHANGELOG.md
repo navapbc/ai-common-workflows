@@ -8,6 +8,28 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **§ 3D "Language and Framework Hazards"** in the security perspective, and
+  a doc section explaining why there are no per-language rubrics.
+  The rubric stays language-neutral by design. § 3D instructs the reviewer to
+  apply the hazards idiomatic to whatever is actually in the diff, to **name
+  the language or framework** in the finding so a reader can tell a general
+  principle from a framework rule, to take framework identity from a manifest
+  or an import rather than a file extension, and **not to assert
+  version-specific behaviour it cannot see** — a hazard that depends on a
+  default which changed between majors is reported as conditional rather than
+  asserted. Severity still comes from the one ladder: a finding is not more or
+  less severe for being language-specific.
+  It delegates rather than enumerates, so there is nothing in it to go stale —
+  which is the whole point. A `java.md` would be confidently wrong about Spring
+  Security's defaults within a release or two, and a wrong citation is worse
+  than silence because it arrives with the same authority as the parts that are
+  still right. The model's framework knowledge is also newer than ours, and
+  language depth is what Semgrep and CodeQL are genuinely better at — which is
+  the "alongside, not instead of" division of labour doing real work.
+  `docs/security-compliance-review.md` records that reasoning so the decision
+  is not relitigated as an oversight, and `docs/profiles.md` notes that a
+  profile is the right home for framework rules a program does need: knowledge
+  with a short half-life belongs near the people who will notice it ageing.
 - **`--resume` for the codebase audit**, restoring the one capability the
   earlier iteration had that the new bundle format dropped. It continues the
   newest existing bundle for the repo instead of allocating a new run
