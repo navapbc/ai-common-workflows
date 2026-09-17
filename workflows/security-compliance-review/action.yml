@@ -36,12 +36,15 @@ inputs:
     default: "true"
   max-comments:
     description: >-
-      Cap on inline comments per review (default 15; 0 = no cap). Above the cap
-      the highest-severity findings stay inline and the rest are listed in the
-      review body — nothing is dropped, and the gate still accounts for every
-      finding. A review that buries the diff is a review teams switch off.
+      Limit on inline comments per review (default 50; 0 = no limit). Over the
+      limit the highest-severity findings stay inline and the rest are listed
+      in the review body, under a heading saying the limit was reached — so a
+      reader can tell the inline comments are not the whole review. Nothing is
+      dropped and the gate still accounts for every finding. The limit is there
+      for the pathological PR; a review that buries the diff is a review teams
+      switch off.
     required: false
-    default: "15"
+    default: "50"
   gate:
     description: >-
       Fail the job on HIGH or CRITICAL findings. Default false (advisory).

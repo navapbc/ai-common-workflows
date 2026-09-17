@@ -111,10 +111,11 @@ Environment variables:
                            is above it. finding-adjudication.md is always read
                            from skills/base/ and is outside this list.
                            See docs/profiles.md.
-  AI_REVIEW_MAX_COMMENTS   Cap on inline comments per review (default 15;
-                           0 = no cap). Over the cap the highest-severity
+  AI_REVIEW_MAX_COMMENTS   Limit on inline comments per review (default 50;
+                           0 = no limit). Over the limit the highest-severity
                            findings stay inline and the rest are listed in the
-                           review body. The gate still sees every finding.
+                           review body, under a heading saying the limit was
+                           reached. The gate still sees every finding.
   AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
                            bedrock: claude or codex; vertex: claude only;
                            azure: codex only. (copilot uses BYOK env vars —
@@ -559,7 +560,7 @@ pr_review::run() {
     else
       ai_review::log "  Expected calls: ~${_calls}"
     fi
-    ai_review::log "  Inline cap:     ${AI_REVIEW_MAX_COMMENTS:-15} comment(s) ($([[ "${AI_REVIEW_MAX_COMMENTS:-15}" == "0" ]] && printf 'no cap' || printf 'rest go to the review body'))"
+    ai_review::log "  Inline limit:   ${AI_REVIEW_MAX_COMMENTS:-50} comment(s) ($([[ "${AI_REVIEW_MAX_COMMENTS:-50}" == "0" ]] && printf 'no limit' || printf 'rest go to the review body'))"
     ai_review::log "  Changed files:"
     ai_review::changed_files | sed 's/^/    /'
     exit 0

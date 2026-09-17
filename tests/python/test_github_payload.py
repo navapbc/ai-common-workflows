@@ -310,10 +310,93 @@ def test_cap_of_zero_means_no_cap(monkeypatch):
     assert "not posted inline" not in payload["body"]
 
 
+def _unwrapped(text):
+    """Collapse runs of whitespace, so assertions survive re-wrapping."""
+    return " ".join(text.split())
+
+
 def test_cap_default_is_applied_when_unset(monkeypatch):
     monkeypatch.delenv("AI_REVIEW_MAX_COMMENTS", raising=False)
-    payload, _ = gp.build_payload(_n_findings(*["LOW"] * 20), "", "")
+    # Derived from the constant rather than hardcoded, so raising the default
+    # does not silently turn this into a test of the uncapped path — which is
+    # exactly what happened when it moved from 15 to 50.
+    n = gp.DEFAULT_MAX_COMMENTS + 5
+    payload, _ = gp.build_payload(_n_findings(*["LOW"] * n), "", "")
     assert len(payload["comments"]) == gp.DEFAULT_MAX_COMMENTS
+
+
+def test_the_default_cap_is_generous_enough_for_a_first_review(monkeypatch):
+    """The cap is for the pathological PR, not for curating an ordinary one.
+
+    A first run on a repo nobody has reviewed before routinely trips 40-odd
+    findings; at 15 most of them arrived as a body list with no line anchor and
+    no suggested fix, which is the least useful form of the same information.
+    Pinned so a future tightening is a decision rather than a drift.
+    """
+    assert gp.DEFAULT_MAX_COMMENTS == 50
+    monkeypatch.delenv("AI_REVIEW_MAX_COMMENTS", raising=False)
+    payload, _ = gp.build_payload(_n_findings(*["CRITICAL"] * 44), "", "")
+    assert len(payload["comments"]) == 44
+    assert "Inline limit" not in payload["body"]
+
+
+# ── the review body says the limit was hit ──────────────────────────────────
+# A reader who sees inline comments has no way to know the review had more to
+# say unless the body tells them. The heading has to carry it: a caveat in the
+# middle of a paragraph below a 30-item list is not a notice.
+
+def test_the_body_says_the_limit_was_reached_and_names_it(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "3")
+    data = _n_findings(*["HIGH"] * 10)
+    payload, _ = gp.build_payload(data, "", "")
+    heading = next(
+        ln for ln in payload["body"].splitlines() if ln.startswith("#### ")
+    )
+    assert "Inline limit of 3 reached" in heading
+    assert "7 further finding(s) not posted inline" in heading
+    # And the total, so the reader can size what they are not seeing inline.
+    assert "10 anchorable finding(s)" in payload["body"]
+
+
+def test_the_operator_message_says_the_limit_was_reached(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    _, messages = gp.build_payload(_n_findings(*["HIGH"] * 5), "", "")
+    assert any("Inline limit of 2 reached" in m for m in messages)
+    assert any("no limit" in m for m in messages)
+
+
+def test_the_body_does_not_call_overflowing_criticals_low_severity(monkeypatch):
+    """The bug this wording exists to prevent.
+
+    When a diff trips more findings at the top severity than the cap allows,
+    CRITICALs overflow into the body — the cap keeps the most severe and breaks
+    ties on report order, so the tail of a 20-critical review is still
+    critical. The blurb used to call that tail "the lower-severity remainder",
+    which told the reader that command injection in an admin endpoint was a
+    low-severity leftover.
+    """
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    payload, _ = gp.build_payload(_n_findings(*["CRITICAL"] * 5), "", "")
+    body = payload["body"]
+
+    # The overflow really is critical here — otherwise this asserts nothing.
+    assert "(3 critical)" in body
+    assert "**security(critical)**" in body
+
+    assert "lower-severity remainder" not in body
+    # And it says so positively, rather than merely omitting the false claim.
+    # Normalized: the blurb is hard-wrapped, and where it wraps is not the
+    # behaviour under test.
+    assert "can still mean HIGH or CRITICAL" in _unwrapped(body)
+
+
+def test_the_body_still_promises_nothing_was_dropped(monkeypatch):
+    # The counterpart to the warning: the list is the complete remainder, so a
+    # reader is not left wondering whether findings vanished.
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    payload, _ = gp.build_payload(_n_findings(*["HIGH"] * 6), "", "")
+    assert "Nothing was dropped" in _unwrapped(payload["body"])
+    assert payload["body"].count("`src/a.py:") == 4
 
 
 def test_cap_garbage_value_falls_back_to_the_default(monkeypatch):

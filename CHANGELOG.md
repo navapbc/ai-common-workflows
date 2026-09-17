@@ -145,20 +145,39 @@ follow [Semantic Versioning](https://semver.org/).
   eroded in the first place. Verified against all three regression forms rather
   than only observed to pass, plus a test asserting the scan matches something
   at all — a regex that matched nothing would make the rest vacuous.
-- **`max-comments`** — a cap on inline comments per review, default 15
-  (`0` disables it). Above the cap the highest-severity findings stay inline
-  and the rest are listed in the review body with counts by severity. Nothing
-  is dropped, and the gate is unaffected: it reads the engine's findings JSON,
-  so a capped review blocks exactly as it would have uncapped.
+- **`max-comments`** — a limit on inline comments per review, default 50
+  (`0` disables it). Over the limit the highest-severity findings stay inline
+  and the rest are listed in the review body with counts by severity, under a
+  heading that says the limit was reached. Nothing is dropped, and the gate is
+  unaffected: it reads the engine's findings JSON, so a limited review blocks
+  exactly as it would have unlimited.
   There was previously no limit, so a large PR could post dozens of inline
   comments — which is how a review bot gets switched off, a failure that cannot
   be recovered because the disable is cultural rather than technical.
+  The default is deliberately generous. The limit is for the pathological PR,
+  not for curating an ordinary one: a first run against a repo nobody has
+  reviewed before routinely trips 40-odd findings, and at 15 most of them
+  arrived as a body list with no line anchor and no suggested fix — the least
+  useful form of the same information. It is pinned by a test so a future
+  tightening is a decision rather than a drift.
   Selection is by severity with the report order as the tie-break, so the
   chosen subset is stable across re-runs (an unstable cut would post a
   different subset each time and defeat the idempotency suppression). An
   unrecognized severity sorts last rather than first, so it cannot evict a
   known CRITICAL from an inline slot, and the comments are emitted in diff
   order so they land where the code is.
+  **The body section says the limit was hit, and no longer misdescribes what
+  overflowed.** It used to call the remainder "the lower-severity remainder",
+  which is false whenever a diff trips more findings at the top severity than
+  the limit allows: selection breaks ties on report order, so the tail of a
+  20-CRITICAL review is still CRITICAL. A real run on a seeded Flask app put
+  five CRITICALs — command injection in two admin endpoints, SSRF in a health
+  check, a blank-token auth bypass, debug mode bound to all interfaces — in
+  that list, under a sentence calling them low-severity leftovers. The heading
+  now leads with the limit and the count, the blurb states the total and says
+  the list can include HIGH or CRITICAL, and it still promises nothing was
+  dropped. A reader who only skims inline comments is told, where they are
+  looking, that the review had more to say.
 - **The review's `--dry-run` now reports the expected AI call count** and the
   inline cap alongside the batch routing it already printed — fan-out
   multiplies the first pass per batch and `adjudication: independent` adds one
