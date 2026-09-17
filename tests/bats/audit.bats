@@ -342,6 +342,102 @@ EOF
   [[ "$output" == *"needs --output-parent-dir"* ]]
 }
 
+# ── --doctor ────────────────────────────────────────────────────────────────
+# One answer instead of four "it did not work" moments. Reports every problem
+# in one pass, because a fresh laptop usually has two or three at once.
+
+@test "audit: --doctor reports ready when everything is configured" {
+  run bash "${AUDIT}" --doctor --output-parent-dir "${OUT_PARENT}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Ready to audit"* ]]
+  [[ "$output" == *"bash"* ]]
+  [[ "$output" == *"python3"* ]]
+}
+
+@test "audit: --doctor needs no output directory" {
+  run bash "${AUDIT}" --doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--output-parent-dir is required for a real run"* ]]
+}
+
+@test "audit: --doctor makes no AI call" {
+  run bash "${AUDIT}" --doctor --output-parent-dir "${OUT_PARENT}"
+  [ "$status" -eq 0 ]
+  [ ! -s "${STUB_CALLS}" ]
+}
+
+@test "audit: --doctor works outside a git repository" {
+  # You should be able to check your setup before cd-ing into a repo.
+  cd "${BATS_TEST_TMPDIR}"
+  mkdir -p elsewhere && cd elsewhere
+  run bash "${AUDIT}" --doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not inside a git repository"* ]]
+}
+
+@test "audit: --doctor fails and names a missing AI_REVIEW_TOOL" {
+  unset AI_REVIEW_TOOL
+  run bash "${AUDIT}" --doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"AI_REVIEW_TOOL"*"MISSING"* ]]
+  [[ "$output" == *"export AI_REVIEW_TOOL=claude"* ]]
+}
+
+@test "audit: --doctor reports a CLI that is not on PATH" {
+  PATH="/usr/bin:/bin" run bash "${AUDIT}" --doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"claude CLI"*"MISSING"* ]]
+}
+
+@test "audit: --doctor surfaces the endpoint error verbatim" {
+  unset ANTHROPIC_API_KEY
+  run bash "${AUDIT}" --doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"endpoint"*"FAILED"* ]]
+  [[ "$output" == *"requires ANTHROPIC_API_KEY"* ]]
+}
+
+@test "audit: --doctor surfaces a bad provider" {
+  AI_REVIEW_PROVIDER=nonsense run bash "${AUDIT}" --doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not a recognized value"* ]]
+}
+
+@test "audit: --doctor surfaces a bad profile" {
+  AI_REVIEW_PROFILE=cms-ars run bash "${AUDIT}" --doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"profile"*"FAILED"* ]]
+  [[ "$output" == *"must start with 'base' or 'none'"* ]]
+}
+
+@test "audit: --doctor flags a public endpoint without failing" {
+  # A public endpoint is a choice, not a defect.
+  run bash "${AUDIT}" --doctor --output-parent-dir "${OUT_PARENT}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PUBLIC"* ]]
+}
+
+@test "audit: --doctor does not flag an in-boundary endpoint as public" {
+  AI_REVIEW_PROVIDER=bedrock AWS_REGION=us-east-1 AI_REVIEW_MODEL=m \
+    run bash "${AUDIT}" --doctor --output-parent-dir "${OUT_PARENT}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bedrock — in your boundary"* ]]
+}
+
+@test "audit: --doctor fails on an output directory that does not exist" {
+  run bash "${AUDIT}" --doctor --output-parent-dir "${BATS_TEST_TMPDIR}/nope"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"does not exist"* ]]
+}
+
+@test "audit: --doctor reports every problem in one pass, not just the first" {
+  unset AI_REVIEW_TOOL
+  run bash "${AUDIT}" --doctor --output-parent-dir "${BATS_TEST_TMPDIR}/nope"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"AI_REVIEW_TOOL"* ]]
+  [[ "$output" == *"does not exist"* ]]
+}
+
 # ── confirmation before spending ────────────────────────────────────────────
 
 @test "audit: refuses to start non-interactively without --yes" {

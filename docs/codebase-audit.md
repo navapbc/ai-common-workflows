@@ -77,6 +77,38 @@ export AI_REVIEW_TOOL=claude          # or codex, or copilot
 export ANTHROPIC_API_KEY=sk-...       # OPENAI_API_KEY for codex
 ```
 
+## Check your setup first
+
+```bash
+audit --doctor
+```
+
+```
+[security-compliance-audit] Checking what this needs...
+  bash                       ok        3.2.57(1)-release
+  git                        ok        2.39.5
+  python3                    MISSING   brew install python, or xcode-select --install
+  claude CLI                 ok        /opt/homebrew/bin/claude
+  endpoint                   ok        bedrock — in your boundary
+  profile                    ok        base
+  repo                       ok        /Users/you/code/my-repo
+  output dir                 ok        /Users/you/audits
+
+[security-compliance-audit] ERROR: Not ready — fix the MISSING/FAILED rows above.
+```
+
+It reports **everything** that is wrong in one pass rather than stopping at the
+first, because a fresh laptop usually has two or three problems at once. It
+calls no model, needs no git repo (so you can check before `cd`-ing into one),
+and exits `1` when something is missing and `0` when you are ready.
+
+A public endpoint and a not-yet-chosen output directory are shown but do **not**
+fail it — those are choices, not defects.
+
+On macOS the row that usually bites is `python3`: the system `python3` is a stub
+that prompts for the Xcode command line tools. `brew install python` or
+`xcode-select --install` fixes it.
+
 ## Run it
 
 Once, to get the engine:
@@ -355,6 +387,7 @@ and files over 256 KB. Each skip is printed so you know what wasn't examined.
 
 | Message | Fix |
 |---|---|
+| anything at all, on a new machine | Run `audit --doctor` first — it names every missing piece in one pass |
 | `AI_REVIEW_TOOL must be set` | `export AI_REVIEW_TOOL=claude` |
 | `provider=bedrock requires AWS_REGION` | `export AWS_REGION=…` — it fails rather than falling back to the public API |
 | `provider=azure requires AZURE_OPENAI_ENDPOINT` | Set the resource endpoint; `AI_REVIEW_MODEL` is the deployment name |
