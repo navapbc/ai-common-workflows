@@ -97,7 +97,8 @@ Endpoint inputs are shared with the security review and apply per tool:
 | `post-comment` | `true` | Post the one classification comment |
 | `gate` | `false` | Fail the job when failing tests were classified |
 | `dry-run` | `false` | Print the plan; no AI call |
-| `pr-number` | event PR | Override the PR number |
+| `pr-number` | event PR | Override the PR number. Off a `pull_request` event, set `base-ref` too |
+| `base-ref` | event base | Branch to diff against. Required with `pr-number` on a non-`pull_request` event |
 | `run-suite` | `true` | OBSERVED (run the suite) vs `false` = INFERRED (diff-only, never executes) |
 | `max-turns` | `80` | Agentic turn budget for the suite run |
 | `suite-timeout-seconds` | `1500` | Hard wall-clock ceiling on the AI call |

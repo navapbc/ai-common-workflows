@@ -121,7 +121,8 @@ these moves your spend — `--dry-run` prints the expected call count.
 | Input | Default | Description |
 |---|---|---|
 | `dry-run` | `false` | Print the plan, the batch routing and the expected call count; no AI call |
-| `pr-number` | event PR | Override the PR number |
+| `pr-number` | event PR | Override the PR number. Off a `pull_request` event, set `base-ref` too |
+| `base-ref` | event base | Branch to diff against. Required with `pr-number` on a non-`pull_request` event — see [Re-running a review](#re-running-a-review) |
 | `install-cli` / `cli-version` | `true` / `latest` | npm-install the AI CLI on the runner |
 
 ## Outputs
@@ -199,18 +200,92 @@ disallowed or the token can't be granted `pull-requests: write`.
   calls, then merged and deduplicated into one review. Small PRs run as a
   single call.
 
-## Idempotent re-runs
+## Re-running a review
+
+### What a second pass does to the comments
 
 Before posting, the action fetches its own prior inline comments and drops any
 finding already posted on an unchanged line (keyed by path, line, and
 perspective). Editing a commented line outdates the old comment, so the finding
-re-posts automatically. A re-run with nothing new posts nothing.
+re-posts automatically. A re-run with nothing new posts nothing, and says so:
+
+```
+[security-compliance-review] Suppressed 3 finding(s) already posted on unchanged lines.
+[security-compliance-review] All findings already posted on unchanged lines; nothing new to comment.
+```
+
+The title is deliberately not part of the key, because runs are
+non-deterministic and reword the same issue. That is also why a second pass is
+worth running at all: anything the first pass missed still posts, and anything
+it already said stays said once. To force a full re-post — to compare two
+complete passes — delete the existing review comments first; the dedup anchors
+on live comments carrying the attribution marker.
+
+### Re-running an existing run
+
+`gh run rerun <run-id>` (or **Re-run all jobs**) replays the original event
+payload, so the PR number and base ref are still there and nothing in the
+workflow needs to change. This is the path for a second pass on a PR that has
+already been reviewed.
+
+### Reviewing a PR from a manual trigger
+
+On any event other than `pull_request` there is no payload to read the context
+from, so pass **both** halves — `pr-number` and `base-ref` — and check the PR
+head out yourself. One without the other does not work: `pr-number` alone fails
+with `Could not determine the PR base ref`, and `base-ref` alone skips the job.
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to review"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr view "${{ inputs.pr }}" --repo "${{ github.repository }}" \
+            --json baseRefName -q '"base=" + .baseRefName' >>"${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/pull/${{ inputs.pr }}/head
+          fetch-depth: 0              # the diff needs the base ref present
+          persist-credentials: false
+
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
+        with:
+          ai-tool: claude
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          pr-number: ${{ inputs.pr }}
+          base-ref: ${{ steps.meta.outputs.base }}
+```
+
+`fetch-depth: 0` matters here: the action's own base-ref fetch relies on the
+credential the workflow token provides, and a manual run against an older PR may
+need more history than the default shallow clone has. The same two inputs work
+on `schedule` and `issue_comment` triggers.
+
+Copy-paste version:
+[`examples/workflows/ai-security-compliance-review-manual.yml`](../examples/workflows/ai-security-compliance-review-manual.yml).
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
 | Job skipped with a notice | Not a `pull_request` event and no `pr-number` given. |
+| `Could not determine the PR base ref` | `pr-number` was set off a `pull_request` event without `base-ref`. Pass both. |
 | `HTTP 422` from GitHub | An inline comment landed off the diff. The action already filters these and falls back to a summary-only review; if it persists, the diff fetch likely failed — check token scope. |
 | `HTTP 401/403` from GitHub | Token lacks `pull-requests: write`. |
 | No marker / empty review | The AI CLI errored. The run fails safe (exit 1) — the action has no override for this. Check the CLI install and endpoint config. |

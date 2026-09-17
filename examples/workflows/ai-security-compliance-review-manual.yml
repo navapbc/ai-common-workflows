@@ -1,0 +1,64 @@
+# AI security & compliance review, triggered by hand against a named PR.
+#
+# The usual trigger is `pull_request` (see ai-security-compliance-review.yml).
+# Use this one when you want a review that the PR event will not give you:
+#
+#   - a second pass on a PR whose head has not changed — runs are
+#     non-deterministic, so a re-read finds things the first pass missed;
+#   - a review of a PR opened before this workflow existed;
+#   - a review of someone else's PR on request.
+#
+# To re-run a review that ALREADY RAN, you do not need this file — use
+# `gh run rerun <run-id>` or "Re-run all jobs". A re-run replays the original
+# event payload, so the PR context is still there.
+#
+# Either way the posting is idempotent: a finding already sitting on an
+# unchanged line is suppressed rather than duplicated. See the "Re-running a
+# review" section of docs/github-action.md.
+name: AI security & compliance review (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to review"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      # There is no pull_request payload on a dispatch, so the base branch has
+      # to be looked up. This is a plain read with the workflow token; no AI
+      # runs in this step.
+      - name: Look up the PR's base branch
+        id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          gh pr view "${PR}" --repo "${{ github.repository }}" \
+            --json baseRefName -q '"base=" + .baseRefName' >>"${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The PR head, as the pull_request event would have given us.
+          ref: refs/pull/${{ inputs.pr }}/head
+          # The review diffs head against the base ref, and a manual run may
+          # target a PR older than a shallow clone reaches.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Both halves of the PR context. Neither is derivable from a
+          # workflow_dispatch payload, and one without the other does not
+          # work: pr-number alone cannot find a base, and base-ref alone has
+          # no PR to review and skips the job.
+          pr-number: ${{ inputs.pr }}
+          base-ref: ${{ steps.meta.outputs.base }}

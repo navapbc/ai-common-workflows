@@ -66,17 +66,50 @@ setup() {
 }
 
 @test "resolve_pr_context errors when PR present but base missing" {
-  PR_NUMBER_INPUT="7" EVENT_PR_NUMBER="" EVENT_BASE_REF="" run ci::resolve_pr_context
+  PR_NUMBER_INPUT="7" EVENT_PR_NUMBER="" BASE_REF_INPUT="" EVENT_BASE_REF="" run ci::resolve_pr_context
   [ "$status" -ne 0 ]
   [[ "$output" == *"base ref"* ]]
+  # Name the input that fixes it, and the PR it was asked about. The old
+  # message said only "provide the base via checkout", which points at the
+  # wrong knob: nothing a consumer does in actions/checkout populates this.
+  [[ "$output" == *"base-ref"* ]]
+  [[ "$output" == *"#7"* ]]
 }
 
 @test "resolve_pr_context writes pr and base" {
-  PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" EVENT_BASE_REF="main" run ci::resolve_pr_context
+  PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" BASE_REF_INPUT="" EVENT_BASE_REF="main" run ci::resolve_pr_context
   [ "$status" -eq 0 ]
   grep -qx "skip=false" "${GITHUB_OUTPUT}"
   grep -qx "pr=42" "${GITHUB_OUTPUT}"
   grep -qx "base=main" "${GITHUB_OUTPUT}"
+}
+
+# The workflow_dispatch shape: no pull_request payload at all, both halves of
+# the context supplied as inputs. This is what `pr-number` always implied was
+# possible and never was.
+@test "resolve_pr_context: base-ref input carries a dispatch with no event payload" {
+  PR_NUMBER_INPUT="99" EVENT_PR_NUMBER="" BASE_REF_INPUT="develop" EVENT_BASE_REF="" \
+    run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=false" "${GITHUB_OUTPUT}"
+  grep -qx "pr=99" "${GITHUB_OUTPUT}"
+  grep -qx "base=develop" "${GITHUB_OUTPUT}"
+}
+
+@test "resolve_pr_context: base-ref input wins over the event base ref" {
+  PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" BASE_REF_INPUT="release-1.x" EVENT_BASE_REF="main" \
+    run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "base=release-1.x" "${GITHUB_OUTPUT}"
+}
+
+# Asymmetry is the bug this pair of inputs exists to prevent: an override for
+# the number with none for the base is unusable off a pull_request event.
+@test "resolve_pr_context: base-ref alone still skips, it does not invent a PR" {
+  PR_NUMBER_INPUT="" EVENT_PR_NUMBER="" BASE_REF_INPUT="main" EVENT_BASE_REF="" \
+    run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=true" "${GITHUB_OUTPUT}"
 }
 
 # ── gate_result ─────────────────────────────────────────────────────────────

@@ -437,6 +437,28 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`pr-number` never worked off a `pull_request` event**, on either action.
+  It is documented as an override — "Defaults to the pull_request event's
+  number" — which reads as an invitation to run on `workflow_dispatch` and name
+  the PR yourself. The base ref had no matching input, so
+  `ci::resolve_pr_context` stopped with `Could not determine the PR base ref`,
+  and there was no knob to fix it: the composite sets `EVENT_BASE_REF` in its
+  own step `env:`, so a value a caller exports in an earlier step is
+  overwritten with the empty string. The only reachable path was the one nobody
+  needed an override for.
+  There is now a **`base-ref`** input on both actions, preferred over the event
+  payload exactly as `pr-number` is, which makes manual and scheduled runs
+  against a named PR work: pass both inputs and check out
+  `refs/pull/<n>/head`. The error message names the input that fixes it and the
+  PR it was asked about, instead of pointing at `actions/checkout`, which
+  populates nothing here. `docs/github-action.md` gains a worked
+  `workflow_dispatch` example under **Re-running a review**, next to the
+  dedup behaviour a second pass runs into.
+  The two halves are asserted to stay a pair by
+  `tests/python/test_action_pr_context.py` — declared input, wired into the
+  resolving step, and named in `pr-number`'s own description. Half-wired inputs
+  are invisible to every other suite: the YAML is valid, the bash is covered,
+  and the one path anyone had exercised is fine.
 - **The codebase audit ignored `AI_REVIEW_PROVIDER` entirely.** It never called
   `ai_review::configure_endpoint`, so an audit configured for Bedrock, Vertex
   or Azure OpenAI went to the **public API** with whatever key happened to be
