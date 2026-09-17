@@ -8,6 +8,58 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`--resume` for the codebase audit**, restoring the one capability the
+  earlier iteration had that the new bundle format dropped. It continues the
+  newest existing bundle for the repo instead of allocating a new run
+  directory: directories that already have a report are skipped, and their
+  findings are merged into the regenerated index.
+  The failure worth guarding was a resumed run **deleting** what it was meant
+  to preserve — the bundle is regenerated from the findings JSON, so without
+  carrying the previous findings forward the already-written directory docs
+  would have been rewritten empty. Prior findings are merged and de-duplicated
+  by (path, line, perspective, title), a clean resumed segment cannot downgrade
+  a bundle that already has findings to `APPROVE`, and the narrative is
+  appended under a `## Resumed segment` divider rather than replaced.
+  Resume works at **directory** granularity, matching the reports. Not per
+  batch: packing coalesces directories into at most `--jobs` bins, so "already
+  done" would mean something different at `--jobs 4` than at `--jobs 8`.
+  Nothing left to audit says so and leaves the bundle alone; no existing bundle
+  starts a fresh one and says that too. Searching is not restricted to today —
+  an audit interrupted last night should be resumable this morning, and the
+  directory's date records when the audit started.
+- **The audit confirms before it spends.** It prints the plan — scope, file
+  count, batch count, expected model calls, endpoint (flagged when public) and
+  report destination — then waits on `Proceed? [y/N]`. Anything but `y` aborts
+  having sent nothing. `--yes` / `-y` / `AI_AUDIT_ASSUME_YES=1` skip it.
+  When stdin is **not a TTY** it refuses outright rather than prompting into
+  the void, and the refusal names the file and batch count it would have used:
+  a scripted run should not be able to spend by accident. The no-AI-call paths
+  (`--dry-run`, `--list-files`, `--list-batches`) never prompt — inspecting
+  cost must not require confirming a spend.
+- **The codebase audit writes a report bundle**, not just a terminal dump.
+  `--output-parent-dir` is now **required** for a real run: an existing
+  directory, into which each run creates its own
+  `<repo>-<YYYYMMDD>-<NN>` subdirectory. The parent is never created — a typo
+  that silently makes a deep path is how a report ends up somewhere nobody
+  looks again — and the run number is allocated by scanning the parent, so a
+  second audit the same day is `-02` rather than an overwrite. Reports get
+  attached to tickets and compared week to week; an overwritten one is worse
+  than a missing one because nobody notices.
+  The bundle restores the shape the earlier iteration of this tool had, and the
+  habits people built on it: a **findings-first `_INDEX.md`** (directories with
+  findings first, worst severity first, each linking into that directory's
+  findings; clean directories collapsed into a `<details>` at the bottom; a ✅
+  note when nothing was found; a suggested triage order), one markdown doc per
+  directory with `/` rendered as `__`, and every finding as a `#### ` heading so
+  `grep -rl '^#### '` lists exactly the docs worth opening. Plus `report.md`
+  (the narrative, including the posture summary) and `findings.json`.
+  Generated from the merged findings rather than per-worker output, so the
+  bundle is identical whether the audit ran as one call or fanned out — a
+  report whose shape depends on `--jobs` cannot be compared against last
+  week's. `--json-out` / `--md-out` remain as extra copies at exact paths, and
+  `--json-only`, `--dry-run`, `--list-files` and `--list-batches` need no
+  output directory, since inspecting scope and cost should not require deciding
+  where a report goes.
 - **`tests/python/test_entrypoint_invariants.py`** — static guards for the
   obligations an engine entrypoint inherits from `_common`, written after the
   audit shipped without `ai_review::configure_endpoint`. That bug was invisible
@@ -137,6 +189,14 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/codebase-audit.md` documents profiles properly.** It showed
+  `--profile base,cms-ars` in one example, never explained that the value is an
+  ordered list whose first entry must be `base` or `none`, never linked
+  `docs/profiles.md`, and had a troubleshooting row reading as though a bare
+  `cms-ars` were valid — which is now a configuration error. It now has a short
+  section covering the list form, why the bare form is refused, `none` as the
+  escape hatch, and that a profile may ship its own `codebase-audit.md`
+  additions.
 - **`docs/codebase-audit.md` leads with the endpoint decision**, before the
   quickstart: Bedrock, Azure OpenAI, Vertex and self-hosted gateways first with
   copy-paste exports, the public API after. The reason is specific to the audit

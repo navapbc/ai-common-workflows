@@ -101,7 +101,10 @@ bash <engines>/security-compliance-review/harness/ai-security-compliance-audit [
 | `--max-file-bytes <n>` | Skip files larger than n bytes (default 262144) |
 | `--list-files` | Print the files in scope; no AI call |
 | `--list-batches` / `--dry-run` | Print the plan and expected call count; no AI call |
-| `--json-out <file>` / `--md-out <file>` | Write artifacts to paths you name |
+| `--resume` | Continue the newest existing bundle for this repo: directories with a report are skipped, their findings carried into the regenerated index. Requires `--output-parent-dir` |
+| `--yes` / `-y` | Skip the token-cost confirmation (also `AI_AUDIT_ASSUME_YES=1`). Required when stdin is not a TTY |
+| `--output-parent-dir <dir>` | **Required** for a real run. An existing directory; a `<repo>-<YYYYMMDD>-<NN>` bundle is created inside it per run. Not required by `--dry-run` / `--list-files` / `--list-batches` / `--json-only` |
+| `--json-out <file>` / `--md-out <file>` | Also write artifacts to paths you name |
 | `--json-only` | Print only the findings JSON |
 | `--jobs <n>` / `--no-adjudicate` | Concurrency; skip adjudication |
 
@@ -136,6 +139,8 @@ skills/profiles/<name>/     per-compliance-framework rubric additions/overrides 
   harness/core.sh           flags, tool invocation, markers, adjudication, fan-out
   harness/gate_verdict.py   the one decision on whether a review blocks —
                             shared with the composite action and the sandbox
+  harness/write_audit_report.py  the audit's report bundle: findings-first
+                            _INDEX.md plus one doc per directory
   harness/fold_review_json.py  merges per-batch findings JSON (fan-out)
   endpoints.sh              provider → CLI env mapping + validation + audit line
   scm/github.sh + github_payload.py  PR discovery + review posting (SCM seam)
