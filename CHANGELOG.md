@@ -8,6 +8,29 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`post-when-clean`** — the review no longer comments on a PR it found
+  nothing wrong with. Default `false`; set it `true` to post the approval
+  anyway.
+  Reported as noise by an adopter, and it is: on a healthy repo most PRs are
+  clean, so the old behaviour meant a notification per PR per push whose entire
+  content was "nothing happened". The job's own check already carries that
+  signal. A reviewer that speaks on every PR regardless of whether it has
+  anything to say is one people learn to scroll past, and that habit does not
+  reverse — it costs nothing to ignore a bot, and no event makes a team start
+  reading it again.
+  The opt-in exists because the acknowledgement is worth something to some
+  programs: a check status is ephemeral and tied to a run that can age out,
+  while a review on the PR is part of the record — the difference between
+  saying a security review runs and showing it per PR at assessment time.
+  Two carve-outs keep the quiet default safe. **Any finding still posts**,
+  including one that could not be anchored to a line and therefore lives in the
+  review body — "clean" means nothing to report at all, not "nothing inline".
+  And a **`REQUEST_CHANGES` review always posts** even when it carries no
+  postable finding: that combination means a malformed or lost-findings run,
+  and suppressing it would leave an author with a blocked PR and no reason
+  given. An unparseable value logs a warning and stays quiet, because
+  defaulting a typo to the loud behaviour would spam a PR on every push — the
+  exact failure this input exists to prevent.
 - **§ 3D "Language and Framework Hazards"** in the security perspective, and
   a doc section explaining why there are no per-language rubrics.
   The rubric stays language-neutral by design. § 3D instructs the reviewer to
