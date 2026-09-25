@@ -30,6 +30,47 @@ So, when the endpoint is in-boundary, run the review on in-boundary compute:
 Decide deliberately; don't let a copy-pasted `runs-on: ubuntu-latest` make the
 call for you.
 
+## When the CLI already holds the login
+
+`claude` and `codex` can be authenticated interactively, which leaves **no key
+in the environment at all**. The credential check cannot see that login, so by
+default it refuses the run:
+
+```
+ERROR: AI_REVIEW_TOOL=claude with provider=api requires ANTHROPIC_API_KEY.
+```
+
+That is the normal setup on a developer's own machine, and it blocks the local
+[codebase audit](codebase-audit.md) and the detection corpus. Opt in:
+
+```bash
+export AI_REVIEW_CLI_NATIVE_AUTH=1
+```
+
+The run then uses the CLI's own login and says so, every time:
+
+```
+WARN: AI_REVIEW_CLI_NATIVE_AUTH=1 — no API key in the environment; using the claude CLI's own login.
+      Traffic goes to the PUBLIC endpoint. If this run has to stay inside a boundary,
+      unset it and set AI_REVIEW_PROVIDER=bedrock|vertex|azure instead.
+```
+
+**It is never inferred, and `1` is the only value that enables it.** A missing
+key and a usable CLI login look identical from inside the engine, so detecting
+one and proceeding would quietly make the public-endpoint decision on the
+operator's behalf — which is the decision this whole page exists to keep
+deliberate. Someone who meant to run in-boundary and forgot
+`AI_REVIEW_PROVIDER` gets an error, not a personal login pointed at the public
+API.
+
+It applies to `provider=api` only. A `bedrock` run with no region is still a
+hard error with the variable set, so it cannot become a way to wave past a
+misconfiguration.
+
+**Do not set it in CI.** A pipeline has no interactive login, so it does
+nothing there except remove the error that would have told you the key is
+missing. It is for local use.
+
 ## Amazon Bedrock (claude or codex)
 
 ```yaml

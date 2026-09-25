@@ -149,6 +149,8 @@ Environment:
   AI_REVIEW_PROFILE         same as --profile
   AI_REVIEW_MODEL           model override
   AI_ADJUDICATION           self (default) | independent | off
+  AI_REVIEW_CLI_NATIVE_AUTH set to 1 when the CLI is already logged in and no
+                            API key is in the environment (PUBLIC endpoint)
   plus the provider variables documented in docs/private-endpoints.md
 
 This entrypoint never posts, never gates, and needs no SCM token.
@@ -602,7 +604,15 @@ audit::doctor() {
     endpoint_out="$(ai_review::resolve_tool >/dev/null 2>&1 && ai_review::configure_endpoint 2>&1)" || endpoint_rc=$?
     if ((endpoint_rc == 0)); then
       if [[ "${provider}" == "api" ]]; then
-        audit::doctor_row "endpoint" "ok" "api — PUBLIC; set AI_REVIEW_PROVIDER for in-boundary"
+        # Name the credential source. "ok" against the public endpoint means
+        # something different when the key is in the environment than when it
+        # is the operator's own CLI login, and doctor exists to remove exactly
+        # that kind of guess.
+        if ai_review::cli_native_auth; then
+          audit::doctor_row "endpoint" "ok" "api — PUBLIC, via the ${AI_REVIEW_TOOL:-CLI} CLI login (AI_REVIEW_CLI_NATIVE_AUTH=1)"
+        else
+          audit::doctor_row "endpoint" "ok" "api — PUBLIC; set AI_REVIEW_PROVIDER for in-boundary"
+        fi
       else
         audit::doctor_row "endpoint" "ok" "${provider} — in your boundary"
       fi

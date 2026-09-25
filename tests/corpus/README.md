@@ -17,6 +17,8 @@ so it runs on demand, like `tests/bats/sandbox.bats`.
 ```bash
 export AI_REVIEW_TOOL=claude
 export ANTHROPIC_API_KEY=sk-...
+# ...or, if your CLI is already logged in and has no key in the environment:
+#   export AI_REVIEW_CLI_NATIVE_AUTH=1     (public endpoint — docs/private-endpoints.md)
 bash tests/corpus/run.sh                 # every case
 bash tests/corpus/run.sh 01 04           # just these
 bash tests/corpus/run.sh --profile base,cms-ars

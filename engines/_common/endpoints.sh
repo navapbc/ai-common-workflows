@@ -47,6 +47,27 @@ if [[ "${_AI_REVIEW_ENDPOINTS_LOADED:-0}" == "1" ]]; then
 fi
 _AI_REVIEW_ENDPOINTS_LOADED=1
 
+# ai_review::cli_native_auth
+# True when the operator has declared that the AI CLI carries its own login and
+# no API key belongs in the environment.
+#
+# Deliberately a plain env check with no probing of the CLI's credential store.
+# Reading someone's stored session to decide whether to proceed would make the
+# public-endpoint decision implicitly, which is exactly the decision that has to
+# stay the operator's.
+ai_review::cli_native_auth() {
+  [[ "${AI_REVIEW_CLI_NATIVE_AUTH:-0}" == "1" ]]
+}
+
+# ai_review::warn_cli_native_auth
+# One message for every tool, so the two call sites cannot drift apart on how
+# loudly they say "public endpoint".
+ai_review::warn_cli_native_auth() {
+  ai_review::warn "AI_REVIEW_CLI_NATIVE_AUTH=1 — no API key in the environment; using the ${AI_REVIEW_TOOL_RESOLVED} CLI's own login."
+  ai_review::warn "  Traffic goes to the PUBLIC endpoint. If this run has to stay inside a boundary,"
+  ai_review::warn "  unset it and set AI_REVIEW_PROVIDER=bedrock|vertex|azure instead."
+}
+
 # ai_review::configure_endpoint
 # Reads:  AI_REVIEW_TOOL_RESOLVED (set by ai_review::resolve_tool),
 #         AI_REVIEW_PROVIDER, AI_REVIEW_MODEL, provider-specific env.
@@ -186,14 +207,29 @@ ai_review::configure_endpoint() {
       # base_url (printed below for codex) already shows it and the api-version.
       ;;
     api)
+      # A CLI can hold its own login: `claude` and `codex` both authenticate
+      # interactively, and then no key exists in the environment at all. The
+      # credential check below cannot see that, so it refuses a configuration
+      # that works — which is the normal local setup for anyone running the
+      # audit or the corpus on their own machine.
+      #
+      # Opting out is EXPLICIT and never inferred. Auto-detecting a usable CLI
+      # login would recreate the failure this check exists to prevent: someone
+      # who meant to run in-boundary, forgot AI_REVIEW_PROVIDER, and silently
+      # sent the diff to the public API on a personal login. An operator has to
+      # say they accept that, and gets told what they accepted.
       case "${AI_REVIEW_TOOL_RESOLVED}" in
         claude)
           if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
             if [[ -n "${ANTHROPIC_BASE_URL:-}" ]]; then
               ai_review::warn "ANTHROPIC_BASE_URL is set but no ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN — assuming the gateway handles auth."
+            elif ai_review::cli_native_auth; then
+              ai_review::warn_cli_native_auth
             else
               ai_review::err "AI_REVIEW_TOOL=claude with provider=api requires ANTHROPIC_API_KEY."
               ai_review::log "  Or set AI_REVIEW_PROVIDER=bedrock|vertex, or ANTHROPIC_BASE_URL for a gateway."
+              ai_review::log "  If the claude CLI is already logged in and you accept the PUBLIC endpoint,"
+              ai_review::log "  set AI_REVIEW_CLI_NATIVE_AUTH=1 to use that login."
               exit 2
             fi
           fi
@@ -202,9 +238,13 @@ ai_review::configure_endpoint() {
           if [[ -z "${OPENAI_API_KEY:-}" ]]; then
             if [[ -n "${OPENAI_BASE_URL:-}" ]]; then
               ai_review::warn "OPENAI_BASE_URL is set but no OPENAI_API_KEY — assuming the gateway handles auth."
+            elif ai_review::cli_native_auth; then
+              ai_review::warn_cli_native_auth
             else
               ai_review::err "AI_REVIEW_TOOL=codex requires OPENAI_API_KEY."
               ai_review::log "  Or set OPENAI_BASE_URL for an OpenAI-compatible gateway."
+              ai_review::log "  If the codex CLI is already logged in and you accept the PUBLIC endpoint,"
+              ai_review::log "  set AI_REVIEW_CLI_NATIVE_AUTH=1 to use that login."
               exit 2
             fi
           fi

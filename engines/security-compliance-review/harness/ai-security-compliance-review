@@ -122,6 +122,12 @@ Environment variables:
                            clean run; this makes the approval visible on the
                            PR. Findings always post either way, and a review
                            asking for changes always posts.
+  AI_REVIEW_CLI_NATIVE_AUTH
+                           Set to 1 when the AI CLI holds its own login and
+                           no API key is in the environment. Traffic then
+                           goes to the PUBLIC endpoint on that login; never
+                           inferred, so an in-boundary run cannot fall back
+                           to it by accident.
   AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
                            bedrock: claude or codex; vertex: claude only;
                            azure: codex only. (copilot uses BYOK env vars —

@@ -127,6 +127,74 @@ report
 
 # ── endpoint matrix ─────────────────────────────────────────────────────────
 
+# ── CLI-native auth ─────────────────────────────────────────────────────────
+# `claude` and `codex` can be logged in interactively, leaving no key in the
+# environment at all. The credential check could not see that, so it refused a
+# configuration that works — which is the normal local setup, and it blocked
+# the audit and the detection corpus on any developer machine.
+#
+# The escape hatch must stay EXPLICIT. Inferring it from a usable CLI login
+# would recreate the failure the check exists for: meaning to run in-boundary,
+# forgetting AI_REVIEW_PROVIDER, and silently sending the diff to the public
+# API on a personal login.
+
+@test "endpoint: CLI-native auth lets claude+api run with no key" {
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "endpoint: CLI-native auth lets codex+api run with no key" {
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "endpoint: CLI-native auth says the traffic is public" {
+  # Silence here would be the whole problem: the operator has opted into the
+  # public endpoint and has to be told so.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [[ "$output" == *"PUBLIC"* ]]
+  [[ "$output" == *"own login"* ]]
+}
+
+@test "endpoint: CLI-native auth is not inferred from an absent key" {
+  # The var unset must behave exactly as before.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requires ANTHROPIC_API_KEY"* ]]
+}
+
+@test "endpoint: only 1 opts in — a truthy-looking value does not" {
+  # "true"/"yes" are the spellings someone reaches for. Accepting them widens
+  # the ways a boundary run can silently become a public one; refusing keeps
+  # one exact opt-in, and the error still names it.
+  for v in true yes on TRUE 2 ""; do
+    AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+      AI_REVIEW_CLI_NATIVE_AUTH="${v}" run ai_review::configure_endpoint
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "endpoint: the error names the escape hatch" {
+  # Discoverability is the point — a developer whose CLI is logged in has no
+  # other way to learn this exists.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
+  [[ "$output" == *"AI_REVIEW_CLI_NATIVE_AUTH=1"* ]]
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
+  [[ "$output" == *"AI_REVIEW_CLI_NATIVE_AUTH=1"* ]]
+}
+
+@test "endpoint: CLI-native auth does not weaken the in-boundary providers" {
+  # It is an api-provider escape hatch only. A bedrock run with no region is
+  # still a hard error — otherwise the opt-out would become a way to make any
+  # misconfiguration pass.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=bedrock \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -ne 0 ]
+}
+
 @test "endpoint: claude+api requires ANTHROPIC_API_KEY" {
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
   [ "$status" -eq 2 ]
