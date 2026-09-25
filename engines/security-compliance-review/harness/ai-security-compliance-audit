@@ -148,7 +148,7 @@ Environment:
   AI_REVIEW_TOOL            claude | codex | copilot   (required)
   AI_REVIEW_PROFILE         same as --profile
   AI_REVIEW_MODEL           model override
-  AI_ADJUDICATION           self (default) | independent | off
+  AI_ADJUDICATION           off (default) | self | independent
   AI_REVIEW_CLI_NATIVE_AUTH set to 1 when the CLI is already logged in and no
                             API key is in the environment (PUBLIC endpoint)
   plus the provider variables documented in docs/private-endpoints.md
@@ -407,7 +407,7 @@ COMPLIANCE
   fi
 
   local self_adjudication_block=""
-  if [[ "${AI_REVIEW_ADJUDICATION_MODE:-self}" == "self" ]]; then
+  if [[ "${AI_REVIEW_ADJUDICATION_MODE:-off}" == "self" ]]; then
     self_adjudication_block="$(
       cat <<SELFADJ
 

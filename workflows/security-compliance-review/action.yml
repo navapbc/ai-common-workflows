@@ -165,9 +165,14 @@ inputs:
 
   # ── Adjudication and fan-out ────────────────────────────────────────────────
   adjudication:
-    description: "False-positive reduction: self (default) | independent | off."
+    description: >-
+      False-positive reduction: off (default) | self | independent. Off because
+      a current model already verifies its own work, so instructing it to costs
+      tokens without reducing findings — measured on the detection corpus. Turn
+      on self or independent if your model or tool is older, or if you measure a
+      benefit on your own code.
     required: false
-    default: "self"
+    default: "off"
   adjudication-model:
     description: "Model for the independent adjudication pass only."
     required: false

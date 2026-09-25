@@ -63,7 +63,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `AZURE_OPENAI_ENDPOINT` | azure | Azure resource endpoint; `OPENAI_BASE_URL` is derived from it + the deployment |
 | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_API_VERSION` | azure | Key (→`OPENAI_API_KEY`) and REST API version (default `2024-10-21`) |
 | `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE`, `COPILOT_PROVIDER_API_KEY`, `COPILOT_MODEL` | copilot BYOK | Passed through to the copilot CLI (talks directly to your endpoint) |
-| `AI_ADJUDICATION` | no | `self` (default) \| `independent` \| `off` |
+| `AI_ADJUDICATION` | no | `off` (default) \| `self` \| `independent`. Off because a current model verifies its own work unprompted; instructing it to costs tokens without reducing findings, measured on `tests/corpus`. Turn it on for an older pinned model, for `codex`/`copilot`, or if you measure a benefit on your own code |
 | `AI_ADJUDICATION_MODEL` | no | Model for the independent pass only |
 | `AI_REVIEW_JOBS` | no | Fan-out concurrency (default 4) |
 | `AI_REVIEW_BATCH_BY` | no | `dir` (default) \| `file` |

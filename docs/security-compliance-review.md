@@ -85,9 +85,9 @@ The Action and the plugin run the **same review engine**
 one source of truth for the review logic, two front ends.
 
 **Start with the Action** (or the plugin, on Jenkins). It is the only path that
-can block a merge, it adjudicates its own findings to cut false positives, it
-lets you pin the model and keep the diff inside your boundary, and it emits
-machine-readable output a pipeline can act on. Copilot's built-in review
+can block a merge, it caps and anchors what it posts so a review cannot bury
+the diff, it lets you pin the model and keep the diff inside your boundary, and
+it emits machine-readable output a pipeline can act on. Copilot's built-in review
 applies the same rubric with nothing of yours to run, which makes it a good
 always-on second opinion — but it is unfiltered and unenforceable, so it is
 worth adding *after* the Action rather than instead of it
