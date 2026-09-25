@@ -116,6 +116,12 @@ Environment variables:
                            findings stay inline and the rest are listed in the
                            review body, under a heading saying the limit was
                            reached. The gate still sees every finding.
+  AI_REVIEW_POST_WHEN_CLEAN
+                           Post a review when there are no findings
+                           (default false). The exit status already reports a
+                           clean run; this makes the approval visible on the
+                           PR. Findings always post either way, and a review
+                           asking for changes always posts.
   AI_REVIEW_PROVIDER       LLM endpoint: api (default) | bedrock | vertex | azure.
                            bedrock: claude or codex; vertex: claude only;
                            azure: codex only. (copilot uses BYOK env vars —

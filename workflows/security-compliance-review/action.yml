@@ -34,6 +34,16 @@ inputs:
     description: "Post the review with inline comments to the PR."
     required: false
     default: "true"
+  post-when-clean:
+    description: >-
+      Post a review even when there are no findings (default false). The job's
+      own check already shows the review ran, so the default stays silent on a
+      clean PR rather than notifying every subscriber to say nothing happened.
+      Turn it on if you want the approval visible on the PR itself — a
+      compliance program wanting durable evidence per PR, say. Findings always
+      post either way, and a review asking for changes always posts.
+    required: false
+    default: "false"
   max-comments:
     description: >-
       Limit on inline comments per review (default 50; 0 = no limit). Over the
@@ -320,6 +330,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GH_TOKEN: ${{ inputs.github-token }}
         AI_REVIEW_MAX_COMMENTS: ${{ inputs.max-comments }}
+        AI_REVIEW_POST_WHEN_CLEAN: ${{ inputs.post-when-clean }}
         CI: "true"
       run: |
         set -euo pipefail

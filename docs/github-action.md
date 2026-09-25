@@ -78,6 +78,7 @@ Reach for these once you have seen a few real reviews.
 
 | Input | Default | Description |
 |---|---|---|
+| `post-when-clean` | `false` | Post a review when there are no findings. Off by default: the job's own check already shows the review ran, so a clean PR gets no comment. Turn it on for visible per-PR evidence. Findings always post, and a `REQUEST_CHANGES` review always posts |
 | `max-comments` | `50` | Limit on inline comments per review (`0` = no limit). Over the limit, the highest-severity findings stay inline and the rest are listed in the review body under a heading saying the limit was reached — nothing is dropped, and the gate still accounts for every finding. The body list can include HIGH or CRITICAL findings: the limit is on volume, not severity |
 | `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
 | `post-comments` | `true` | Post inline comments to the PR |
@@ -200,6 +201,33 @@ disallowed or the token can't be granted `pull-requests: write`.
   calls, then merged and deduplicated into one review. Small PRs run as a
   single call.
 
+## Clean PRs stay quiet
+
+When the review finds nothing, it posts nothing. The job's own check already
+shows that it ran and passed, and a reviewer that acknowledges every green PR
+is a notification per PR per push — which is how teams start ignoring it, or
+switch it off. The run log says what happened:
+
+```
+[security-compliance-review] No findings; not posting a review. The job's own
+check is the signal that it ran. Set post-when-clean /
+AI_REVIEW_POST_WHEN_CLEAN=true to post an approval anyway.
+```
+
+Set `post-when-clean: true` to get the approval posted on the PR instead. The
+reason to want it is evidence: a check status is ephemeral in the UI and tied
+to a run that can age out, whereas a review comment is part of the PR record —
+which is the difference between "we run a security review" and being able to
+show it per PR at assessment time.
+
+Two things are never suppressed, whatever the setting:
+
+- **Any finding.** "Clean" means nothing to report at all. A finding that could
+  not be anchored to a line is still a finding; it goes in the review body.
+- **A review that asks for changes.** `REQUEST_CHANGES` carrying no postable
+  finding means something went wrong, not that the diff is fine. Swallowing it
+  would leave an author with a blocked PR and no reason given.
+
 ## Re-running a review
 
 ### What a second pass does to the comments
@@ -285,6 +313,7 @@ Copy-paste version:
 | Symptom | Cause / fix |
 |---|---|
 | Job skipped with a notice | Not a `pull_request` event and no `pr-number` given. |
+| No comment on a PR with no issues | Expected. See [Clean PRs stay quiet](#clean-prs-stay-quiet); set `post-when-clean: true` to post an approval. |
 | `Could not determine the PR base ref` | `pr-number` was set off a `pull_request` event without `base-ref`. Pass both. |
 | `HTTP 422` from GitHub | An inline comment landed off the diff. The action already filters these and falls back to a summary-only review; if it persists, the diff fetch likely failed — check token scope. |
 | `HTTP 401/403` from GitHub | Token lacks `pull-requests: write`. |
