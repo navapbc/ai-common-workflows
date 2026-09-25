@@ -1,0 +1,12 @@
+{
+  "clean": false,
+  "findings": [],
+  "forbidden": [
+    {
+      "path": "src/example_snippet.py",
+      "min_severity": "HIGH",
+      "perspective": "security",
+      "must_match": ["key"]
+    }
+  ]
+}
