@@ -31,6 +31,8 @@ public class AiPrReviewStep extends Step {
     private String profile;
     private String gate;
     private boolean postComments = true;
+    private boolean postWhenClean;
+    private Integer maxComments;
     private boolean dryRun;
     private boolean fetchBase = true;
     private String pr;
@@ -118,6 +120,40 @@ public class AiPrReviewStep extends Step {
     @DataBoundSetter
     public void setPostComments(boolean postComments) {
         this.postComments = postComments;
+    }
+
+    public boolean isPostWhenClean() {
+        return postWhenClean;
+    }
+
+    /**
+     * Post a review when the diff produced no findings. Defaults to false: the
+     * build result already reports a clean run, so acknowledging every clean PR
+     * is a notification whose entire content is that nothing happened. Turn it
+     * on where the approval on the PR itself is the artifact — evidence per PR
+     * that outlives a build record.
+     *
+     * <p>Findings always post regardless, and so does a REQUEST_CHANGES review
+     * that carries none.
+     */
+    @DataBoundSetter
+    public void setPostWhenClean(boolean postWhenClean) {
+        this.postWhenClean = postWhenClean;
+    }
+
+    public Integer getMaxComments() {
+        return maxComments;
+    }
+
+    /**
+     * Limit on inline comments per review. Null leaves the engine default (50)
+     * in place; 0 means no limit. Over the limit the highest-severity findings
+     * stay inline and the rest are listed in the review body — nothing is
+     * dropped, and the gate still accounts for every finding.
+     */
+    @DataBoundSetter
+    public void setMaxComments(Integer maxComments) {
+        this.maxComments = maxComments;
     }
 
     public boolean isDryRun() {

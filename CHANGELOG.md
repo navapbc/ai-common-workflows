@@ -8,6 +8,24 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`postWhenClean` and `maxComments` on the Jenkins step**, closing the gap
+  where the plugin inherited a posting behaviour it had no way to configure.
+  The plugin bundles the same engine, and `github_payload.py` reads both knobs
+  from the environment — so a Jenkins user already got the new quiet-on-clean
+  default and the 50-comment limit, with no parameter to change either. A
+  default that cannot be overridden is a worse default than one that can.
+  `maxComments` is nullable and left unset when null, so the engine default
+  applies rather than `0`, which the engine reads as "no limit" — the opposite
+  of a conservative fallback. `postWhenClean` is always written explicitly, so
+  the step parameter wins over an `AI_REVIEW_POST_WHEN_CLEAN` inherited from
+  the job environment; for a boolean, `false` is a value rather than an
+  absence.
+  Covered by the round-trip test and three smoke tests that assert both
+  variables actually reach the engine process. That seam is invisible to both
+  existing suites: the Python tests prove the engine honours the variables and
+  the Java tests prove the step round-trips, while a parameter that never
+  reaches the process would pass both and do nothing.
+
 - **`post-when-clean`** — the review no longer comments on a PR it found
   nothing wrong with. Default `false`; set it `true` to post the approval
   anyway.
