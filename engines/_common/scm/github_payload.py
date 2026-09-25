@@ -57,7 +57,14 @@ SKIP_SENTINEL = "__AI_REVIEW_SKIP_POST__"
 # This changes only what is POSTED. The gate reads the engine's own findings
 # JSON (see gate_verdict.py), so a capped review blocks exactly as it would
 # have uncapped, and the severity counts in the summary are unaffected.
-DEFAULT_MAX_COMMENTS = 15
+#
+# 50 rather than a tighter number: the cap exists for the pathological PR, not
+# to curate an ordinary one. A first run on a repo that has never been reviewed
+# routinely trips 40-odd findings, and at a cap of 15 most of them arrived as a
+# body list with no line anchor and no suggested fix — the least useful form of
+# the same information. Set it low deliberately if you want a review that only
+# ever speaks up a handful of times.
+DEFAULT_MAX_COMMENTS = 50
 
 # Ordering for "highest severity first". Unrecognized severities sort last
 # rather than first: an unreadable severity should not evict a known CRITICAL
@@ -332,9 +339,10 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
         capped = [inline_sources[i] for i in drop]
         comments_out = [comments_out[i] for i in keep]
         messages.append(
-            f"[security-compliance-review] {len(capped)} finding(s) over the inline cap of "
-            f"{cap}; the most severe stay inline and the rest are listed in the review body. "
-            f"Raise it with max-comments / AI_REVIEW_MAX_COMMENTS (0 = no cap)."
+            f"[security-compliance-review] Inline limit of {cap} reached: {len(capped)} "
+            f"finding(s) are listed in the review body instead of on their line. The most "
+            f"severe stay inline, so the body list can include HIGH or CRITICAL findings \u2014 "
+            f"raise it with max-comments / AI_REVIEW_MAX_COMMENTS (0 = no limit)."
         )
 
     # Findings that cannot be inline-anchored — either their line is not in the
@@ -358,11 +366,20 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             f"{n} {sev.lower()}"
             for sev, n in sorted(by_sev.items(), key=lambda kv: _SEVERITY_RANK.get(kv[0], 4))
         )
+        total = len(comments_out) + len(capped)
         body_sections.append(
-            f"#### {len(capped)} further finding(s) not posted inline ({counts})\n\n"
-            + "Inline comments are capped so a review cannot bury the diff; these are\n"
-            + "the lower-severity remainder. Nothing was dropped, and the gate verdict\n"
-            + "accounts for every finding.\n\n"
+            f"#### \u26a0\ufe0f Inline limit of {cap} reached: {len(capped)} further "
+            f"finding(s) not posted inline ({counts})\n"
+            f"\n"
+            f"This review found {total} anchorable finding(s) and the inline limit is {cap},\n"
+            f"so the findings below carry no comment on the line they are about. They are\n"
+            f"the least severe of the {total}, which at this limit can still mean HIGH or\n"
+            f"CRITICAL \u2014 read this list, not only the inline comments. Nothing was\n"
+            f"dropped and the gate verdict accounts for every finding.\n"
+            f"\n"
+            f"Raise `max-comments` (`AI_REVIEW_MAX_COMMENTS`, `0` = no limit) to anchor\n"
+            f"them all.\n"
+            f"\n"
             + "\n".join(_md(c) for c in capped)
         )
 

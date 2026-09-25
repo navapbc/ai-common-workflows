@@ -78,7 +78,7 @@ Reach for these once you have seen a few real reviews.
 
 | Input | Default | Description |
 |---|---|---|
-| `max-comments` | `15` | Cap on inline comments per review (`0` = no cap). Over the cap, the highest-severity findings stay inline and the rest are listed in the review body — nothing is dropped, and the gate still accounts for every finding |
+| `max-comments` | `50` | Limit on inline comments per review (`0` = no limit). Over the limit, the highest-severity findings stay inline and the rest are listed in the review body under a heading saying the limit was reached — nothing is dropped, and the gate still accounts for every finding. The body list can include HIGH or CRITICAL findings: the limit is on volume, not severity |
 | `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
 | `post-comments` | `true` | Post inline comments to the PR |
 | `adjudication` | `self` | False-positive filter: `self` \| `independent` \| `off` |
