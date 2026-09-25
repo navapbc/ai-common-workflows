@@ -89,6 +89,31 @@ def max_comments():
         return DEFAULT_MAX_COMMENTS
 
 
+def post_when_clean():
+    """Post a review even when the model found nothing?
+
+    Default False. A clean PR already shows the job's green check; adding "I
+    looked and found nothing" to every green PR is a notification per PR per
+    push, which is how a reviewer becomes wallpaper. Teams that want the
+    positive acknowledgement — a compliance program wanting visible evidence
+    the review ran on the PR itself, rather than in a check that ages out of
+    the UI — turn it back on.
+    """
+    raw = (os.environ.get("AI_REVIEW_POST_WHEN_CLEAN") or "").strip().lower()
+    if raw in ("", "false", "0", "no", "off"):
+        return False
+    if raw in ("true", "1", "yes", "on"):
+        return True
+    # A typo must not silently choose. Loud, and default to the quiet
+    # behaviour, which is the one that cannot spam a PR.
+    print(
+        f"WARN: AI_REVIEW_POST_WHEN_CLEAN={raw!r} is not a boolean; "
+        f"treating it as false (no review posted when there are no findings).",
+        file=sys.stderr,
+    )
+    return False
+
+
 def _severity_rank(c):
     return _SEVERITY_RANK.get(str(c.get("severity", "")).strip().upper(), 4)
 
@@ -403,12 +428,15 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
             + "\n".join(_md(c) for c in unanchorable)
         )
 
+    nothing_to_post = not (comments_out or out_of_diff or unanchorable or capped)
+
     # If there is genuinely nothing new to post — everything already commented
-    # on unchanged lines, and nothing was moved to the body — skip the redundant
-    # empty COMMENT review. APPROVE is left alone: it carries no inline comments
-    # and re-approving is harmless.
-    if (action == "COMMENT" and not comments_out and not out_of_diff
-            and not unanchorable and not capped):
+    # on unchanged lines, and nothing was moved to the body — skip the
+    # redundant empty COMMENT review. Unconditional, and NOT governed by
+    # post_when_clean(): this is about redundancy rather than cleanliness. The
+    # usual cause is a re-run whose findings all still sit on unchanged lines,
+    # and re-posting there notifies every subscriber with nothing new.
+    if action == "COMMENT" and nothing_to_post:
         if suppressed:
             messages.append(
                 "[security-compliance-review] All findings already posted on unchanged lines; nothing new to comment."
@@ -421,6 +449,25 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
                 "[security-compliance-review] The review reported COMMENT but carried no postable "
                 "findings; nothing to post."
             )
+        return None, messages
+
+    # A clean review. The model looked and found nothing, so the only thing to
+    # post is an acknowledgement — and on a healthy repo that is most PRs, each
+    # one notifying every subscriber to say nothing happened. The green check
+    # already carries that signal. Default quiet; post-when-clean turns the
+    # acknowledgement back on for teams that want it visible on the PR itself.
+    #
+    # REQUEST_CHANGES is deliberately excluded. A review that asks for changes
+    # while carrying no postable finding is a malformed or lost-findings run,
+    # and swallowing it would leave an author with a blocked PR and no reason
+    # given. That is the one clean-looking state that must stay loud.
+    if action == "APPROVE" and nothing_to_post and not post_when_clean():
+        messages.append(
+            "[security-compliance-review] No findings; not posting a review. "
+            "The job's own check is the signal that it ran. "
+            "Set post-when-clean / AI_REVIEW_POST_WHEN_CLEAN=true to post an "
+            "approval anyway."
+        )
         return None, messages
 
     # Assemble the body in a fixed order: what the review found, the scope

@@ -8,6 +8,8 @@ import json
 import os
 import pathlib
 
+import pytest
+
 _MODULE_PATH = (
     pathlib.Path(__file__).resolve().parents[2]
     / "engines" / "_common" / "scm" / "github_payload.py"
@@ -188,10 +190,84 @@ def test_comment_action_with_nothing_new_returns_skip():
     assert payload is None
 
 
-def test_approve_with_no_comments_still_posts():
+# ── clean reviews are quiet by default ──────────────────────────────────────
+# The review used to post "I looked and found nothing" on every clean PR. On a
+# healthy repo that is most PRs, each one notifying every subscriber to say
+# nothing happened — which is how a reviewer becomes wallpaper. The job's own
+# check already carries that signal, so the acknowledgement is opt-in.
+
+def test_approve_with_no_comments_is_quiet_by_default(monkeypatch):
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    payload, messages = gp.build_payload(_review(action="APPROVE", comments=[]), "", "")
+    assert payload is None
+    # And it says why, naming the knob — silence that looks like a failure
+    # sends an operator hunting for a broken token.
+    assert any("No findings; not posting a review" in m for m in messages)
+    assert any("post-when-clean" in m for m in messages)
+
+
+def test_approve_with_no_comments_posts_when_asked(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", "true")
     payload, _ = gp.build_payload(_review(action="APPROVE", comments=[]), "", "")
     assert payload is not None
     assert payload["event"] == "APPROVE"
+
+
+@pytest.mark.parametrize("raw", ["true", "TRUE", "1", "yes", "on"])
+def test_post_when_clean_accepts_the_usual_truthy_spellings(monkeypatch, raw):
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", raw)
+    assert gp.post_when_clean() is True
+
+
+@pytest.mark.parametrize("raw", ["", "false", "FALSE", "0", "no", "off"])
+def test_post_when_clean_accepts_the_usual_falsy_spellings(monkeypatch, raw):
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", raw)
+    assert gp.post_when_clean() is False
+
+
+def test_post_when_clean_garbage_stays_quiet_and_warns(monkeypatch, capsys):
+    # Defaulting a typo to the LOUD behaviour would spam a PR on every push,
+    # which is the failure this input exists to prevent.
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", "yep")
+    assert gp.post_when_clean() is False
+    assert "is not a boolean" in capsys.readouterr().err
+
+
+def test_a_clean_review_that_asks_for_changes_still_posts(monkeypatch):
+    """The carve-out that keeps the quiet default safe.
+
+    REQUEST_CHANGES with no postable finding is a malformed or lost-findings
+    run. Swallowing it would leave an author with a blocked PR and no reason
+    given — the one clean-looking state that has to stay loud.
+    """
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    payload, _ = gp.build_payload(
+        _review(action="REQUEST_CHANGES", comments=[]), "", ""
+    )
+    assert payload is not None
+    assert payload["event"] == "REQUEST_CHANGES"
+
+
+def test_findings_are_never_swallowed_by_the_quiet_default(monkeypatch):
+    # The flag governs the EMPTY review only. A finding always posts.
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    payload, _ = gp.build_payload(_review(action="APPROVE", comments=[_finding()]), "", "")
+    assert payload is not None
+    assert payload["comments"]
+
+
+def test_a_body_only_finding_still_posts_when_clean_is_quiet(monkeypatch):
+    # "Clean" means nothing to say at all, not "nothing inline". A finding that
+    # could not be anchored lives in the body and must still reach the PR.
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    data = {
+        "review_action": "APPROVE",
+        "summary": "s",
+        "comments": [_finding(line=None)],
+    }
+    payload, _ = gp.build_payload(data, "", "")
+    assert payload is not None
+    assert "Findings without a line anchor" in payload["body"]
 
 
 # ── Suggestion: one-line summary ───────────────────────────────────────────
@@ -466,9 +542,11 @@ def test_disclaimer_is_not_duplicated_if_the_ai_already_included_it():
     assert payload["body"].count("Advisory, not exhaustive") == 1
 
 
-def test_an_approve_review_also_carries_the_disclaimer():
+def test_an_approve_review_also_carries_the_disclaimer(monkeypatch):
     # A clean review is exactly when someone might over-read the result as
-    # "this code is secure".
+    # "this code is secure" — so when a team opts into posting one, it still
+    # has to say what it did not look at.
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", "true")
     payload, _ = gp.build_payload({"review_action": "APPROVE", "summary": "No findings."}, "", "")
     assert "Advisory, not exhaustive" in payload["body"]
 
