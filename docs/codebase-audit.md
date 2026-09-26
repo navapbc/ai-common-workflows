@@ -77,6 +77,13 @@ export AI_REVIEW_TOOL=claude          # or codex, or copilot
 export ANTHROPIC_API_KEY=sk-...       # OPENAI_API_KEY for codex
 ```
 
+If your CLI is already logged in interactively and you have no key to export,
+set `AI_REVIEW_CLI_NATIVE_AUTH=1` instead — the audit then runs on that login,
+against the **public** endpoint, and says so on every run. See
+[when the CLI already holds the login](private-endpoints.md#when-the-cli-already-holds-the-login).
+An audit sends the whole scope rather than a diff, so be deliberate about this
+one.
+
 ## Check your setup first
 
 ```bash

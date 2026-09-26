@@ -421,6 +421,21 @@ ai_review::timeout_prefix() {
 
 # Live progress streaming (local interactive suite runs only). We test STDERR
 # (-t 2), not stdout: invoke_ai's stdout is captured via $(...), so inside
+# ai_review::in_ci — is this an automated pipeline rather than someone's machine?
+#
+# Deliberately broad: any of these being set means "not a laptop", and the one
+# caller that matters uses it to REFUSE something, so a false positive costs a
+# clearer error message while a false negative costs a boundary violation.
+# GitHub Actions sets CI and GITHUB_ACTIONS; Jenkins does not reliably set CI,
+# but always sets JENKINS_URL and BUILD_ID.
+ai_review::in_ci() {
+  [[ -n "${CI:-}" ]] && return 0
+  [[ -n "${GITHUB_ACTIONS:-}" ]] && return 0
+  [[ -n "${JENKINS_URL:-}" ]] && return 0
+  [[ -n "${BUILD_ID:-}" ]] && return 0
+  return 1
+}
+
 # these functions stdout is always a pipe; stderr flowing to a terminal is the
 # "a human is watching" signal, and stderr is where the narration goes.
 ai_review::should_stream() {

@@ -25,6 +25,42 @@ follow [Semantic Versioning](https://semver.org/).
   existing suites: the Python tests prove the engine honours the variables and
   the Java tests prove the step round-trips, while a parameter that never
   reaches the process would pass both and do nothing.
+- **`AI_REVIEW_CLI_NATIVE_AUTH`** — the engine can now run against an AI CLI
+  that holds its own interactive login, instead of refusing a configuration
+  that works.
+  `claude` and `codex` can be logged in interactively, which leaves no key in
+  the environment at all. The credential check reads the environment, so it saw
+  "no credential" and stopped with `requires ANTHROPIC_API_KEY`. That is the
+  normal setup on a developer's own machine, and it blocked the local codebase
+  audit and the detection corpus outright — found by trying to run the corpus
+  and watching all sixteen cases abort in under a second without a single model
+  call.
+  The opt-in is **explicit, and `1` is the only value that enables it.**
+  Inferring it from a usable CLI login would recreate the failure the check
+  exists to prevent: someone who meant to run in-boundary, forgot
+  `AI_REVIEW_PROVIDER`, and silently sent their code to the public API on a
+  personal login. The engine also never probes the CLI's credential store —
+  reading a stored session to decide whether to proceed would make the
+  public-endpoint choice implicitly, and that choice has to stay the
+  operator's. Every run that uses it warns that the traffic is public and names
+  the in-boundary alternative, and `--doctor` reports the credential source
+  rather than a bare "ok", because "ok" means something different when the key
+  is in the environment than when it is a personal login.
+  It relaxes `provider=api` only: a `bedrock` run with no region is still a
+  hard error with the variable set, so it cannot become a way to wave past a
+  misconfiguration.
+  **And it is refused outright in CI** — `CI`, `GITHUB_ACTIONS`, `JENKINS_URL`
+  or `BUILD_ID` present means the opt-in is ignored and the missing-key error
+  stands, with a line saying why. The variable is not an input on either
+  `action.yml`, but a job-level `env:` in a consumer's own workflow propagates
+  into composite steps, so "not an input" is not a guarantee. On a hosted runner
+  the opt-in would only trade a clear error for a confusing one; on a
+  **self-hosted** runner, one whose home directory carries a persisted login
+  would quietly use it against the public API — the boundary violation this
+  check exists for, on the infrastructure most likely to belong to a program
+  that cares. The detection is deliberately broad, and each marker is asserted
+  separately, because Jenkins does not reliably set `CI` and "covered by
+  `CI=true`" is how the others quietly stop working.
 
 - **`post-when-clean`** — the review no longer comments on a PR it found
   nothing wrong with. Default `false`; set it `true` to post the approval

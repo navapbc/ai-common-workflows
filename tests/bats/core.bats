@@ -127,6 +127,134 @@ report
 
 # ── endpoint matrix ─────────────────────────────────────────────────────────
 
+# ── CLI-native auth ─────────────────────────────────────────────────────────
+# `claude` and `codex` can be logged in interactively, leaving no key in the
+# environment at all. The credential check could not see that, so it refused a
+# configuration that works — which is the normal local setup, and it blocked
+# the audit and the detection corpus on any developer machine.
+#
+# The escape hatch must stay EXPLICIT. Inferring it from a usable CLI login
+# would recreate the failure the check exists for: meaning to run in-boundary,
+# forgetting AI_REVIEW_PROVIDER, and silently sending the diff to the public
+# API on a personal login.
+
+@test "endpoint: CLI-native auth lets claude+api run with no key" {
+  # setup() sets CI=true to suppress colour; this exercises the LOCAL path.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "endpoint: CLI-native auth lets codex+api run with no key" {
+  # setup() sets CI=true to suppress colour; this exercises the LOCAL path.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "endpoint: CLI-native auth says the traffic is public" {
+  # Silence here would be the whole problem: the operator has opted into the
+  # public endpoint and has to be told so.
+  # setup() sets CI=true to suppress colour; this exercises the LOCAL path.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [[ "$output" == *"PUBLIC"* ]]
+  [[ "$output" == *"own login"* ]]
+}
+
+@test "endpoint: CLI-native auth is not inferred from an absent key" {
+  # The var unset must behave exactly as before.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requires ANTHROPIC_API_KEY"* ]]
+}
+
+@test "endpoint: only 1 opts in — a truthy-looking value does not" {
+  # "true"/"yes" are the spellings someone reaches for. Accepting them widens
+  # the ways a boundary run can silently become a public one; refusing keeps
+  # one exact opt-in, and the error still names it.
+  for v in true yes on TRUE 2 ""; do
+    AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+      AI_REVIEW_CLI_NATIVE_AUTH="${v}" run ai_review::configure_endpoint
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "endpoint: the error names the escape hatch" {
+  # Discoverability is the point — a developer whose CLI is logged in has no
+  # other way to learn this exists.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
+  [[ "$output" == *"AI_REVIEW_CLI_NATIVE_AUTH=1"* ]]
+  AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
+  [[ "$output" == *"AI_REVIEW_CLI_NATIVE_AUTH=1"* ]]
+}
+
+# ── ...and is refused in CI ─────────────────────────────────────────────────
+# The variable is not an input on either action.yml, but a job-level env: in a
+# consumer's own workflow propagates into composite steps, so "not an input" is
+# not a guarantee. On a hosted runner the opt-in would only trade a clear
+# missing-key error for a confusing CLI failure; on a SELF-HOSTED runner with a
+# persisted login it would quietly use that login against the public API.
+
+@test "endpoint: CLI-native auth is refused when CI is set" {
+  CI=true AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requires ANTHROPIC_API_KEY"* ]]
+}
+
+@test "endpoint: the CI refusal says why, rather than ignoring it silently" {
+  CI=true AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [[ "$output" == *"ignored in CI"* ]]
+  [[ "$output" == *"local runs only"* ]]
+}
+
+@test "endpoint: every CI marker refuses it, not just CI=true" {
+  # Jenkins does not reliably set CI. A marker this check misses is a boundary
+  # violation, so the detection is deliberately broad — and each marker is
+  # asserted, because "covered by CI=true" is how the others quietly stop
+  # working.
+  local marker
+  for marker in CI GITHUB_ACTIONS JENKINS_URL BUILD_ID; do
+    unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+    export "${marker}=x"
+    AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+      AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+    [ "$status" -ne 0 ]
+    unset "${marker}"
+  done
+}
+
+@test "endpoint: CI does not break the normal keyed path" {
+  # The refusal must only affect the opt-in. A pipeline with a real key is the
+  # overwhelmingly common case and has to be untouched.
+  CI=true AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    ANTHROPIC_API_KEY=sk-test run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"ignored in CI"* ]]
+}
+
+@test "endpoint: CLI-native auth still works with no CI marker present" {
+  # Guard against in_ci matching something that is always set.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+}
+
+@test "endpoint: CLI-native auth does not weaken the in-boundary providers" {
+  # It is an api-provider escape hatch only. A bedrock run with no region is
+  # still a hard error — otherwise the opt-out would become a way to make any
+  # misconfiguration pass.
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=bedrock \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -ne 0 ]
+}
+
 @test "endpoint: claude+api requires ANTHROPIC_API_KEY" {
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
   [ "$status" -eq 2 ]
