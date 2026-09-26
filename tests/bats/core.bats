@@ -60,10 +60,40 @@ report
 
 # ── adjudication_mode ───────────────────────────────────────────────────────
 
-@test "adjudication_mode defaults to self" {
+@test "adjudication_mode defaults to off" {
+  # Off because a current model verifies its own work unprompted; measured on
+  # tests/corpus, self suppressed nothing and cost more. The modes remain for
+  # older pinned models and for codex/copilot, which the guidance behind this
+  # does not cover.
   unset AI_ADJUDICATION AI_REVIEW_NO_ADJUDICATE
   run ai_review::adjudication_mode
+  [ "$output" = "off" ]
+}
+
+@test "adjudication_mode still honors self when asked" {
+  # The modes are kept, not removed — only the default moved.
+  AI_ADJUDICATION=self run ai_review::adjudication_mode
   [ "$output" = "self" ]
+  AI_ADJUDICATION=inline run ai_review::adjudication_mode
+  [ "$output" = "self" ]
+}
+
+@test "adjudication_mode: an unrecognized value falls back to off, loudly" {
+  # It used to fall back to self. The fallback has to track the default, or a
+  # typo silently buys the behaviour the default deliberately declines.
+  AI_ADJUDICATION=slef run ai_review::adjudication_mode
+  [[ "$output" == *"not recognized"* ]]
+  # bats merges stderr into $output; the resolved mode is the last line.
+  [ "${lines[$((${#lines[@]} - 1))]}" = "off" ]
+}
+
+@test "adjudication_mode: the warning does not corrupt the captured mode" {
+  # Callers do m="$(ai_review::adjudication_mode)". A warning on stdout would
+  # make the mode "WARN: ...\noff" and match no case downstream.
+  AI_ADJUDICATION=slef
+  local mode
+  mode="$(ai_review::adjudication_mode 2>/dev/null)"
+  [ "${mode}" = "off" ]
 }
 
 @test "adjudication_mode honors independent" {

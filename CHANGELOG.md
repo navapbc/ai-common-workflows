@@ -353,6 +353,39 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Adjudication now defaults to `off`.** It was `self`.
+  A current model verifies its own work without being told to, and telling it
+  to costs tokens and causes over-verification. Anthropic's Opus 5 migration
+  guidance names both modes almost verbatim — "include a final verification
+  step", "use a subagent to verify" — and says to delete that scaffolding:
+  "removing them reduces over-verification with no capability regression." It
+  also notes this *inverts* a standard prompting best practice, so a rubric
+  that applies self-checking uniformly needs the carve-out rather than a global
+  rule.
+  Measured against `tests/corpus` before switching, one run each. **`self`
+  suppressed nothing.** The negative control produced the same seven findings
+  in both modes, same severities, near-identical wording. Across all eight
+  cases its only effect anywhere was one severity downgrade — a correct one, on
+  a fixture that turned out to be wrong (see the corpus fixture entry) — while
+  producing two *more* unexpected findings overall and taking longer. It was
+  paying nothing for what it cost.
+  **The modes are kept, not removed.** The guidance is Anthropic-model-specific,
+  and this engine also runs `codex` and `copilot`, on models a program may have
+  pinned for ATO reasons. A default is the right lever; deletion is not. Turn
+  `self` or `independent` back on there, or wherever the corpus shows a benefit
+  on your own code.
+  Two fallbacks that still said `self` moved with it. An unrecognized
+  `AI_ADJUDICATION` value now resolves to `off` **and warns**, where it used to
+  resolve silently to `self` — harmless when `self` was the default, not now,
+  since a typo would buy the behaviour the default declines and bill for it on
+  every review. The prompt builders' `AI_REVIEW_ADJUDICATION_MODE:-self` is
+  unreachable today but is exactly how a later refactor would restore the old
+  behaviour invisibly, so it is now `off` and pinned by a test.
+  One doc claim went with it: `docs/security-compliance-review.md` sold the
+  Action over Copilot's native review partly on "it adjudicates its own
+  findings to cut false positives". That is no longer true by default, and the
+  measurement says it was not true in practice either.
+
 - **`docs/codebase-audit.md` documents profiles properly.** It showed
   `--profile base,cms-ars` in one example, never explained that the value is an
   ordered list whose first entry must be `base` or `none`, never linked

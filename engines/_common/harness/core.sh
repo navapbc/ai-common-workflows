@@ -944,19 +944,36 @@ ai_review::gate_blocks() {
 }
 
 # ── Adjudication: false-positive reduction ──────────────────────────────────
-# Three modes, selected by AI_ADJUDICATION (default "self"):
+# Three modes, selected by AI_ADJUDICATION (default "off").
 #
-#   self        Single-pass self-adjudication (DEFAULT). The review prompt
-#               instructs the model to re-examine its own candidate findings
-#               as a skeptic before reporting — one AI call. Fast and cheap.
+# It defaults OFF because a current model verifies its own work without being
+# told to, and telling it to costs tokens and causes over-verification.
+# Anthropic's Opus 5 migration guidance names both of the modes below almost
+# verbatim — "include a final verification step", "use a subagent to verify" —
+# and says to delete that scaffolding: "removing them reduces over-verification
+# with no capability regression."
+#
+# Measured on tests/corpus before the switch, one run each: self suppressed
+# NOTHING. Same seven findings on the negative control in both modes, same
+# severities. Its only effect anywhere was one correct severity downgrade, and
+# it produced two more unexpected findings overall than off while taking longer.
+# It was paying nothing for what it cost.
+#
+# The modes stay because the guidance is model-specific. A program pinned to an
+# older model for ATO reasons, or running codex or copilot, is not covered by
+# it — so this is a default, not a removal.
+#
+#   self        Single-pass self-adjudication. The review prompt instructs the
+#               model to re-examine its own candidate findings as a skeptic
+#               before reporting — no extra AI call, but real output tokens.
 #   independent An additional fresh-agent second pass re-inspects a
 #               finding-bearing (COMMENT) result before posting. Honors
 #               AI_ADJUDICATION_MODEL so the second opinion can run on a
 #               different model of the same CLI. Strongest, but ~doubles
 #               time/cost on finding-bearing reviews. If the pass fails or
 #               returns no parseable JSON, the first-pass result stands.
-#   off         No adjudication (raw first-pass findings; --no-adjudicate
-#               forces this).
+#   off         No adjudication (DEFAULT; raw first-pass findings.
+#               --no-adjudicate also forces this).
 #
 # Skipping adjudication never lowers detection — it can only confirm, dismiss,
 # or downgrade — so "off" is the stricter (report-more) direction.
@@ -968,12 +985,20 @@ ai_review::adjudication_mode() {
     return 0
   fi
   local v
-  v="$(printf '%s' "${AI_ADJUDICATION:-self}" | tr '[:upper:]' '[:lower:]')"
+  v="$(printf '%s' "${AI_ADJUDICATION:-off}" | tr '[:upper:]' '[:lower:]')"
   case "${v}" in
     self | inline) echo "self" ;;
     independent | fresh | 1) echo "independent" ;;
     off | 0 | no | none | false) echo "off" ;;
-    *) echo "self" ;;
+    *)
+      # Track the default, and say so. This used to fall back to "self", which
+      # was harmless when self WAS the default and is not now: a typo would
+      # silently buy the behaviour the default deliberately declines, and cost
+      # tokens on every review until someone noticed. Warn rather than choose
+      # quietly — the same rule the Python knobs follow.
+      ai_review::warn "AI_ADJUDICATION='${AI_ADJUDICATION:-}' is not recognized (self | independent | off); using off."
+      echo "off"
+      ;;
   esac
 }
 

@@ -82,7 +82,7 @@ Reach for these once you have seen a few real reviews.
 | `max-comments` | `50` | Limit on inline comments per review (`0` = no limit). Over the limit, the highest-severity findings stay inline and the rest are listed in the review body under a heading saying the limit was reached — nothing is dropped, and the gate still accounts for every finding. The body list can include HIGH or CRITICAL findings: the limit is on volume, not severity |
 | `gate` | `false` | Fail the job on HIGH or CRITICAL findings. MEDIUM and LOW still post as comments |
 | `post-comments` | `true` | Post inline comments to the PR |
-| `adjudication` | `self` | False-positive filter: `self` \| `independent` \| `off` |
+| `adjudication` | `off` | False-positive filter: `off` \| `self` \| `independent`. Off by default — see [Adjudication](#adjudication-and-fan-out) for why, and when to turn it on |
 
 ### Keeping the model and data in your boundary
 
@@ -178,11 +178,28 @@ disallowed or the token can't be granted `pull-requests: write`.
 
 ## Adjudication and fan-out
 
-- **Adjudication** cuts false positives. `self` (default) folds a skeptical
-  self-critique into the single review call. `independent` runs a second
-  fresh-agent pass over the findings before posting (optionally on a different
-  `adjudication-model`); it roughly doubles cost on finding-bearing PRs but is
-  the strongest filter. `off` reports raw first-pass findings.
+- **Adjudication is off by default.** `self` folds a skeptical self-critique
+  into the single review call — no extra call, but real output tokens.
+  `independent` runs a second fresh-agent pass over the findings before posting
+  (optionally on a different `adjudication-model`); it roughly doubles cost on
+  finding-bearing PRs and is the strongest filter. `off` reports raw first-pass
+  findings.
+
+  **Why off:** a current model verifies its own work without being told to, and
+  telling it to costs tokens and causes over-verification. Anthropic's Opus 5
+  migration guidance names both modes almost verbatim and says to delete that
+  scaffolding — "removing them reduces over-verification with no capability
+  regression." Measured against `tests/corpus` before switching, one run each:
+  `self` suppressed **nothing**. The negative control produced the same seven
+  findings in both modes at the same severities, `self` produced two *more*
+  unexpected findings overall, and it took longer. Its only effect anywhere was
+  one correct severity downgrade.
+
+  **When to turn it on:** your tool is `codex` or `copilot`, or your model is
+  pinned to an older version for ATO reasons — the guidance is
+  Anthropic-model-specific and does not cover those. Or you measure a benefit
+  on your own code, which is what the corpus is for. Nothing about the modes
+  changed; only which one you get by default.
 - **What `adjudication-model` can vary.** The second opinion runs on the same
   CLI, the same provider and the same endpoint as the first pass — only the
   model changes. So it picks another Bedrock model ID, another Vertex model,

@@ -130,3 +130,21 @@ def test_every_entrypoint_resolves_paths_from_its_own_location():
         if 'ENGINE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"' not in p.read_text()
     ]
     assert not bad, f"entrypoint(s) do not derive ENGINE_HOME from BASH_SOURCE: {bad}"
+
+
+def test_no_entrypoint_falls_back_to_self_adjudication():
+    """Adjudication defaults to off; every fallback must agree.
+
+    The prompt builders read AI_REVIEW_ADJUDICATION_MODE with a default, and
+    those defaults said "self" after the engine default moved to "off". They
+    are not reachable today — the mode is exported before the prompt is built —
+    but a stale fallback nobody hits is how the next refactor silently restores
+    the old behaviour, and this one would do it invisibly: the review would
+    just quietly start self-adjudicating again.
+    """
+    bad = [
+        p.relative_to(ROOT)
+        for p in ENTRYPOINTS
+        if "AI_REVIEW_ADJUDICATION_MODE:-self" in p.read_text()
+    ]
+    assert not bad, f"entrypoint(s) fall back to self-adjudication: {bad}"
