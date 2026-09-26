@@ -5,8 +5,8 @@ Runs natively inside GitHub, with no LLM keys of your own.
 
 > **Start with the action, not this.** The
 > [AI security & compliance review action](security-compliance-review.md) is
-> the primary reviewer: it is the only path that can block a merge, it filters
-> its own false positives, and you choose the model and where the data goes.
+> the primary reviewer: it is the only path that can block a merge, you tune
+> what it judges against, and you choose the model and where the data goes.
 > Copilot's native review is a **complement** — a cheap second opinion with
 > nothing of yours to run — not a substitute. If you only adopt one, adopt the
 > action. [What you give up ↓](#what-the-action-does-that-this-does-not)
@@ -173,7 +173,7 @@ does four things Copilot's native review cannot:
 | | Action + API/LLM | Copilot native |
 |---|---|---|
 | **Block a merge** | `gate: true` fails the job on HIGH or CRITICAL, and the job is a status check a ruleset can require | **No.** It submits no blocking review and emits no status check — there is nothing for a ruleset to require |
-| **Filter false positives** | Adjudication re-examines candidate findings before reporting (`self` by default, `independent` for a fresh second pass on a different model) | **No.** Single pass, unfiltered |
+| **Tune what gets reported** | Compliance profile overlays, a severity gate, an inline-comment limit with the remainder in the review body, and optional adjudication (`self` \| `independent`; off by default) | **No.** One rubric, one pass, no knobs |
 | **Control the model and data path** | `provider: api \| bedrock \| vertex \| azure`, or a custom gateway — the diff can stay inside your boundary, on a model you pin | Runs on GitHub's infrastructure with GitHub's models |
 | **Feed automation** | `review-json` and `result` outputs, so a pipeline can act on the findings | Comments only |
 

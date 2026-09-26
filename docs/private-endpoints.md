@@ -111,7 +111,7 @@ jobs:
 `bedrock:InvokeModel` (+ `bedrock:InvokeModelWithResponseStream`) on the
 specific model ARN(s) — never `bedrock:*`. Assume it via OIDC (no long-lived
 keys) with a trust policy that pins your repo/ref. Full policy example in
-[security.md](security.md#the-llm-credential-bedrock--vertex).
+[security.md](security.md#the-llm-credential-bedrock--vertex--azure).
 
 On self-hosted runners without instance-role credentials, provide them via
 OIDC (`configure-aws-credentials`) or the standard AWS env vars.

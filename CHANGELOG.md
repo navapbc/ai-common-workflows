@@ -8,6 +8,29 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tests/python/test_doc_links.py`** — every relative link and heading
+  anchor in the tracked Markdown now resolves, or CI fails.
+  Added after a broken anchor shipped:
+  `security.md#the-llm-credential-bedrock--vertex` lost its target when "Azure"
+  joined that heading. A heading edit silently breaks every link pointing at
+  it, in files the editor never opens, and nothing else in the repo would
+  notice.
+  It immediately found a second one the hand-rolled sweep had missed, because
+  that sweep only looked at `docs/` — this walks everything git tracks.
+  **The slug rules are pinned by their own tests**, which is the real lesson.
+  Two ad-hoc versions of this check each reported a *correct* link as broken:
+  one collapsed runs of whitespace, where GitHub maps each space to its own
+  hyphen (`Bedrock / Vertex / Azure` → `bedrock--vertex--azure`); the other
+  stripped underscores as emphasis, mangling `COPILOT_SYNC_TOKEN`. Both would
+  have led to "fixing" a working link into a broken one. A subtly wrong link
+  checker is worse than none, so every rule it depends on is asserted directly.
+  Headings inside fenced code blocks are not anchors, duplicate headings get
+  GitHub's numeric suffixes, links inside fences are not checked (an example
+  may reference a path that does not exist here), and external schemes are
+  somebody else's uptime problem. Verified against four breakage forms: a
+  renamed heading, a missing file, an anchor typo, and the whitespace-collapse
+  slugger bug.
+
 - **`postWhenClean` and `maxComments` on the Jenkins step**, closing the gap
   where the plugin inherited a posting behaviour it had no way to configure.
   The plugin bundles the same engine, and `github_payload.py` reads both knobs
@@ -352,6 +375,28 @@ follow [Semantic Versioning](https://semver.org/).
   [docs/test-classifier.md](docs/test-classifier.md).
 
 ### Changed
+
+- **Doc coherence pass after the adjudication default moved.** Four documents
+  sold the Action over Copilot's native review partly on adjudication —
+  "it adjudicates its own findings to cut false positives", "it filters its own
+  false positives", "Copilot's native review … does not adjudicate its own
+  findings", and a comparison-table row naming `self` as the default. One
+  default change invalidated all of them, and #45 only caught the copy in
+  `docs/security-compliance-review.md`.
+  A selling point repeated in four places is a selling point that goes stale in
+  four places. They now claim what the Action actually does better: anchoring
+  findings on the lines that caused them with suggested fixes, and being
+  tunable per program — profile overlays, a severity gate, an inline-comment
+  limit, and adjudication as an opt-in rather than a default.
+  The gating example silently set `adjudication: independent` under a
+  "stronger second opinion" comment written when adjudication was on by
+  default. It now says what is known: gating is the case where paying for a
+  second opinion may still be worth it, `independent` roughly doubles cost, and
+  it has not been measured — so opt in deliberately and check it against your
+  own code. An example that quietly contradicts the default teaches the default
+  is wrong.
+  Also fixed a broken cross-doc anchor: `security.md#the-llm-credential-bedrock--vertex`
+  lost its target when Azure was added to that heading.
 
 - **Adjudication now defaults to `off`.** It was `self`.
   A current model verifies its own work without being told to, and telling it
