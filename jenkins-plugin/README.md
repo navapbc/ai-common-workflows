@@ -180,6 +180,31 @@ aiSecurityComplianceReview githubServerUrl: 'github.mycorp.com',
            githubTokenCredentialsId: 'ghe-pr-review'
 ```
 
+## How much the review says
+
+Two parameters shape what lands on the PR. Both are read by the post phase, so
+neither has any effect when `postComments: false`.
+
+```groovy
+aiSecurityComplianceReview githubTokenCredentialsId: 'gh-pr-review',
+           postWhenClean: true,   // acknowledge clean PRs too (default false)
+           maxComments: 25        // inline comments per review (default 50)
+```
+
+`postWhenClean` — by default a review that found nothing posts nothing. The
+build result already reports a clean run, so acknowledging every clean PR is a
+notification whose entire content is that nothing happened, and a reviewer that
+speaks on every PR is one people learn to scroll past. Turn it on where the
+approval on the PR is itself the artifact — evidence per PR that outlives a
+build record. Findings always post regardless, and so does a `REQUEST_CHANGES`
+review carrying none.
+
+`maxComments` — over the limit the highest-severity findings stay inline and
+the rest are listed in the review body under a heading saying the limit was
+reached. Nothing is dropped and the gate still accounts for every finding, so
+this trades line anchoring for volume, never coverage. `0` means no limit.
+Leave it unset to take the engine default.
+
 ## How gating maps to the build result
 
 | `gate` | Non-APPROVE result | APPROVE |

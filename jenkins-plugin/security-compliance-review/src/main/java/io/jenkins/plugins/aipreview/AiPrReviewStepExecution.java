@@ -172,6 +172,16 @@ class AiPrReviewStepExecution extends SynchronousNonBlockingStepExecution<Void> 
         putIfSet(runEnv, "AI_REVIEW_CONTEXT_BUDGET",
                 step.getContextBudget() == null ? null : String.valueOf(step.getContextBudget()));
 
+        // Posting shape. Read only by the post phase, but set here so the one
+        // env map stays the single description of the run; neither is a secret.
+        // maxComments is left unset when null so the engine default applies,
+        // while postWhenClean is always explicit — a step parameter should win
+        // over an AI_REVIEW_POST_WHEN_CLEAN inherited from the job environment,
+        // and "false" is a value rather than an absence.
+        putIfSet(runEnv, "AI_REVIEW_MAX_COMMENTS",
+                step.getMaxComments() == null ? null : String.valueOf(step.getMaxComments()));
+        runEnv.put("AI_REVIEW_POST_WHEN_CLEAN", String.valueOf(step.isPostWhenClean()));
+
         // ── Locate the engine (bundled, or a workspace override for dev/test) ──
         FilePath engineHome;
         FilePath tmpRoot = workspace.child(".ai-security-compliance-review@tmp");

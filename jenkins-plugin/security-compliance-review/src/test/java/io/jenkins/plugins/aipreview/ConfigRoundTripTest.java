@@ -2,6 +2,7 @@ package io.jenkins.plugins.aipreview;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.jenkinsci.plugins.workflow.steps.StepConfigTester;
 import org.junit.Rule;
@@ -24,6 +25,8 @@ public class ConfigRoundTripTest {
         step.setGate("unstable");
         step.setPostComments(false);
         step.setJobs(6);
+        step.setMaxComments(25);
+        step.setPostWhenClean(true);
         step.setGithubTokenCredentialsId("gh-token");
 
         AiPrReviewStep out = new StepConfigTester(r).configRoundTrip(step);
@@ -35,6 +38,8 @@ public class ConfigRoundTripTest {
         assertEquals("unstable", out.getGate());
         assertFalse(out.isPostComments());
         assertEquals(Integer.valueOf(6), out.getJobs());
+        assertEquals(Integer.valueOf(25), out.getMaxComments());
+        assertTrue(out.isPostWhenClean());
         assertEquals("gh-token", out.getGithubTokenCredentialsId());
     }
 }

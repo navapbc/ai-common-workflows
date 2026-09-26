@@ -51,7 +51,9 @@ public class StepExecutionSmokeTest {
             { echo "ARGS: $*"; \
               echo "AI_REVIEW_TOOL=${AI_REVIEW_TOOL:-}"; \
               echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}"; \
-              echo "GITHUB_TOKEN=${GITHUB_TOKEN:-}"; } >> "${STUB_ENGINE_LOG}"
+              echo "GITHUB_TOKEN=${GITHUB_TOKEN:-}"; \
+              echo "AI_REVIEW_MAX_COMMENTS=${AI_REVIEW_MAX_COMMENTS:-<unset>}"; \
+              echo "AI_REVIEW_POST_WHEN_CLEAN=${AI_REVIEW_POST_WHEN_CLEAN:-<unset>}"; } >> "${STUB_ENGINE_LOG}"
             if [ -n "$json_out" ]; then
               printf '{"review_action":"%s","summary":"s","comments":[]}\\n' "${STUB_RESULT:-APPROVE}" > "$json_out"
             fi
@@ -141,6 +143,62 @@ public class StepExecutionSmokeTest {
 
         r.buildAndAssertSuccess(job);
         assertTrue("copilot AI phase carries the token", Files.readString(log).contains("gh-secret-token"));
+    }
+
+    // ── posting shape reaches the engine ───────────────────────────────────
+    // Both knobs are read only by the post phase, inside github_payload.py. A
+    // parameter that never reaches the process is indistinguishable from one
+    // that does nothing, and neither the Java nor the Python suite can see
+    // that on its own — this is the seam where it would be lost.
+
+    @Test
+    public void postingShapeParametersReachTheEngine() throws Exception {
+        Path log = tmp.newFile("shape.log").toPath();
+        WorkflowJob job = r.createProject(WorkflowJob.class, "posting-shape");
+        job.setDefinition(new CpsFlowDefinition(
+                pipeline(log, "",
+                        "tool: 'claude', postComments: true, pr: '7', "
+                                + "maxComments: 25, postWhenClean: true"),
+                true));
+
+        r.buildAndAssertSuccess(job);
+
+        String logged = Files.readString(log);
+        assertTrue("max comments reaches the engine", logged.contains("AI_REVIEW_MAX_COMMENTS=25"));
+        assertTrue("post-when-clean reaches the engine", logged.contains("AI_REVIEW_POST_WHEN_CLEAN=true"));
+    }
+
+    @Test
+    public void unsetMaxCommentsLeavesTheEngineDefaultAlone() throws Exception {
+        // Null must mean "engine decides", not 0 — which the engine reads as
+        // "no limit", the opposite of a conservative default.
+        Path log = tmp.newFile("shape-default.log").toPath();
+        WorkflowJob job = r.createProject(WorkflowJob.class, "posting-shape-default");
+        job.setDefinition(new CpsFlowDefinition(
+                pipeline(log, "", "tool: 'claude', postComments: false"),
+                true));
+
+        r.buildAndAssertSuccess(job);
+
+        String logged = Files.readString(log);
+        assertTrue("max comments stays unset", logged.contains("AI_REVIEW_MAX_COMMENTS=<unset>"));
+        // postWhenClean is always explicit, so the step parameter wins over an
+        // AI_REVIEW_POST_WHEN_CLEAN inherited from the job environment.
+        assertTrue("post-when-clean is explicit", logged.contains("AI_REVIEW_POST_WHEN_CLEAN=false"));
+    }
+
+    @Test
+    public void theStepParameterWinsOverAnInheritedEnvironmentValue() throws Exception {
+        Path log = tmp.newFile("shape-override.log").toPath();
+        WorkflowJob job = r.createProject(WorkflowJob.class, "posting-shape-override");
+        job.setDefinition(new CpsFlowDefinition(
+                pipeline(log, "'AI_REVIEW_POST_WHEN_CLEAN=true'",
+                        "tool: 'claude', postComments: false, postWhenClean: false"),
+                true));
+
+        r.buildAndAssertSuccess(job);
+        assertTrue("step parameter overrides the job environment",
+                Files.readString(log).contains("AI_REVIEW_POST_WHEN_CLEAN=false"));
     }
 
     @Test
