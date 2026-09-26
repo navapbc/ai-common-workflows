@@ -139,12 +139,16 @@ report
 # API on a personal login.
 
 @test "endpoint: CLI-native auth lets claude+api run with no key" {
+  # setup() sets CI=true to suppress colour; this exercises the LOCAL path.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
     AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
   [ "$status" -eq 0 ]
 }
 
 @test "endpoint: CLI-native auth lets codex+api run with no key" {
+  # setup() sets CI=true to suppress colour; this exercises the LOCAL path.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
   AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=api \
     AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
   [ "$status" -eq 0 ]
@@ -153,6 +157,8 @@ report
 @test "endpoint: CLI-native auth says the traffic is public" {
   # Silence here would be the whole problem: the operator has opted into the
   # public endpoint and has to be told so.
+  # setup() sets CI=true to suppress colour; this exercises the LOCAL path.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
   AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
     AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
   [[ "$output" == *"PUBLIC"* ]]
@@ -184,6 +190,60 @@ report
   [[ "$output" == *"AI_REVIEW_CLI_NATIVE_AUTH=1"* ]]
   AI_REVIEW_TOOL_RESOLVED=codex AI_REVIEW_PROVIDER=api run ai_review::configure_endpoint
   [[ "$output" == *"AI_REVIEW_CLI_NATIVE_AUTH=1"* ]]
+}
+
+# ── ...and is refused in CI ─────────────────────────────────────────────────
+# The variable is not an input on either action.yml, but a job-level env: in a
+# consumer's own workflow propagates into composite steps, so "not an input" is
+# not a guarantee. On a hosted runner the opt-in would only trade a clear
+# missing-key error for a confusing CLI failure; on a SELF-HOSTED runner with a
+# persisted login it would quietly use that login against the public API.
+
+@test "endpoint: CLI-native auth is refused when CI is set" {
+  CI=true AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"requires ANTHROPIC_API_KEY"* ]]
+}
+
+@test "endpoint: the CI refusal says why, rather than ignoring it silently" {
+  CI=true AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [[ "$output" == *"ignored in CI"* ]]
+  [[ "$output" == *"local runs only"* ]]
+}
+
+@test "endpoint: every CI marker refuses it, not just CI=true" {
+  # Jenkins does not reliably set CI. A marker this check misses is a boundary
+  # violation, so the detection is deliberately broad — and each marker is
+  # asserted, because "covered by CI=true" is how the others quietly stop
+  # working.
+  local marker
+  for marker in CI GITHUB_ACTIONS JENKINS_URL BUILD_ID; do
+    unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+    export "${marker}=x"
+    AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+      AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+    [ "$status" -ne 0 ]
+    unset "${marker}"
+  done
+}
+
+@test "endpoint: CI does not break the normal keyed path" {
+  # The refusal must only affect the opt-in. A pipeline with a real key is the
+  # overwhelmingly common case and has to be untouched.
+  CI=true AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    ANTHROPIC_API_KEY=sk-test run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"ignored in CI"* ]]
+}
+
+@test "endpoint: CLI-native auth still works with no CI marker present" {
+  # Guard against in_ci matching something that is always set.
+  unset CI GITHUB_ACTIONS JENKINS_URL BUILD_ID
+  AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api \
+    AI_REVIEW_CLI_NATIVE_AUTH=1 run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
 }
 
 @test "endpoint: CLI-native auth does not weaken the in-boundary providers" {

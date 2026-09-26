@@ -56,7 +56,28 @@ _AI_REVIEW_ENDPOINTS_LOADED=1
 # public-endpoint decision implicitly, which is exactly the decision that has to
 # stay the operator's.
 ai_review::cli_native_auth() {
-  [[ "${AI_REVIEW_CLI_NATIVE_AUTH:-0}" == "1" ]]
+  [[ "${AI_REVIEW_CLI_NATIVE_AUTH:-0}" == "1" ]] || return 1
+
+  # Refused in CI, whatever the operator set. A pipeline has no interactive
+  # login, so on a hosted runner this only replaces a clear "missing key" error
+  # with a confusing CLI failure later.
+  #
+  # On a SELF-HOSTED runner it is worse than confusing. A runner whose home
+  # directory carries a persisted login would quietly use that login against
+  # the public API — the exact boundary violation this check exists to prevent,
+  # on the infrastructure most likely to belong to a program that cares. The
+  # variable cannot be reached through either action.yml, but a job-level env:
+  # in a consumer's own workflow propagates into composite steps, so "not an
+  # input" is not by itself a guarantee.
+  if ai_review::in_ci; then
+    if [[ "${_AI_REVIEW_CLI_NATIVE_AUTH_CI_WARNED:-0}" != "1" ]]; then
+      _AI_REVIEW_CLI_NATIVE_AUTH_CI_WARNED=1
+      ai_review::warn "AI_REVIEW_CLI_NATIVE_AUTH=1 is ignored in CI — it is for local runs only."
+      ai_review::warn "  Give the pipeline a real credential, or set AI_REVIEW_PROVIDER for an in-boundary endpoint."
+    fi
+    return 1
+  fi
+  return 0
 }
 
 # ai_review::warn_cli_native_auth

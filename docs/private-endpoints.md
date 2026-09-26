@@ -67,9 +67,24 @@ It applies to `provider=api` only. A `bedrock` run with no region is still a
 hard error with the variable set, so it cannot become a way to wave past a
 misconfiguration.
 
-**Do not set it in CI.** A pipeline has no interactive login, so it does
-nothing there except remove the error that would have told you the key is
-missing. It is for local use.
+**It is refused in CI**, whatever you set. Any of `CI`, `GITHUB_ACTIONS`,
+`JENKINS_URL` or `BUILD_ID` being present means the opt-in is ignored and the
+missing-key error stands, with a line saying why:
+
+```
+WARN: AI_REVIEW_CLI_NATIVE_AUTH=1 is ignored in CI — it is for local runs only.
+      Give the pipeline a real credential, or set AI_REVIEW_PROVIDER for an
+      in-boundary endpoint.
+```
+
+It is not an input on either `action.yml`, so it cannot be reached through the
+Action's interface at all — but a job-level `env:` in a consumer's own workflow
+propagates into composite steps, so "not an input" is not a guarantee on its
+own. On a hosted runner the opt-in would only trade a clear missing-key error
+for a confusing CLI failure later. On a **self-hosted** runner it is worse: one
+whose home directory carries a persisted login would quietly use that login
+against the public API, which is the boundary violation this whole check exists
+to prevent, on the infrastructure most likely to belong to a program that cares.
 
 ## Amazon Bedrock (claude or codex)
 

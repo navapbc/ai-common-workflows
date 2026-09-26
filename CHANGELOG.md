@@ -48,8 +48,19 @@ follow [Semantic Versioning](https://semver.org/).
   is in the environment than when it is a personal login.
   It relaxes `provider=api` only: a `bedrock` run with no region is still a
   hard error with the variable set, so it cannot become a way to wave past a
-  misconfiguration. Not for CI, where there is no interactive login to use and
-  it would only remove the error telling you the key is missing.
+  misconfiguration.
+  **And it is refused outright in CI** — `CI`, `GITHUB_ACTIONS`, `JENKINS_URL`
+  or `BUILD_ID` present means the opt-in is ignored and the missing-key error
+  stands, with a line saying why. The variable is not an input on either
+  `action.yml`, but a job-level `env:` in a consumer's own workflow propagates
+  into composite steps, so "not an input" is not a guarantee. On a hosted runner
+  the opt-in would only trade a clear error for a confusing one; on a
+  **self-hosted** runner, one whose home directory carries a persisted login
+  would quietly use it against the public API — the boundary violation this
+  check exists for, on the infrastructure most likely to belong to a program
+  that cares. The detection is deliberately broad, and each marker is asserted
+  separately, because Jenkins does not reliably set `CI` and "covered by
+  `CI=true`" is how the others quietly stop working.
 
 - **`post-when-clean`** — the review no longer comments on a PR it found
   nothing wrong with. Default `false`; set it `true` to post the approval

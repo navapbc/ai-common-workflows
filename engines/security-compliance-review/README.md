@@ -70,7 +70,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 | `AI_REVIEW_BATCH_MIN_FILES` | no | Fan-out threshold (default 10) |
 | `AI_REVIEW_CONTEXT_BUDGET` | no | Ceiling on context files the model may load beyond the diff (default 15). Stated to the model in a CONTEXT BUDGET prompt block; fan-out workers narrow it per batch |
 | `AI_REVIEW_SCM` | no | SCM backend under `../_common/scm/` (default `github`) |
-| `AI_REVIEW_CLI_NATIVE_AUTH` | no | Set to `1` when the AI CLI holds its own interactive login and no API key is in the environment. The run then uses that login against the **public** endpoint and warns each time. Never inferred; `provider=api` only; not for CI |
+| `AI_REVIEW_CLI_NATIVE_AUTH` | no | Set to `1` when the AI CLI holds its own interactive login and no API key is in the environment. The run then uses that login against the **public** endpoint and warns each time. Never inferred; `provider=api` only; **refused in CI** (`CI`, `GITHUB_ACTIONS`, `JENKINS_URL` or `BUILD_ID`) |
 | `AI_REVIEW_POST_WHEN_CLEAN` | no | Post a review when there are no findings (default `false`). A clean PR already has the job's own check; the default keeps the reviewer quiet rather than acknowledging every green PR. Findings always post, and a `REQUEST_CHANGES` review always posts |
 | `AI_REVIEW_MAX_COMMENTS` | no | Limit on inline comments per review (default 50; `0` = no limit). Over the limit, the highest-severity findings stay inline and the rest are listed in the review body under a heading saying the limit was reached; the gate still accounts for every finding |
 | `GITHUB_TOKEN` / `GH_TOKEN` | posting | Auth for `gh`; `GH_HOST` for GitHub Enterprise |
