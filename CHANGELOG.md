@@ -61,6 +61,35 @@ follow [Semantic Versioning](https://semver.org/).
   that cares. The detection is deliberately broad, and each marker is asserted
   separately, because Jenkins does not reliably set `CI` and "covered by
   `CI=true`" is how the others quietly stop working.
+- **Corpus fixtures that assert what they mean**, plus `forbidden`
+  expectations in the scorer and the corpus's first offline tests.
+  Two of the eight cases failed every run for reasons unrelated to the rubric,
+  found by actually running the corpus rather than reading it.
+  **Case 01** asserted CRITICAL on a "live-looking" credential while using
+  `AKIAIOSFODNN7EXAMPLE` / `wJalrXUtnFEMI/K7MDENG/...` — the pair AWS publishes
+  in its own documentation. A self-adjudicated run downgraded it to LOW with
+  exactly the right reasoning: those are not live credentials. The model was
+  right and the fixture was wrong, so the case measured whether the model
+  recognizes AWS's example key rather than whether it catches hardcoded
+  credentials. It now uses generated AWS-shaped values with no published
+  meaning.
+  **Case 05** used `clean: true` on a realistic `aws_db_instance`, so it failed
+  on seven legitimate findings — a password from a Terraform variable, missing
+  tags, single-AZ — none of which is the mistake it exists to catch. `clean:
+  true` there measured how complete the fixture is rather than how good the
+  rubric is, and padding the resource until nothing could be said would have
+  made it unrealistic instead. It now uses `forbidden`: no encryption finding,
+  with everything else still counted as extras so noise stays visible.
+  **New case 09** pins the placeholder behavior as intended — AWS's documented
+  example keys must not be reported above LOW. Reporting the pattern quietly is
+  right; calling it CRITICAL spends a program's attention and, at `gate: true`,
+  fails a build over a string that unlocks nothing.
+  `tests/python/test_corpus_score.py` gives the scorer its first tests. It had
+  none, which was backwards: every other suite tests the envelope, the corpus is
+  the only thing that measures whether the review is any good, and the scorer is
+  what turns its output into pass/fail — so a scorer that silently stopped
+  matching would report improvements that never happened. Also asserts every
+  checked-in case is loadable and actually asserts something.
 
 - **`post-when-clean`** — the review no longer comments on a PR it found
   nothing wrong with. Default `false`; set it `true` to post the approval

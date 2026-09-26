@@ -77,10 +77,48 @@ files — a tree that is checked in is easier to read and cannot fail to apply.
   finding's title or description. Keep them to the *concept* ("secret",
   "parameterized"), not to phrasing the model has no reason to reuse.
 - `perspective` — optional; `security` or `compliance`.
-- `clean: true` — a **negative case**: any finding is a failure. At least a
-  quarter of the corpus should be these. Precision is what determines whether
-  teams keep the tool, and a corpus of only positive cases rewards a rubric
-  that reports everything.
+- `clean: true` — a **negative case**: any finding is a failure. Use it only
+  where the fixture genuinely has nothing else to report.
+- `forbidden` — expectations that must NOT be matched, using the same rules.
+  Any match fails the case. This is the targeted negative, and usually the one
+  you want: a realistic resource always gives a thorough reviewer *something*
+  to say, so `clean: true` on one ends up measuring how complete the fixture is
+  rather than how good the rubric is. Case 05 failed every run that way, on
+  seven legitimate findings that had nothing to do with what it tests. Unmatched
+  findings still show in the `extra` column, so noise stays visible without
+  failing the case.
+
+At least a quarter of the corpus should be negative cases of one kind or the
+other. Precision is what determines whether teams keep the tool, and a corpus
+of only positive cases rewards a rubric that reports everything.
+
+```json
+{
+  "clean": false,
+  "findings": [],
+  "forbidden": [
+    { "path": "infra/rds.tf", "min_severity": "LOW",
+      "perspective": "compliance", "must_match": ["encrypt"] }
+  ]
+}
+```
+
+### Fixtures assert what they mean
+
+Two traps, both found by running the corpus rather than reading it:
+
+- **Case 01** asserted CRITICAL on a "live-looking" credential while using
+  `AKIAIOSFODNN7EXAMPLE` — the pair AWS publishes in its own documentation. A
+  run downgraded it to LOW with exactly the right reasoning, and the case
+  measured whether the model recognizes AWS's example key rather than whether it
+  catches hardcoded credentials. If a fixture needs a value to look real, it
+  must not be one a careful reader can identify as a placeholder.
+- **Case 05** used `clean: true` on a realistic RDS instance, so it failed on
+  missing tags and single-AZ — true observations, unrelated to the encryption
+  assertion it exists for.
+
+A case that fails for reasons unrelated to what it tests is one people learn to
+ignore, which costs more than the case was ever worth.
 
 ## Getting to 20+ cases
 

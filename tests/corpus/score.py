@@ -12,6 +12,12 @@ The looseness is the point. A corpus that fails because the model wrote
 "credential" where the fixture said "secret" measures phrasing, and a corpus
 that measures phrasing gets ignored within a week. What it must not be loose
 about is *whether the vulnerability was reported at all*.
+
+A case may also list `forbidden` expectations — findings that must NOT appear,
+matched by the same rules. Any match fails the case. This is the targeted form
+of `clean: true`: use it when the fixture has a specific wrong answer to guard
+against ("don't flag the encryption that is present") but is realistic enough
+that a thorough reviewer will legitimately find other things to say.
 """
 
 import json
@@ -55,6 +61,13 @@ def main(argv):
 
     expectations = expected.get("findings", [])
     want_clean = expected.get("clean", False)
+    # Findings that must NOT appear. `clean: true` is the blunt version of
+    # this — it fails on anything at all, which only works for a fixture that
+    # genuinely has nothing else to say. For a realistic one, "don't flag the
+    # encryption that is right there" is the actual assertion, and failing the
+    # case because the model also noticed a missing tag measures the fixture's
+    # completeness rather than the rubric's judgment.
+    forbidden = expected.get("forbidden", [])
 
     matched_findings = set()
     found = 0
@@ -69,7 +82,13 @@ def main(argv):
 
     extra = len(findings) - len(matched_findings)
 
-    if want_clean:
+    # A forbidden match is a failure regardless of everything else: it is the
+    # specific wrong answer the case was written to catch.
+    violated = any(matches(f, c) for f in forbidden for c in findings)
+
+    if violated:
+        verdict = "FAIL"
+    elif want_clean:
         # A negative case fails on ANY finding. Precision is what decides
         # whether a team keeps the tool switched on.
         verdict = "PASS" if not findings else "FAIL"
