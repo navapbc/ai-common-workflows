@@ -8,6 +8,29 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tests/python/test_doc_links.py`** — every relative link and heading
+  anchor in the tracked Markdown now resolves, or CI fails.
+  Added after a broken anchor shipped:
+  `security.md#the-llm-credential-bedrock--vertex` lost its target when "Azure"
+  joined that heading. A heading edit silently breaks every link pointing at
+  it, in files the editor never opens, and nothing else in the repo would
+  notice.
+  It immediately found a second one the hand-rolled sweep had missed, because
+  that sweep only looked at `docs/` — this walks everything git tracks.
+  **The slug rules are pinned by their own tests**, which is the real lesson.
+  Two ad-hoc versions of this check each reported a *correct* link as broken:
+  one collapsed runs of whitespace, where GitHub maps each space to its own
+  hyphen (`Bedrock / Vertex / Azure` → `bedrock--vertex--azure`); the other
+  stripped underscores as emphasis, mangling `COPILOT_SYNC_TOKEN`. Both would
+  have led to "fixing" a working link into a broken one. A subtly wrong link
+  checker is worse than none, so every rule it depends on is asserted directly.
+  Headings inside fenced code blocks are not anchors, duplicate headings get
+  GitHub's numeric suffixes, links inside fences are not checked (an example
+  may reference a path that does not exist here), and external schemes are
+  somebody else's uptime problem. Verified against four breakage forms: a
+  renamed heading, a missing file, an anchor typo, and the whitespace-collapse
+  slugger bug.
+
 - **`postWhenClean` and `maxComments` on the Jenkins step**, closing the gap
   where the plugin inherited a posting behaviour it had no way to configure.
   The plugin bundles the same engine, and `github_payload.py` reads both knobs
