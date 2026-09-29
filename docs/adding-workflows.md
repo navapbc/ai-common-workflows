@@ -96,8 +96,7 @@ are test-enforced.
 
 ## Conventions every workflow follows
 
-These are the promises this repo makes to the teams who adopt it. A new
-workflow inherits them:
+Every workflow in this repo follows these, and a new one inherits them:
 
 1. **Pin to a commit SHA, never a mutable tag.** Document it in the quickstart,
    the same way the PR-review docs do. See [security.md](security.md).
