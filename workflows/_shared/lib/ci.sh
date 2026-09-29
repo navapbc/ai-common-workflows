@@ -69,6 +69,25 @@ ci::resolve_pr_context() {
   local pr base
   pr="${PR_NUMBER_INPUT:-${EVENT_PR_NUMBER:-}}"
   base="${BASE_REF_INPUT:-${EVENT_BASE_REF:-}}"
+
+  # A pull_request from a fork cannot be reviewed, and saying so is better than
+  # failing. GitHub withholds secrets from such a run (no model credential) and
+  # issues a read-only GITHUB_TOKEN (nothing to post with); `id-token: write`
+  # is unavailable too, so federating into Bedrock or Vertex does not rescue
+  # it. There is no configuration that works, so the previous behaviour — the
+  # engine exiting 2 with "requires ANTHROPIC_API_KEY" — put a red X on every
+  # external contribution, told the contributor nothing they could act on, and
+  # left the maintainer explaining a broken check.
+  #
+  # Only on the pull_request event: a maintainer running this by hand against a
+  # fork PR (workflow_dispatch with pr-number/base-ref) DOES have secrets and a
+  # write token, and must not be skipped.
+  if [[ "${EVENT_NAME:-}" == "pull_request" && "${IS_FORK_PR:-false}" == "true" ]]; then
+    echo "::notice::Skipping review: pull request #${pr:-?} comes from a fork. GitHub withholds secrets and issues a read-only token for fork pull requests, so the review cannot run or post. To review this PR, run the workflow manually with pr-number and base-ref (see docs/github-action.md#forked-pull-requests)."
+    echo "skip=true" >>"${GITHUB_OUTPUT}"
+    return 0
+  fi
+
   if [[ -z "${pr}" ]]; then
     echo "::notice::No PR context (not a pull_request event and no pr-number given). Skipping review."
     echo "skip=true" >>"${GITHUB_OUTPUT}"

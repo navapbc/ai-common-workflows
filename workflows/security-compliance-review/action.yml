@@ -235,6 +235,8 @@ runs:
         EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
         BASE_REF_INPUT: ${{ inputs.base-ref }}
         EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        EVENT_NAME: ${{ github.event_name }}
+        IS_FORK_PR: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
       run: |
         set -euo pipefail
         source "$(cd "${ACTION_PATH}/../_shared/lib" && pwd)/ci.sh"

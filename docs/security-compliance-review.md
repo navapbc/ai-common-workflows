@@ -98,14 +98,12 @@ costs money per run and holds a runner while it thinks; the third is the
 token-isolation posture the rest of these docs recommend, so the snippet people
 copy should model it.
 
-> **Secrets and forked pull requests.** GitHub does not pass secrets to a
-> `pull_request` run from a fork, so `ANTHROPIC_API_KEY` arrives empty and the
-> job fails rather than skipping. If your repository accepts external
-> contributions, gate the job on
-> `github.event.pull_request.head.repo.full_name == github.repository`. Do not
-> reach for `pull_request_target` to work around it: it runs with a privileged
-> token against untrusted PR content, which is the specific threat
-> [security.md](security.md) is built around.
+> **Forked pull requests are skipped automatically.** GitHub withholds secrets
+> and issues a read-only token for a `pull_request` from a fork, so the review
+> has no model credential and nothing to post with. The action detects this and
+> skips with a notice rather than failing — you need no `if:` guard. To review
+> an external contribution, run the workflow by hand against it. See
+> [Forked pull requests](github-action.md#forked-pull-requests).
 
 ## Components
 
