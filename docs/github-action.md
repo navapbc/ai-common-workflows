@@ -245,6 +245,60 @@ Two things are never suppressed, whatever the setting:
   finding means something went wrong, not that the diff is fine. Swallowing it
   would leave an author with a blocked PR and no reason given.
 
+## Forked pull requests
+
+A `pull_request` from a fork is **skipped, with a notice**:
+
+```
+Skipping review: pull request #42 comes from a fork. GitHub withholds secrets
+and issues a read-only token for fork pull requests, so the review cannot run
+or post. To review this PR, run the workflow manually with pr-number and
+base-ref.
+```
+
+You do not need an `if:` guard for this; the action handles it. Nothing about
+same-repo pull requests changes.
+
+### Why it cannot simply work
+
+Two independent blockers, and neither has a configuration that gets around it:
+
+- **No secrets.** `secrets.ANTHROPIC_API_KEY` renders empty on a fork run, so
+  there is no model credential. `id-token: write` is unavailable too, so
+  federating into Bedrock or Vertex does not rescue it.
+- **A read-only `GITHUB_TOKEN`.** Even with a credential, posting returns 403.
+  The `permissions:` block cannot grant write on a fork pull request.
+
+Previously the run failed with `requires ANTHROPIC_API_KEY` — a red check on
+every external contribution, telling the contributor nothing they could act on.
+
+### To review one anyway
+
+Run it by hand, which executes in your repository's context with secrets and a
+write token. That also puts a human between an untrusted diff and your
+credentials, which is the point:
+
+```bash
+gh workflow run ai-security-compliance-review.yml -f pr=42
+```
+
+See [Reviewing a PR from a manual trigger](#reviewing-a-pr-from-a-manual-trigger)
+for the dispatch workflow, and
+[`examples/workflows/ai-security-compliance-review-manual.yml`](../examples/workflows/ai-security-compliance-review-manual.yml).
+
+### Do not reach for `pull_request_target`
+
+It is the usual workaround and it is the wrong one here. It runs with your
+secrets and a write token in the base-repo context, and this action then points
+an **agentic AI CLI with shell and file-read tools** at the contributor's code.
+Prompt injection in a source file, aimed at a token sitting in the same
+environment, is a different class of risk from a scanner matching patterns —
+and it is the specific threat [security.md](security.md) is built around. A
+second `workflow_run` stage can be made safe, because the engine already runs
+the model with no SCM token and posts from a separate fixed script, but it is
+enough complexity that it should be written once and carefully rather than
+copied from a doc. Ask if you need it.
+
 ## Re-running a review
 
 ### What a second pass does to the comments
@@ -330,6 +384,7 @@ Copy-paste version:
 | Symptom | Cause / fix |
 |---|---|
 | Job skipped with a notice | Not a `pull_request` event and no `pr-number` given. |
+| Job skipped on an external contribution | Expected — fork pull requests cannot carry secrets or a write token. See [Forked pull requests](#forked-pull-requests). |
 | No comment on a PR with no issues | Expected. See [Clean PRs stay quiet](#clean-prs-stay-quiet); set `post-when-clean: true` to post an approval. |
 | `Could not determine the PR base ref` | `pr-number` was set off a `pull_request` event without `base-ref`. Pass both. |
 | `HTTP 422` from GitHub | An inline comment landed off the diff. The action already filters these and falls back to a summary-only review; if it persists, the diff fetch likely failed — check token scope. |
