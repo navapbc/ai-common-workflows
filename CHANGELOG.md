@@ -8,6 +8,23 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`.gitattributes` marking `CHANGELOG.md` as `merge=union`.** Changelog
+  entries are append-only prose and two branches almost always add theirs at
+  the top of the same section, so they collide on every rebase even though both
+  sides are wanted. Five consecutive PRs hit it and the resolution was "keep
+  both" every time — which is precisely what the built-in `union` driver does,
+  with no per-clone configuration.
+  Scoped to that one file on purpose: union never reports a collision, so on a
+  file where two edits can genuinely contradict each other it would hide a real
+  conflict. Verified both directions — a changelog collision now rebases clean
+  with both entries kept, and a conflicting edit to a `.py` file still stops the
+  rebase.
+  It does not fix everything. Union concatenates without thinking, so the
+  resulting order may be one nobody chose, and GitHub's server-side merge
+  ignores merge drivers — a PR can still show as conflicting in the UI while a
+  local rebase resolves cleanly. Local rebases are where this was actually
+  costing time.
+
 - **`.github/secret_scanning.yml`**, now that the repository is public, plus
   `tests/python/test_secret_fixtures.py` as its compensating control.
   A security reviewer necessarily contains credential-shaped strings: the
