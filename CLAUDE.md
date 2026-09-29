@@ -84,4 +84,9 @@ internals.
 - Branch off `main`; open a PR and get CI green (including the Jenkins build)
   before merge. PRs are typically **squash-merged**, so don't rely on individual
   commit granularity surviving.
+- `CHANGELOG.md` is `merge=union` (`.gitattributes`), so two branches adding an
+  entry at the same spot rebase cleanly with both kept instead of conflicting.
+  Check the resulting order — union concatenates, it does not think. GitHub's
+  server-side merge ignores merge drivers, so a PR can still show as
+  conflicting in the UI; rebase locally and force-push.
 - End commit messages with a `Co-Authored-By:` trailer for the assisting model.

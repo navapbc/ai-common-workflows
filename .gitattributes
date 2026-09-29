@@ -1,0 +1,18 @@
+# Changelog entries are append-only prose, and two branches almost always add
+# their entry at the top of the same section. That collides on every rebase
+# even though both sides are wanted — five consecutive PRs hit it, and the
+# resolution was "keep both" every single time.
+#
+# `union` is a built-in git merge driver (no per-clone config), and it does
+# exactly that: take both sides, in order, no conflict markers.
+#
+# Scoped to this one file deliberately. Union never reports a collision, so on
+# a file where two edits can genuinely contradict each other it would hide a
+# real conflict. Do not extend it to code.
+#
+# Two things it does not do: it can leave entries in an order nobody chose (fix
+# it in the follow-up commit if it matters), and GitHub's server-side merge
+# does not apply merge drivers — a PR can still show as conflicting in the UI
+# even though a local rebase resolves cleanly. The win is local rebases, which
+# is where this was actually hurting.
+CHANGELOG.md merge=union
