@@ -346,9 +346,16 @@ permissions:
   contents: read
   pull-requests: write
 
+# Keyed on the PR being reviewed, so two dispatches for the same PR do not run
+# concurrent reviews. Each is a metered model call.
+concurrency:
+  group: ai-security-compliance-review-${{ inputs.pr }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - id: meta
         env:
