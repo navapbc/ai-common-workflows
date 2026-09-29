@@ -409,6 +409,23 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The two security-review examples in `docs/` now match the ones in
+  `examples/`**, and the test that pins them scans by what a snippet *uses*
+  rather than where it lives.
+  `docs/github-action.md`'s manual-dispatch workflow and
+  `docs/private-endpoints.md`'s Bedrock workflow were both missing
+  `concurrency` and `timeout-minutes`, and the Bedrock one was missing
+  `persist-credentials: false`. The previous test scanned `examples/*.yml`
+  plus one hardcoded quickstart block, so a complete workflow living in a
+  fenced block anywhere else was invisible to it — and a doc snippet is
+  copy-pasted exactly like a file is.
+  `test_example_workflows.py` now finds every fenced YAML block that invokes
+  the action and declares `jobs:`, across `docs/` and the README, and asserts
+  that both kinds of source are represented so neither class can silently drop
+  out of the scan. Coverage went from 6 sources to 8. The classifier and the
+  instructions-sync examples stay out of scope: different cost and cadence,
+  and sweeping them in would assert something nobody has reasoned about.
+
 - **The quickstart and every security-review example now carry `concurrency`,
   `timeout-minutes` and `persist-credentials: false`**, pinned by
   `tests/python/test_example_workflows.py`.

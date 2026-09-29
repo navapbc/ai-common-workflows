@@ -90,12 +90,18 @@ to prevent, on the infrastructure most likely to belong to a program that cares.
 
 ```yaml
 permissions: { contents: read, pull-requests: write, id-token: write }
+concurrency:
+  group: ai-security-compliance-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   review:
     runs-on: [self-hosted, linux, x64] # in your VPC; or ubuntu-latest if acceptable
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { ref: "${{ github.event.pull_request.head.sha }}" }
+        with:
+          ref: "${{ github.event.pull_request.head.sha }}"
+          persist-credentials: false
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::123456789012:role/ai-security-compliance-review

@@ -26,39 +26,46 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXAMPLES = ROOT / "examples" / "workflows"
-QUICKSTART = ROOT / "docs" / "security-compliance-review.md"
 
 ACTION = "ai-common-workflows/workflows/security-compliance-review@"
 
 
-def _security_review_examples():
-    """Examples that invoke the security-review action.
+def _sources():
+    """Every complete workflow that invokes the security-review action.
 
-    Scoped by what the file uses rather than by filename, and deliberately not
-    extended to the classifier or the instructions sync — those have a
-    different cost and cadence, and sweeping them in here would assert
-    something nobody has thought about.
+    Scoped by what a snippet *uses*, not by where it lives. Two examples in
+    `docs/` were missed when this only scanned `examples/` plus a hardcoded
+    quickstart block — a doc snippet is copy-pasted exactly like a file is, so
+    it has to meet the same bar.
+
+    Deliberately not extended to the test classifier or the instructions sync.
+    They have a different cost and cadence, and sweeping them in would assert
+    something nobody has reasoned about.
     """
-    return sorted(p for p in EXAMPLES.glob("*.yml") if ACTION in p.read_text())
+    out = []
+    for p in sorted(EXAMPLES.glob("*.yml")):
+        body = p.read_text()
+        if ACTION in body:
+            out.append((str(p.relative_to(ROOT)), body))
+    for md in sorted(ROOT.glob("docs/*.md")) + [ROOT / "README.md"]:
+        text = md.read_text()
+        for i, m in enumerate(re.finditer(r"```ya?ml\n(.*?)```", text, re.S), start=1):
+            block = m.group(1)
+            # A full workflow, not an inputs fragment.
+            if ACTION in block and re.search(r"^jobs:", block, re.M):
+                out.append((f"{md.relative_to(ROOT)} [yaml block {i}]", block))
+    return out
 
 
-def _quickstart_yaml():
-    block = re.search(
-        r"```yaml\n(# \.github/workflows/ai-security-compliance-review\.yml.*?)```",
-        QUICKSTART.read_text(), re.S,
-    )
-    assert block, "could not find the quickstart YAML block in the doc"
-    return block.group(1)
-
-
-SOURCES = [(p.name, p.read_text()) for p in _security_review_examples()]
-SOURCES.append(("docs/security-compliance-review.md (quickstart)", _quickstart_yaml()))
+SOURCES = _sources()
 
 
 def test_there_are_sources_to_check():
     # A glob or regex that matched nothing would make every assertion vacuous.
-    assert len(SOURCES) >= 5, [n for n, _ in SOURCES]
-    assert any("quickstart" in n for n, _ in SOURCES)
+    assert len(SOURCES) >= 7, [n for n, _ in SOURCES]
+    # Both kinds of source must be represented, or a whole class is unchecked.
+    assert any(n.startswith("examples/") for n, _ in SOURCES), [n for n, _ in SOURCES]
+    assert any("yaml block" in n for n, _ in SOURCES), [n for n, _ in SOURCES]
 
 
 @pytest.mark.parametrize("name,body", SOURCES, ids=[n for n, _ in SOURCES])
