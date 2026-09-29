@@ -693,6 +693,30 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A pull request from a fork is now skipped with a notice, not failed.**
+  It used to die in the engine with `requires ANTHROPIC_API_KEY`, putting a red
+  check on every external contribution — one the contributor could not act on
+  and the maintainer had to explain.
+  There is no configuration in which it could have worked. GitHub withholds
+  secrets from a fork run, so there is no model credential, **and** issues a
+  read-only `GITHUB_TOKEN`, so there is nothing to post with; `id-token: write`
+  is unavailable too, so federating into Bedrock or Vertex does not rescue it.
+  Two independent blockers, neither reachable from the `permissions:` block.
+  The skip is scoped to the `pull_request` event on purpose. A maintainer
+  running the workflow by hand against a fork PR (`workflow_dispatch` with
+  `pr-number` / `base-ref`) executes in the base repository with secrets and a
+  write token, and must not be skipped — that is the escape hatch the notice
+  itself recommends, and guarding on "is a fork" alone would have broken it.
+  A missing or empty fork signal **reviews** rather than skips. That direction
+  is the one that matters: defaulting the other way would silently skip every
+  pull request, leaving a workflow that is green, posts nothing, and looks
+  installed.
+  `docs/github-action.md` gains a **Forked pull requests** section covering why
+  it cannot work, how to review one by hand, and why `pull_request_target` is
+  the wrong workaround here specifically — it would point an agentic CLI with
+  shell and file-read tools at contributor code with a privileged token in the
+  same environment, which is the threat `docs/security.md` is built around.
+
 - **`pr-number` never worked off a `pull_request` event**, on either action.
   It is documented as an override — "Defaults to the pull_request event's
   number" — which reads as an invitation to run on `workflow_dispatch` and name

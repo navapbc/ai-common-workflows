@@ -84,6 +84,75 @@ setup() {
   grep -qx "base=main" "${GITHUB_OUTPUT}"
 }
 
+# ── forked pull requests ────────────────────────────────────────────────────
+# GitHub withholds secrets and issues a read-only token for a fork PR, so
+# there is no configuration in which the review can run or post. Skipping with
+# a notice beats the old behaviour: the engine exited 2 with "requires
+# ANTHROPIC_API_KEY", putting a red X on every external contribution.
+
+@test "resolve_pr_context: a fork pull_request skips with a notice" {
+  EVENT_NAME=pull_request IS_FORK_PR=true PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" \
+    BASE_REF_INPUT="" EVENT_BASE_REF="main" run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=true" "${GITHUB_OUTPUT}"
+  [[ "$output" == *"::notice::"* ]]
+  [[ "$output" == *"fork"* ]]
+}
+
+@test "resolve_pr_context: the fork notice says how to review it anyway" {
+  # Silence that looks like nothing happened sends a maintainer hunting for a
+  # broken secret; the way out is a manual run.
+  EVENT_NAME=pull_request IS_FORK_PR=true EVENT_PR_NUMBER="42" EVENT_BASE_REF="main" \
+    run ci::resolve_pr_context
+  [[ "$output" == *"pr-number"* ]]
+  [[ "$output" == *"base-ref"* ]]
+}
+
+@test "resolve_pr_context: a same-repo pull_request is not skipped" {
+  EVENT_NAME=pull_request IS_FORK_PR=false PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" \
+    BASE_REF_INPUT="" EVENT_BASE_REF="main" run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=false" "${GITHUB_OUTPUT}"
+  grep -qx "pr=42" "${GITHUB_OUTPUT}"
+}
+
+@test "resolve_pr_context: a manual run against a fork PR is NOT skipped" {
+  # workflow_dispatch runs in the base repo: secrets and a write token are
+  # both present, so the maintainer escape hatch must keep working. Guarding
+  # on IS_FORK_PR alone would break exactly the path the notice recommends.
+  EVENT_NAME=workflow_dispatch IS_FORK_PR=true PR_NUMBER_INPUT="99" \
+    BASE_REF_INPUT="main" run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=false" "${GITHUB_OUTPUT}"
+  grep -qx "pr=99" "${GITHUB_OUTPUT}"
+}
+
+@test "resolve_pr_context: a missing fork signal reviews, it does not skip" {
+  # The default direction matters more than it looks. If IS_FORK_PR is unset or
+  # empty — a renamed input, an event shape where the expression yields "" —
+  # defaulting to "fork" would silently skip EVERY pull request: the workflow
+  # stays green, posts nothing, and looks installed. Failing toward reviewing
+  # is loud and recoverable; failing toward skipping is neither.
+  EVENT_NAME=pull_request PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" \
+    BASE_REF_INPUT="" EVENT_BASE_REF="main" run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=false" "${GITHUB_OUTPUT}"
+
+  : >"${GITHUB_OUTPUT}"
+  EVENT_NAME=pull_request IS_FORK_PR="" EVENT_PR_NUMBER="42" EVENT_BASE_REF="main" \
+    run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=false" "${GITHUB_OUTPUT}"
+}
+
+@test "resolve_pr_context: absent fork signal behaves as before" {
+  # Older callers, and the bats suite, set neither variable.
+  PR_NUMBER_INPUT="" EVENT_PR_NUMBER="42" BASE_REF_INPUT="" EVENT_BASE_REF="main" \
+    run ci::resolve_pr_context
+  [ "$status" -eq 0 ]
+  grep -qx "skip=false" "${GITHUB_OUTPUT}"
+}
+
 # The workflow_dispatch shape: no pull_request payload at all, both halves of
 # the context supplied as inputs. This is what `pr-number` always implied was
 # possible and never was.
