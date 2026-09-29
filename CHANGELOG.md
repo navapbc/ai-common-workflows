@@ -8,6 +8,33 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`.github/secret_scanning.yml`**, now that the repository is public, plus
+  `tests/python/test_secret_fixtures.py` as its compensating control.
+  A security reviewer necessarily contains credential-shaped strings: the
+  detection corpus and the bats fixtures exist to hand it something that looks
+  leaked and check that it says so, and
+  `tests/corpus/01-hardcoded-aws-key` *must* look live — when it used AWS's
+  documented example pair the reviewer correctly rated it low, which is the bug
+  that case was fixed for. Those trip secret scanning on every push, and an
+  alert stream that is always noise is one people stop reading.
+  So `tests/corpus/**`, `tests/fixtures/**` and `tests/bats/**` are excluded —
+  test data only, never code that runs in a consumer's pipeline. `engines/`,
+  `workflows/`, `docs/` and the changelog are deliberately **not** excluded
+  even though they name the example key in prose: a one-off dismissal there is
+  cheaper than a blind spot over the tree that ships.
+  The exclusion is a blind spot, so it does not stand alone. The test fails
+  when a credential-shaped literal appears outside those paths, when an
+  excluded path no longer holds such a fixture (so the exemption cannot quietly
+  widen — Markdown prose does not count as justification, or the rubric's own
+  discussion of the example key would bless exempting all of `engines/`), and
+  when an Anthropic key, GitHub PAT, OpenAI key or private-key block appears
+  anywhere at all including the excluded paths.
+  A scan of all 109 commits of history found no real credential of any of those
+  shapes. Verified against five failure forms, and the first verification pass
+  caught two bugs in the test itself: it scanned only `git ls-files`, missing a
+  file added in the commit that introduces it — which is exactly when a pasted
+  credential arrives — and it let Markdown prose justify an exclusion.
+
 - **`tests/python/test_doc_links.py`** — every relative link and heading
   anchor in the tracked Markdown now resolves, or CI fails.
   Added after a broken anchor shipped:

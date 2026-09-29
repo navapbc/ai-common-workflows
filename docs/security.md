@@ -189,6 +189,39 @@ layer around the runner/agent:
    diffs leave your perimeter — point at Bedrock/Vertex/Azure OpenAI/an internal
    gateway if that matters.
 
+## This repository contains fake credentials on purpose
+
+The detection corpus and the bats fixtures hold credential-shaped strings —
+including AWS's published `AKIAIOSFODNN7EXAMPLE` pair and a synthetic
+AWS-shaped key — because that is what you hand a security reviewer to check
+that it notices. `tests/corpus/01-hardcoded-aws-key` in particular *must* look
+like a live key: when it used AWS's documented example, the reviewer correctly
+rated it low and the case measured the wrong thing.
+
+Consequently `.github/secret_scanning.yml` excludes `tests/corpus/**`,
+`tests/fixtures/**` and `tests/bats/**` from secret scanning. An alert stream
+that is always noise is one people stop reading, and the next alert might be
+real.
+
+The exclusion is a blind spot, so it has a compensating control.
+`tests/python/test_secret_fixtures.py` fails when:
+
+- a credential-shaped literal appears **outside** those paths — notably in
+  `engines/` or `workflows/`, which ship to consumers and where a reviewer
+  might otherwise assume any key in this repo is a fixture;
+- an excluded path no longer holds such a fixture, so the exclusion cannot
+  quietly widen past what it is for. Prose mentions in Markdown do not count as
+  justification, or the rubric's own discussion of the example key would bless
+  an exemption for the whole engine tree;
+- an Anthropic key, GitHub PAT, OpenAI key or private-key block appears
+  **anywhere at all**, excluded paths included. Nothing here needs one, so a
+  match is a leak rather than a fixture — and the exemption must not become the
+  place one hides.
+
+If you add a fixture that needs to look like a secret, put it under one of
+those paths. If you are tempted to add one elsewhere, that is the control
+working.
+
 ## Copilot-instructions sync (pull model)
 
 Copilot instruction files are distributed by a **pull** workflow that each
