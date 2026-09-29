@@ -426,6 +426,30 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/adding-workflows.md` refreshed.** It had drifted in three ways.
+  Its repository tree omitted half of `engines/_common` — `gate_verdict.py`,
+  `fold_review_json.py`, `write_audit_report.py`, `scm/github_payload.py`, the
+  unshipped `sandbox/` — and the audit entrypoint, so a reader could not see
+  that one engine carries two entrypoints. It labelled `skills/profiles/` as
+  "rubric overrides", contradicting the additive model the same page explains
+  correctly two sections later. And its checklist predated most of what CI now
+  enforces.
+  It gains a **What CI already enforces** table, because several conventions
+  are tests rather than advice now, and a failure that names a rule you have
+  never read is a bad first contribution: entrypoint invariants (a missing
+  `configure_endpoint` silently sends traffic to the public API), the
+  stdlib-only Python suite, SHA-only pins, doc anchors, credential-shaped
+  fixtures, and the fact that a new bats file must be listed in **both**
+  `tests/run.sh` and `.github/workflows/ci.yml` or it simply does not run.
+  New guidance that a **second entrypoint on an existing engine is usually the
+  better trade than a second workflow** — the review and the audit share a
+  rubric, a severity ladder and a findings format precisely because the audit
+  was not built as its own workflow. A new convention that a workflow reading
+  PR content should skip forked pull requests rather than fail on them, with a
+  pointer at the shared resolver that already does it. And a note that a rubric
+  change needs `tests/corpus/run.sh`, since `tests/run.sh` tests the envelope
+  and would pass a rubric that reported nothing.
+
 - **The two security-review examples in `docs/` now match the ones in
   `examples/`**, and the test that pins them scans by what a snippet *uses*
   rather than where it lives.
