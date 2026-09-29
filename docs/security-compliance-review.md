@@ -55,21 +55,57 @@ name: AI security & compliance review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+
 permissions:
   contents: read
   pull-requests: write
+
+# One review per PR: a new push supersedes an in-flight run instead of racing
+# it. Each run is a real model call you pay for, and two would post overlapping
+# comments.
+concurrency:
+  group: ai-security-compliance-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
+    # A large diff runs ~8 minutes. GitHub's default job timeout is six hours,
+    # which is a long time for a hung CLI to hold a runner.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { ref: "${{ github.event.pull_request.head.sha }}" }
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Keep the token out of .git/config so the AI phase cannot reach a
+          # repo-write credential; the action posts in a separate step that
+          # holds one. See security.md.
+          persist-credentials: false
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<commit-sha> # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-That's the whole setup. [Pin `@<commit-sha>`, not a tag](security.md).
+That is the whole setup, and the defaults are the ones most teams want:
+advisory (nothing blocks), silent on a clean PR, up to 50 inline comments with
+the rest in the review body, and no adjudication pass. [Pin `@<commit-sha>`,
+not a tag](security.md).
+
+The three lines beyond the bare minimum — `concurrency`, `timeout-minutes` and
+`persist-credentials` — are here because every consumer wants them and each is
+easier to include than to rediscover. The first two exist because this reviewer
+costs money per run and holds a runner while it thinks; the third is the
+token-isolation posture the rest of these docs recommend, so the snippet people
+copy should model it.
+
+> **Secrets and forked pull requests.** GitHub does not pass secrets to a
+> `pull_request` run from a fork, so `ANTHROPIC_API_KEY` arrives empty and the
+> job fails rather than skipping. If your repository accepts external
+> contributions, gate the job on
+> `github.event.pull_request.head.repo.full_name == github.repository`. Do not
+> reach for `pull_request_target` to work around it: it runs with a privileged
+> token against untrusted PR content, which is the specific threat
+> [security.md](security.md) is built around.
 
 ## Components
 

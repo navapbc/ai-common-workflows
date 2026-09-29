@@ -409,6 +409,26 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The quickstart and every security-review example now carry `concurrency`,
+  `timeout-minutes` and `persist-credentials: false`**, pinned by
+  `tests/python/test_example_workflows.py`.
+  All five examples were missing all three, which is how this goes: each is one
+  line, nobody notices an absence, and the cost lands on people who are not in
+  this repository. Without a concurrency group, three pushes to a PR run three
+  concurrent reviews — each a metered model call, each posting overlapping
+  comments. Without `timeout-minutes`, a hung CLI holds a runner for GitHub's
+  default six hours against a job that takes about eight minutes. And
+  `persist-credentials: false` is the token-isolation posture `docs/security.md`,
+  `docs/architecture.md`, `docs/github-action.md` and two other examples all
+  recommend — the quickstart was the one place not modelling the repository's
+  own advice, which is backwards for the snippet people actually paste.
+  The quickstart also now states what the defaults give you (advisory, silent
+  on a clean PR, 50 inline comments, no adjudication pass) instead of leaving a
+  reader to assemble that from the input table, and carries a short caveat that
+  GitHub withholds secrets from forked pull requests so the job fails rather
+  than skipping — with a pointer away from `pull_request_target`, which would
+  run a privileged token against untrusted PR content.
+
 - **Doc coherence pass after the adjudication default moved.** Four documents
   sold the Action over Copilot's native review partly on adjudication —
   "it adjudicates its own findings to cut false positives", "it filters its own

@@ -27,9 +27,20 @@ permissions:
   contents: read
   pull-requests: write
 
+# One review per PR. A new push supersedes an in-flight run rather than racing
+# it: each run is a real model call you pay for, and two of them would post
+# overlapping comments.
+concurrency:
+  group: ai-security-compliance-review-${{ inputs.pr }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
+    # A review of a large diff runs ~8 minutes; GitHub's default job
+    # timeout is six hours, which is a long time for a hung CLI to hold a
+    # runner.
+    timeout-minutes: 20
     steps:
       # There is no pull_request payload on a dispatch, so the base branch has
       # to be looked up. This is a plain read with the workflow token; no AI
