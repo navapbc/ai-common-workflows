@@ -12,13 +12,28 @@ permissions:
   contents: read
   pull-requests: write
 
+# One review per PR. A new push supersedes an in-flight run rather than racing
+# it: each run is a real model call you pay for, and two of them would post
+# overlapping comments.
+concurrency:
+  group: ai-security-compliance-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     runs-on: ubuntu-latest
+    # A review of a large diff runs ~8 minutes; GitHub's default job
+    # timeout is six hours, which is a long time for a hung CLI to hold a
+    # runner.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # Keep the token out of .git/config so the AI phase cannot reach a
+          # repo-write credential. The action posts in a separate step that
+          # holds the token. See docs/security.md.
+          persist-credentials: false
       - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
