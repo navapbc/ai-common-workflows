@@ -12,7 +12,7 @@ adapters; the generic harness is written once and never copied (see
    workflows/<name>/action.yml ────────▶ engines/<name>/            (per workflow)
       (sources workflows/_shared/lib)      harness/<entrypoint>  ── thin runner
    Jenkins plugin <name> (.hpi) ───────▶   skills/base/*.md      ── the rubric
-     depends on ai-common-core (.hpi),     skills/profiles/<p>/  ── framework overrides
+     depends on ai-common-core (.hpi),     skills/profiles/<p>/  ── framework layers (additive)
      bundles the engine zip                      │ sources
    copilot-instructions/ (skills          engines/_common/           (shared, once)
      re-expressed; can't run the           harness/core.sh  ──▶ AI CLI (claude/codex/copilot)
@@ -24,11 +24,13 @@ adapters; the generic harness is written once and never copied (see
 Workflows today: **security-compliance-review** (`harness/ai-security-compliance-review`) and
 **test-classifier** (`harness/ai-test-classifier`).
 
-The **compliance profile** (`AI_REVIEW_PROFILE`, default `base`) selects
-additions under the engine's `skills/profiles/` to the always-applied
-compliance floor in `skills/base/iac-compliance.md`; other rubric files
-resolve from the profile first, then fall back to `skills/base/`. See
-[profiles.md](profiles.md).
+The **compliance profile** (`AI_REVIEW_PROFILE`, default `base`) is an ordered
+list of rubric sources, and every rubric file is composed the same way: the
+copy in `skills/base/` applies as the floor, then each listed profile's copy of
+that filename is appended after it, in list order, taking precedence on
+conflict. Sources add; none replaces another. The compliance perspective
+(`iac-compliance.md`) is included only when the scope actually contains IaC.
+See [profiles.md](profiles.md).
 
 ## The engine is the single source of truth
 
