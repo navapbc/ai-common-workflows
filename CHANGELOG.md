@@ -425,6 +425,27 @@ follow [Semantic Versioning](https://semver.org/).
   out of the scan. Coverage went from 6 sources to 8. The classifier and the
   instructions-sync examples stay out of scope: different cost and cadence,
   and sweeping them in would assert something nobody has reasoned about.
+- **Copilot's native review is now framed as the alternative to the Action, not
+  a layer on top of it.** Four documents said to "adopt the action first" and
+  add Copilot as a complementary second opinion. That was wrong in a way worth
+  naming: the "run it alongside, not instead of" argument is correct for SAST,
+  dependency and secret scanning — different detection method, so they compose
+  — and it got carried over to a comparison where it does not hold. Copilot
+  native and the Action apply the **same rubric by the same method**, so running
+  both mostly means the same finding reported twice on the same line, and two
+  metered bills.
+  It also gave bad advice to the teams most likely to need this. "Adopt the
+  action first" is useless to a program that has Copilot procured and
+  authorized while a frontier-model key is months of paperwork away, or out of
+  reach entirely — and that is a procurement and accreditation question, not a
+  temporary state. The docs now present a choice decided by what a program can
+  obtain, with Copilot-with-instructions as a real option rather than a
+  consolation prize, and say plainly what going Copilot-only costs: the gate,
+  control of the model and data path, machine-readable output, and profile
+  composition.
+  The `docs/security-compliance-review.md` entry keeps the scanner distinction
+  explicit, since that is the framing that does still apply and the one this
+  was confused with.
 
 - **The quickstart and every security-review example now carry `concurrency`,
   `timeout-minutes` and `persist-credentials: false`**, pinned by
