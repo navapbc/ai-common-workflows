@@ -3,13 +3,13 @@
 Make GitHub Copilot's PR review apply this repo's security & compliance rubric.
 Runs natively inside GitHub, with no LLM keys of your own.
 
-> **Start with the action, not this.** The
-> [AI security & compliance review action](security-compliance-review.md) is
-> the primary reviewer: it is the only path that can block a merge, you tune
-> what it judges against, and you choose the model and where the data goes.
-> Copilot's native review is a **complement** — a cheap second opinion with
-> nothing of yours to run — not a substitute. If you only adopt one, adopt the
-> action. [What you give up ↓](#what-the-action-does-that-this-does-not)
+> **This or the [action](security-compliance-review.md) — not both.** They
+> apply the same rubric by the same method, so running both reports the same
+> finding twice and bills twice. Choose on what you can obtain: the action if
+> you can get model credentials (it can block a merge, and you choose the model
+> and where the data goes), this if you cannot. Many programs have Copilot
+> already procured and authorized while an LLM key is months of paperwork away.
+> [What you give up ↓](#what-the-action-does-that-this-does-not)
 
 This page is the **how**. For what the instruction files contain and why they
 are split base + profile, see
@@ -184,10 +184,11 @@ reach a repo-write credential; and large diffs are **fanned out** under a
 context budget rather than truncated.
 
 What Copilot's native review gives you in exchange is that there is nothing to
-run: no workflow minutes of your own on public repos, no keys, no runner. That
-makes it a good always-on second opinion, and a reasonable starting point if
-you cannot get LLM credentials yet — but treat its output as advisory, because
-it is unfiltered and cannot be enforced.
+run: no workflow minutes of your own on public repos, no keys, no runner. For a
+program that cannot get model credentials — and that is a procurement and
+accreditation question, not a temporary one — this is the version of the review
+you can actually have, judging by the same rubric. Treat its output as
+advisory, because it cannot be enforced.
 
 It is also **metered, not free**: it needs a Copilot plan that includes code
 review, and consumes AI credits plus — since 1 June 2026 — GitHub Actions
