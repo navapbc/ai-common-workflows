@@ -24,7 +24,6 @@ import re
 import subprocess
 
 import pytest
-import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CONFIG = ROOT / ".github" / "secret_scanning.yml"
@@ -66,7 +65,29 @@ def _tracked():
 
 
 def _excluded_globs():
-    return yaml.safe_load(CONFIG.read_text())["paths-ignore"]
+    """Read the `paths-ignore` list without PyYAML.
+
+    The suite is stdlib-only on purpose: CI installs pytest and nothing else,
+    and a dependency contributors must install before they can run anything is
+    a worse trade than a parser for one file we own. This one is self-checked
+    by test_the_parser_reads_the_real_file below, so it cannot silently start
+    returning an empty list — which would make every assertion here vacuous.
+    """
+    lines = CONFIG.read_text().splitlines()
+    out, collecting = [], False
+    for line in lines:
+        stripped = line.strip()
+        if not collecting:
+            if stripped == "paths-ignore:" and not line.startswith((" ", "\t")):
+                collecting = True
+            continue
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line.startswith((" ", "\t")):
+            break  # next top-level key
+        if stripped.startswith("- "):
+            out.append(stripped[2:].strip().strip("\"'"))
+    return out
 
 
 def _is_excluded(rel, globs):
@@ -90,6 +111,39 @@ def test_the_config_exists_and_lists_paths():
     globs = _excluded_globs()
     assert globs, "paths-ignore is empty"
     assert len(TRACKED) >= 50, len(TRACKED)
+
+
+def test_the_parser_reads_the_real_file():
+    """A hand parser that quietly returns [] would make everything else pass.
+
+    PyYAML is not available in CI (it installs pytest only), which is why this
+    is hand-rolled — and why the parser needs its own assertion.
+    """
+    globs = _excluded_globs()
+    assert "tests/corpus/**" in globs, globs
+    assert all(g.startswith("tests/") for g in globs), globs
+    assert 2 <= len(globs) <= 10, globs
+
+
+def test_the_parser_handles_the_shapes_yaml_allows(tmp_path):
+    f = tmp_path / "secret_scanning.yml"
+    f.write_text(
+        "# leading comment\n"
+        "paths-ignore:\n"
+        "  # interleaved comment\n"
+        '  - "quoted/**"\n'
+        "\n"
+        "  - unquoted/**\n"
+        "  - 'single/**'\n"
+        "other-key:\n"
+        "  - not/collected/**\n"
+    )
+    global CONFIG
+    original, CONFIG = CONFIG, f
+    try:
+        assert _excluded_globs() == ["quoted/**", "unquoted/**", "single/**"]
+    finally:
+        CONFIG = original
 
 
 def test_fixture_shapes_stay_inside_the_excluded_paths():

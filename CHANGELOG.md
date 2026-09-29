@@ -30,8 +30,14 @@ follow [Semantic Versioning](https://semver.org/).
   when an Anthropic key, GitHub PAT, OpenAI key or private-key block appears
   anywhere at all including the excluded paths.
   A scan of all 109 commits of history found no real credential of any of those
-  shapes. Verified against five failure forms, and the first verification pass
-  caught two bugs in the test itself: it scanned only `git ls-files`, missing a
+  shapes. The exclusion list is parsed by hand rather than with PyYAML — CI
+  installs pytest and nothing else, so a third-party import is a collection
+  error that kills the whole job while passing locally. That is now enforced
+  for the whole suite by
+  `test_the_python_suite_is_stdlib_plus_pytest_only`, because the first version
+  of this test shipped with `import yaml` and failed CI exactly that way.
+  Verified against five failure forms, and the first verification pass
+  caught two further bugs in the test itself: it scanned only `git ls-files`, missing a
   file added in the commit that introduces it — which is exactly when a pasted
   credential arrives — and it let Markdown prose justify an exclusion.
 

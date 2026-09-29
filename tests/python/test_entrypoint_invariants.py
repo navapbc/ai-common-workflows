@@ -19,6 +19,7 @@ for it.
 
 import pathlib
 import re
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -148,3 +149,41 @@ def test_no_entrypoint_falls_back_to_self_adjudication():
         if "AI_REVIEW_ADJUDICATION_MODE:-self" in p.read_text()
     ]
     assert not bad, f"entrypoint(s) fall back to self-adjudication: {bad}"
+
+
+# ── the suite's own dependencies ────────────────────────────────────────────
+
+def test_the_python_suite_is_stdlib_plus_pytest_only():
+    """CI installs pytest and nothing else.
+
+    A third-party import here is not a local failure — it is a COLLECTION
+    error, so the whole pytest job dies and every other test in the suite goes
+    unreported. It also passes locally, where the package happens to be
+    installed, which is how it reaches CI in the first place.
+    That is not hypothetical: test_secret_fixtures.py shipped with `import
+    yaml`, passed locally, and failed CI at collection. The fix was a
+    hand-rolled parser for the one file it needed; this test is so the next one
+    is caught before the push.
+    Widen the allowlist only alongside the `pip install` line in
+    .github/workflows/ci.yml and the note in CLAUDE.md.
+    """
+    allowed = {"pytest"}
+    # Repo-local modules reached via sys.path.insert (github_payload,
+    # gate_verdict, the corpus scorer...) are not dependencies. Derived from
+    # the tree rather than listed, so adding one does not need a test edit.
+    local = {p.stem for p in ROOT.rglob("*.py") if ".git" not in p.parts}
+    stdlib = set(sys.stdlib_module_names)
+    offenders = {}
+    for path in sorted((ROOT / "tests" / "python").glob("test_*.py")):
+        mods = set()
+        for line in path.read_text().splitlines():
+            m = re.match(r"^\s*(?:import|from)\s+([A-Za-z_][\w.]*)", line)
+            if m:
+                mods.add(m.group(1).split(".")[0])
+        extra = mods - stdlib - allowed - local
+        if extra:
+            offenders[path.name] = sorted(extra)
+    assert not offenders, (
+        "third-party import(s) in the python suite; CI installs only "
+        f"{sorted(allowed)}, so this is a collection error there: {offenders}"
+    )

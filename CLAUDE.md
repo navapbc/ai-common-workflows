@@ -36,6 +36,14 @@ internals.
 - **Bash/Python:** `bash tests/run.sh` (shellcheck, shfmt, pytest, bats). When
   you add a shell lib or a bats file, also add it to the lists in `tests/run.sh`
   **and** `.github/workflows/ci.yml`, or CI won't cover it.
+- **The Python suite is stdlib + pytest only.** CI runs `pip install pytest`
+  and nothing else, so a third-party import is a *collection* error there —
+  the whole job dies and every other test goes unreported, after passing
+  locally where the package happens to exist. Parse the one file you need by
+  hand and give the parser its own assertion (see `_excluded_globs` in
+  `tests/python/test_secret_fixtures.py` and `_input_block` in
+  `test_action_pr_context.py`). Enforced by
+  `test_the_python_suite_is_stdlib_plus_pytest_only`.
 - **Jenkins:** `cd jenkins-plugin && mvn -B -ntp verify`. This is **CI-verified
   only** — the `hpi` packaging does not build in every sandbox; rely on the
   `Jenkins plugin` CI job for the reactor, `@Extension` registration, and tests.
