@@ -24,6 +24,16 @@ thing that goes stale. That is also exactly the shape of the bug.
 A profile SHOULD name its framework and revision — that is its job, and its
 directory name says so. The second test holds that the capability moved rather
 than being deleted.
+
+**Both floors, not just the engine's.** `copilot-instructions/base/` is the
+same floor for Copilot's native review, and seven places in the docs tell a
+consumer the two apply "the same rubric". Nothing shares a source between them
+— different decomposition, roughly a third the length, maintained by hand — so
+the only thing keeping a rule true on both sides is whoever remembered. This
+test was scoped to `engines/` and the identical leak appended to the Copilot
+floor passed 365 tests in silence, which is how #62 could have fixed one tree
+and left the other. Equality of the two rubrics is not checkable; this one
+invariant is.
 """
 
 import pathlib
@@ -32,7 +42,9 @@ import re
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-FLOORS = sorted(ROOT.glob("engines/*/skills/base/*.md"))
+FLOORS = sorted(ROOT.glob("engines/*/skills/base/*.md")) + sorted(
+    ROOT.glob("copilot-instructions/base/instructions/*.md")
+)
 
 # Revision markers: a framework name followed by an edition.
 REVISIONS = {
@@ -45,7 +57,8 @@ def _bundled_profile_names():
     """Profile directory names, from the filesystem — never a hardcoded list."""
     return {
         d.name
-        for d in ROOT.glob("engines/*/skills/profiles/*")
+        for d in list(ROOT.glob("engines/*/skills/profiles/*"))
+        + list(ROOT.glob("copilot-instructions/profiles/*"))
         if d.is_dir()
     }
 
@@ -67,8 +80,20 @@ def _points_at_a_profile(text):
 
 def test_there_are_floor_files_to_check():
     # A glob that matched nothing would make this vacuous.
-    assert FLOORS, "no skills/base/*.md found"
+    assert FLOORS, "no floor rubric files found"
     assert len(FLOORS) >= 4, [str(p.relative_to(ROOT)) for p in FLOORS]
+
+
+def test_both_floors_are_in_scope():
+    """Named separately so adding a tree cannot silently drop one.
+
+    `len(FLOORS) >= 4` was satisfied by the engine alone, so a glob that
+    stopped matching the Copilot tree would leave the count healthy and the
+    coverage gone — the exact shape of the gap this test was widened to close.
+    """
+    trees = {p.parts[-4] for p in FLOORS}
+    assert "copilot-instructions" in trees, sorted(trees)
+    assert any(t != "copilot-instructions" for t in trees), sorted(trees)
 
 
 def _paragraphs(text):
@@ -111,20 +136,32 @@ def test_floor_names_no_framework_revision(path):
     )
 
 
-def test_the_citation_capability_moved_rather_than_vanished():
-    """The complement.
+@pytest.mark.parametrize(
+    "tree,pattern",
+    [
+        ("engine", "engines/*/skills/profiles/*/*.md"),
+        ("copilot", "copilot-instructions/profiles/*/instructions/*.md"),
+    ],
+)
+def test_the_citation_capability_moved_rather_than_vanished(tree, pattern):
+    """The complement, asserted per tree.
 
     Without this, the rule above could be 'satisfied' by stripping revisions
     everywhere, which would quietly gut what a compliance profile is for.
+
+    Per tree rather than across both, because a single global assertion is
+    satisfied by the engine profiles alone — so stripping every revision out
+    of the Copilot profiles would leave it green while removing the whole
+    reason that tree has profiles.
     """
-    profiles = sorted(ROOT.glob("engines/*/skills/profiles/*/*.md"))
-    assert profiles, "no profile rubric files found"
+    profiles = sorted(ROOT.glob(pattern))
+    assert profiles, f"no {tree} profile rubric files matched {pattern}"
     bearing = [
         p.relative_to(ROOT)
         for p in profiles
         if any(rx.search(p.read_text()) for rx in REVISIONS.values())
     ]
     assert bearing, (
-        "no profile names a framework revision — the citation capability was "
-        "removed from the floor without landing anywhere"
+        f"no {tree} profile names a framework revision — the citation "
+        "capability was removed from the floor without landing anywhere"
     )

@@ -4,7 +4,7 @@ Make GitHub Copilot's PR review apply this repo's security & compliance rubric.
 Runs natively inside GitHub, with no LLM keys of your own.
 
 > **This or the [action](security-compliance-review.md) — not both.** They
-> apply the same rubric by the same method, so running both reports the same
+> apply the same checks by the same method, so running both reports the same
 > finding twice and bills twice. Choose on what you can obtain: the action if
 > you can get model credentials (it can block a merge, and you choose the model
 > and where the data goes), this if you cannot. Many programs have Copilot
@@ -169,8 +169,12 @@ does it:
 
 ## What the action does that this does not
 
-Both reviewers apply the same rubric and the same comment format. The action
-does four things Copilot's native review cannot:
+Both reviewers apply the same checks, the same severity ladder and the same
+comment format. They are not the same *files*: these instructions restate the
+engine's rubric for Copilot's runtime in about a third the length, and the two
+are maintained by hand rather than generated from one source. Expect the
+wording of a finding to differ, and occasionally its presence. The action does
+four things Copilot's native review cannot:
 
 | | Action + API/LLM | Copilot native |
 |---|---|---|
@@ -189,7 +193,7 @@ What Copilot's native review gives you in exchange is that there is nothing to
 run: no workflow minutes of your own on public repos, no keys, no runner. For a
 program that cannot get model credentials — and that is a procurement and
 accreditation question, not a temporary one — this is the version of the review
-you can actually have, judging by the same rubric. Treat its output as
+you can actually have, judging by the same checks. Treat its output as
 advisory, because it cannot be enforced.
 
 It is also **metered, not free**: it needs a Copilot plan that includes code

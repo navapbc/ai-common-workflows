@@ -5,9 +5,9 @@ and compliance checks — and the same comment format — as the AI Security &
 Compliance Review action and Jenkins plugin. Copilot review runs on GitHub's own
 infrastructure and needs no LLM keys of your own.
 
-**It is the alternative to the action, not a layer on top of it.** Both judge
-by the same rubric, so running both reports the same finding twice and bills
-twice. Use the [action](../docs/security-compliance-review.md) if your program
+**It is the alternative to the action, not a layer on top of it.** Both apply
+the same checks and the same severity ladder, so running both reports the same
+finding twice and bills twice. Use the [action](../docs/security-compliance-review.md) if your program
 can get model credentials — it is the only path that can block a merge, it
 anchors findings on the lines that caused them with suggested fixes, and it
 lets you pin the model and keep the diff inside your boundary. Use these

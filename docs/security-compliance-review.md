@@ -112,13 +112,13 @@ copy should model it.
 | **GitHub Action** | Composite action; `uses:` it in any workflow. | [github-action.md](github-action.md) |
 | **Jenkins plugin** | `.hpi` adding an `aiSecurityComplianceReview` pipeline step. | [jenkins-plugin/README.md](../jenkins-plugin/README.md) |
 | **Codebase audit** | A second entrypoint on the same engine that audits an existing repo rather than a change. Local, ad-hoc, advisory. | [codebase-audit.md](codebase-audit.md) |
-| **Copilot instructions** | Files that make Copilot's built-in review apply the same rubric — the alternative to the Action for teams without model credentials. | [copilot-review-setup.md](copilot-review-setup.md) |
+| **Copilot instructions** | Files that make Copilot's built-in review apply the same checks — the alternative to the Action for teams without model credentials. | [copilot-review-setup.md](copilot-review-setup.md) |
 
 The Action and the plugin run the **same review engine**
 ([`engines/security-compliance-review/`](../engines/security-compliance-review/README.md)) —
 one source of truth for the review logic, two front ends.
 
-**Pick one — they are alternatives, not layers.** Both apply the same rubric by
+**Pick one — they are alternatives, not layers.** Both apply the same checks by
 the same method, so running both mostly means the same finding reported twice
 on the same line, and two bills. Which one you run is decided by what your
 program can actually obtain:
@@ -131,7 +131,7 @@ program can actually obtain:
 - **Copilot's native review**, with these instructions synced, when you cannot.
   Plenty of programs have Copilot already procured and authorized while a
   frontier-model key is months of paperwork away, or never. That is a real
-  option rather than a consolation prize: the same rubric, no keys, no runner,
+  option rather than a consolation prize: the same checks, no keys, no runner,
   nothing of yours to operate.
 
 Going Copilot-only costs you the gate, control over the model and the data

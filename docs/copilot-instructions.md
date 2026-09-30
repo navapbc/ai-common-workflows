@@ -107,6 +107,35 @@ only when they edit that line.
 Practically: assume a base-rubric change is in front of every consumer within a
 week of merging, subject to their review. Write it accordingly.
 
+### The engine rubric is a parallel, not a source
+
+`copilot-instructions/` and `engines/security-compliance-review/skills/` are
+**two hand-maintained trees with no shared source**. Nothing generates one from
+the other, and they cannot be diffed for equality even in principle: the
+decomposition differs (five engine files — `pr-review`, `code-security`,
+`iac-compliance`, `codebase-audit`, `finding-adjudication` — against four
+Copilot ones), and the Copilot set is roughly a third the length, because it is
+a condensation for a runtime that gives you no control over the prompt.
+
+So a rule changed on one side does not reach the other, and the only thing that
+carries it across is whoever remembers. #62 had to fix the same framework leak
+in both trees by hand; the docs are now careful to promise the same *checks*,
+severity ladder and comment format rather than "the same rubric", because
+equality of the files was never the relationship.
+
+One invariant is enforced across both:
+`tests/python/test_floor_is_framework_neutral.py` holds that neither floor
+names a framework revision and that each tree's profiles still do. It was
+scoped to `engines/` until the identical leak appended to the Copilot floor
+passed the whole suite in silence. It is one rule, not parity — treat it as a
+floor under the drift, not a fix for it.
+
+**The drift also reaches consumers, by design.** `ACW_REF` tracks `main` while
+the engine is SHA-pinned, so a consumer running both is running instructions
+synced last week against an engine pinned in March. That is the intended
+behaviour of two subsystems with deliberately different freshness models, and
+it is the strongest reason the docs tell a consumer to pick one.
+
 When adding a profile, write only the deltas — don't restate base checks in an
 additions file, or the two copies will drift the way the old per-profile
 standalone sets did. Give an additions file the same `applyTo` glob as the
