@@ -222,6 +222,36 @@ $ audit --dry-run
 A directory is usually the right scope. `audit terraform/` on a large repo is a
 couple of calls; `audit` on the same repo can be dozens.
 
+### Turning adjudication on
+
+`Adjudication: off` in that plan is the default. The audit reports its
+first-pass findings as written, because a current model re-checks its own work
+without being told to, and instructing it to costs tokens. Two modes turn it
+back on, as an environment variable:
+
+```bash
+AI_ADJUDICATION=self audit --output-parent-dir ~/audits
+AI_ADJUDICATION=independent audit --output-parent-dir ~/audits
+```
+
+- **`self`** folds a skeptical re-read into the calls already being made. No
+  extra call; more output tokens per batch.
+- **`independent`** adds a fresh pass over the merged findings before the
+  report is written. Exactly **one** extra call no matter how many batches —
+  `--dry-run` shows it as `+ 1 adjudication`.
+
+`--no-adjudicate` forces off, which matters only if `AI_ADJUDICATION` is set in
+your shell profile or environment.
+
+**When it is worth it here.** The measurement behind the `off` default was made
+on *diffs* — small, changed-lines-only reviews — where `self` suppressed
+nothing. An audit is a different shape: it sends whole files rather than a
+change, so there is more surface for a speculative finding, and its output is
+often a report someone else reads. If you are producing something for an
+assessor or a stakeholder, `independent` buys a second opinion for one extra
+call, and that is a reasonable trade. For a run you are reading yourself, the
+default is fine.
+
 ## Judging against a compliance framework
 
 `--profile` is an **ordered list of rubric sources**, and the shared floor is an

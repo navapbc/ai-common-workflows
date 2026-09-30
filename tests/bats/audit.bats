@@ -702,6 +702,38 @@ EOF
   [ "$status" -eq 1 ]
 }
 
+# ── adjudication on the audit ───────────────────────────────────────────────
+# Off by default, turned on with AI_ADJUDICATION, forced off with
+# --no-adjudicate. The audit had no coverage of any of it, and the docs now
+# tell people the cost shape — so the cost shape is asserted.
+
+@test "audit: adjudication is off by default and costs no extra call" {
+  run bash "${AUDIT}" --dry-run
+  [[ "$output" == *"Adjudication:   off"* ]]
+  [[ "$output" != *"+ 1 adjudication"* ]]
+}
+
+@test "audit: AI_ADJUDICATION=independent adds exactly one call" {
+  # The doc promises "+1 no matter how many batches" — that is the whole
+  # reason it is a reasonable trade for a report someone else reads.
+  AI_ADJUDICATION=independent run bash "${AUDIT}" --dry-run
+  [[ "$output" == *"Adjudication:   independent"* ]]
+  [[ "$output" == *"+ 1 adjudication"* ]]
+}
+
+@test "audit: AI_ADJUDICATION=self adds no extra call" {
+  AI_ADJUDICATION=self run bash "${AUDIT}" --dry-run
+  [[ "$output" == *"Adjudication:   self"* ]]
+  [[ "$output" != *"+ 1 adjudication"* ]]
+}
+
+@test "audit: --no-adjudicate overrides AI_ADJUDICATION from the environment" {
+  # The only thing the flag is still for, now that off is the default.
+  AI_ADJUDICATION=independent run bash "${AUDIT}" --dry-run --no-adjudicate
+  [[ "$output" == *"Adjudication:   off"* ]]
+  [[ "$output" != *"+ 1 adjudication"* ]]
+}
+
 # ── doctor: the AI CLI row and endpoint warnings ────────────────────────────
 # doctor exists to name every missing piece in one pass. Two ways it failed
 # that for copilot: it printed the Claude package as the install hint for any

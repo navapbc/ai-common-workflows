@@ -784,10 +784,22 @@ follow [Semantic Versioning](https://semver.org/).
   "cheaper, noisier" — telling a reader to spend effort turning off something
   already off. The flag is still useful and stays: it forces off when
   `AI_ADJUDICATION` is set in the environment, which is what `--help` now says.
-  Two tests guard it. One pins the documented plan's adjudication value to the
-  engine's own default, so the example has to move whenever the default does;
-  the other fails any doc or entrypoint that sells `--no-adjudicate` as a cost
-  saving. This is the fourth time a default change has left a doc example
+  Removing the stale line left the page with no way to learn adjudication can
+  be turned **on** — its only remaining mention was `Adjudication: off` in the
+  dry-run plan, unexplained. There is now a short section: `AI_ADJUDICATION=self`
+  folds a re-read into the calls already being made (no extra call, more output
+  tokens), `independent` adds exactly **one** call regardless of batch count,
+  and `--no-adjudicate` forces off when the variable is set in the environment.
+  It also says when it is worth it *for an audit*, which the `off` default does
+  not settle: that default was measured on diffs, where `self` suppressed
+  nothing, and an audit sends whole files rather than a change — more surface
+  for a speculative finding, and often a report someone else reads.
+  Two tests guard the docs. One pins the documented plan's adjudication value
+  to the engine's own default, so the example has to move whenever the default
+  does; the other fails any doc or entrypoint that sells `--no-adjudicate` as a
+  cost saving. Four bats cases cover the behaviour itself, which the audit
+  suite had none of: the default, both modes' cost shapes, and the flag's
+  override. This is the fourth time a default change has left a doc example
   behind, and a worked example is a claim about behaviour.
 
 - **`--doctor` was unusable for the Copilot CLI, in two ways.**
