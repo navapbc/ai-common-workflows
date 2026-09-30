@@ -120,6 +120,34 @@ Two traps, both found by running the corpus rather than reading it:
 A case that fails for reasons unrelated to what it tests is one people learn to
 ignore, which costs more than the case was ever worth.
 
+### Secret scanning will not stop you adding a case
+
+The repo has **secret scanning and push protection both enabled**, and
+`.github/secret_scanning.yml` excludes `tests/corpus/**` from alerts. Push
+protection is a separate mechanism that `paths-ignore` does **not** cover, so
+on paper a new case carrying a credential-shaped fixture should have its push
+rejected.
+
+Measured on 2026-09-30, it isn't. Pushing case 01's full AWS pair as a new
+blob — into `tests/corpus/**` and, as a control, into `engines/**`, which is
+deliberately *not* excluded — was accepted both times and raised no alert
+either time.
+
+The reason matters more than the result, because it is the thing that could
+change. GitHub's AWS detector is provider-validated: AWS confirms whether a
+detected credential is live, and a fixture cannot be. Pattern-only detection is
+the `secret_scanning_non_provider_patterns` setting, which is part of the paid
+GitHub Secret Protection tier and **cannot currently be enabled on this repo**
+— the API accepts the request with HTTP 200 and silently leaves it `disabled`,
+as it does for `secret_scanning_validity_checks`.
+
+So the exclusions in `.github/secret_scanning.yml` are presently belt to a
+brace nobody is wearing. Keep them: they cost nothing, they document intent,
+and they are what stands between this corpus and a wall of alerts on the day
+Secret Protection gets licensed. If a push of yours is ever rejected for a
+fixture, that day has arrived — use the bypass flow GitHub offers in the
+rejection message ("it's used in tests"), and say so in the PR.
+
 ## Getting to 20+ cases
 
 In descending order of value:
