@@ -187,3 +187,46 @@ def test_the_python_suite_is_stdlib_plus_pytest_only():
         "third-party import(s) in the python suite; CI installs only "
         f"{sorted(allowed)}, so this is a collection error there: {offenders}"
     )
+
+
+def test_the_documented_dry_run_plan_shows_the_real_adjudication_default():
+    """A worked example in the docs is a claim about behaviour.
+
+    `docs/codebase-audit.md` prints a sample `--dry-run` plan. When the
+    adjudication default moved to "off", that example kept showing
+    "Adjudication:   self" — so the page demonstrated a run that could not
+    happen, in the one place a reader looks to learn what a run costs.
+
+    Pinned to the engine's own default rather than to a literal, so the example
+    has to move whenever the default does.
+    """
+    core = (ROOT / "engines/_common/harness/core.sh").read_text()
+    m = re.search(r"\$\{AI_ADJUDICATION:-(\w+)\}", core)
+    assert m, "could not find the AI_ADJUDICATION default in core.sh"
+    default = m.group(1)
+
+    doc = (ROOT / "docs/codebase-audit.md").read_text()
+    shown = re.findall(r"^\s*Adjudication:\s+(\w+)\s*$", doc, re.M)
+    assert shown, "no 'Adjudication:' line in the documented dry-run plan"
+    wrong = [v for v in shown if v != default]
+    assert not wrong, (
+        f"docs/codebase-audit.md shows Adjudication: {wrong}, but the engine "
+        f"defaults to {default!r}"
+    )
+
+
+def test_no_doc_sells_disabling_adjudication_as_a_saving():
+    """`--no-adjudicate` stopped being a cost lever when the default flipped.
+
+    It is still useful — it forces off when AI_ADJUDICATION is set in the
+    environment — but describing it as "cheaper" tells a reader to spend effort
+    turning off something that is already off.
+    """
+    offenders = []
+    for path in [ROOT / "docs/codebase-audit.md", ROOT / "docs/github-action.md"] + list(
+        (ROOT / "engines/security-compliance-review/harness").glob("ai-*")
+    ):
+        for line in path.read_text().splitlines():
+            if "no-adjudicate" in line and re.search(r"cheaper|saving|cost", line, re.I):
+                offenders.append(f"{path.relative_to(ROOT)}: {line.strip()}")
+    assert not offenders, offenders

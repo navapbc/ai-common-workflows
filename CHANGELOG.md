@@ -772,6 +772,24 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The audit docs still described adjudication as on.** It has defaulted to
+  `off` since the default moved, and the audit inherits that from the shared
+  runtime — but three places had not caught up, all of them the kind a reader
+  trusts.
+  `docs/codebase-audit.md`'s worked `--dry-run` plan printed
+  `Adjudication:   self`, demonstrating a run that cannot happen in the one
+  place someone looks to learn what a run costs. (It was also missing the
+  `Tool:` and `Provider:` rows the real output has had since the provider fix.)
+  The same page and the audit's `--help` both listed `--no-adjudicate` as
+  "cheaper, noisier" — telling a reader to spend effort turning off something
+  already off. The flag is still useful and stays: it forces off when
+  `AI_ADJUDICATION` is set in the environment, which is what `--help` now says.
+  Two tests guard it. One pins the documented plan's adjudication value to the
+  engine's own default, so the example has to move whenever the default does;
+  the other fails any doc or entrypoint that sells `--no-adjudicate` as a cost
+  saving. This is the fourth time a default change has left a doc example
+  behind, and a worked example is a claim about behaviour.
+
 - **`--doctor` was unusable for the Copilot CLI, in two ways.**
   It printed `npm install -g @anthropic-ai/claude-code` as the install hint for
   **any** missing CLI, so a copilot user was told to install Claude Code. The
