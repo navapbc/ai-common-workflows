@@ -18,8 +18,14 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 # Files a consumer copies from: the quickstarts, the examples, the READMEs.
+#
+# `docs/**/*.md`, not `docs/*.md`. The non-recursive form was correct while
+# docs/ was flat and became a hole the moment it wasn't: docs/adr/ would have
+# escaped every check below, so a record could offer a mutable reference as a
+# pin and nothing would say so. The guard has to cover the directory, not the
+# directory's current shape.
 SCANNED = (
-    sorted(ROOT.glob("docs/*.md"))
+    sorted(ROOT.glob("docs/**/*.md"))
     + sorted(ROOT.glob("examples/workflows/*.yml"))
     + sorted(ROOT.glob("copilot-instructions/**/*.md"))
     + [ROOT / "README.md"]
@@ -171,3 +177,18 @@ def test_security_md_states_why_a_tag_is_not_immutable():
 def test_the_scan_actually_finds_the_reference_form_it_guards():
     # A regex that matches nothing would make every test above vacuous.
     assert _scan(USES_RE), "no ai-common-workflows uses: references found — check USES_RE"
+
+
+def test_the_scan_reaches_into_docs_subdirectories():
+    """Coverage of docs/ must not depend on docs/ being flat.
+
+    Asserted against a real nested file rather than the glob string, so
+    rewriting the glob in a way that still misses subdirectories fails here.
+    """
+    nested = sorted(ROOT.glob("docs/*/*.md"))
+    assert nested, "no nested docs/ file to check — move or update this test"
+    missing = [p.relative_to(ROOT) for p in nested if p not in SCANNED]
+    assert not missing, (
+        "nested docs are outside the pin-hygiene scan:\n  "
+        + "\n  ".join(str(m) for m in missing)
+    )
