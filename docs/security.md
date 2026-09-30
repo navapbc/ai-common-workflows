@@ -242,6 +242,17 @@ when that human's access changes. `ACW_REF` is the one ref in this project that 
 [the instruction sync's one exception](#the-instruction-syncs-one-exception).
 See also [copilot-instructions.md](copilot-instructions.md).
 
+### Releases exist to help you find a SHA
+
+`navapbc/ai-common-workflows` publishes GitHub Releases on `vX.Y.Z` tags, and
+the notes carry the exact `uses:` line with the 40-character SHA to paste.
+
+There is **no moving `vX` alias**, on purpose. A `@v1` that follows the newest
+release is convenient and is exactly the mutable pointer this section warns
+about: whoever can push that tag can change the code every `@v1` consumer runs.
+Pin the SHA from the release notes; the trailing `# v1.0.0` comment keeps the
+upgrade a reviewable one-line diff. See [releasing.md](releasing.md).
+
 ### The AI CLI is pinned too
 
 Pinning the action is not the whole supply chain. The job also `npm install -g`s

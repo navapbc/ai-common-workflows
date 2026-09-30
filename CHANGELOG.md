@@ -8,6 +8,28 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Release automation**, re-cut against `main` rather than merging #10.
+  Tagging `vX.Y.Z` on `main` publishes a GitHub Release whose notes carry the
+  exact `uses:` line with the SHA to pin. Nothing is built or uploaded — the
+  action is source GitHub fetches at `uses:` time, so the tag's commit *is* the
+  artifact. Pre-releases (`v1.2.0-rc.1`) are marked automatically, and the
+  Jenkins plugin's `jenkins-plugin-v*` namespace is deliberately unmatched.
+  Before publishing it checks that the tag is an ancestor of `main` — a tag can
+  be pushed from anywhere, and releasing a commit that never reached `main`
+  would ship code no CI run saw — that the consumer-facing surface is present,
+  and that every entrypoint is **executable**.
+  **The surface list is globs, not names.** #10 hardcoded
+  `harness/ai-pr-review` and kept it long after the rename, so its first
+  release would have failed on the check rather than on a real problem — and
+  nothing noticed, because a release workflow only runs when you release.
+  `tests/python/test_release_surface.py` now runs those same checks on every
+  PR, and fails if the gate ever names a path that does not exist.
+  **No moving `vX` alias**, deliberately. #10 force-moved `v1` each release and
+  offered `@v1` as a pin for pilot repos; that is the mutable pointer
+  `docs/security.md` forbids, shipped as a *supported* way around the rule the
+  rest of the repo enforces in CI. A release helps a consumer find a SHA, not
+  avoid pinning one. A test fails if a force-moved tag reappears.
+
 - **`.gitattributes` marking `CHANGELOG.md` as `merge=union`.** Changelog
   entries are append-only prose and two branches almost always add theirs at
   the top of the same section, so they collide on every rebase even though both
@@ -849,6 +871,13 @@ follow [Semantic Versioning](https://semver.org/).
   `security-compliance-review/harness/ai-security-compliance-review`).
 
 ### Fixed
+
+- **`ai-security-compliance-review` shipped without its executable bit**, while
+  its two sibling entrypoints had theirs. Invisible in CI because both actions
+  invoke it as `bash <file>`; it breaks for anyone who installs the tree and
+  runs it directly, which is exactly what the local audit path and any future
+  packaging do. `tests/run.sh` was missing its bit too. The release gate now
+  checks this, and so does the test suite on every PR.
 
 - **The AI CLI was installed unpinned.** `cli-version` defaulted to `latest`,
   so a consumer SHA-pinned the action, CI enforced SHA-only pins across every
