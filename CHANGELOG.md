@@ -448,6 +448,24 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **`docs/releasing.md` now says how versions are numbered while on `0.x`.**
+  It said semver applied to the consumer-facing surface and that a
+  behaviour-changing default counts as breaking — both still true — but not how
+  that maps to a number before `1.0.0`, so the first breaking change after the
+  initial tag had no documented answer.
+  The project starts at **`v0.1.0`**. In `0.x` a breaking change bumps MINOR
+  (`0.1.0` → `0.2.0`) and everything else bumps PATCH. Under `1.x` the same rule
+  would make every sensible default adjustment a major bump, and a number that
+  increments on ordinary tuning tells nobody anything — `adjudication` moving to
+  `off` is exactly the change that should stay cheap while nothing depends on
+  it. A smaller bump does not mean a smaller CHANGELOG entry: say what a
+  consumer has to do.
+  Also records what `1.0.0` should wait for, none of it blocking a `0.x`
+  release: a corpus big enough to catch a rubric regression, the two front ends
+  agreeing on the gate verdict (the Jenkins plugin still applies its own rule
+  rather than calling `gate_verdict.py`), and more than one real production run
+  behind the defaults.
+
 - **Consistency sweep after the profile rename, and a test so it stops being a
   sweep.** Renaming `cms-ars` introduced a fresh contradiction: three places
   offered `pci-dss` as an example profile *on the same line as*
