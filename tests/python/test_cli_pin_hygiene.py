@@ -25,13 +25,24 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CI_LIB = ROOT / "workflows" / "_shared" / "lib" / "ci.sh"
 ACTIONS = sorted(ROOT.glob("workflows/*/action.yml"))
+DOCKERFILE = ROOT / "Dockerfile"
 
 EXACT = re.compile(r"^\d+\.\d+\.\d+")
 PIN = re.compile(r'^_AI_CLI_VER_([A-Z]+)="([^"]*)"', re.M)
+# `ARG CLAUDE_CODE_VERSION=2.1.285` → ("CLAUDE", "2.1.285")
+ARG = re.compile(r"^ARG (CLAUDE)_CODE_VERSION=(\S+)|^ARG (CODEX|COPILOT)_VERSION=(\S+)", re.M)
 
 
 def _pins():
     return dict(PIN.findall(CI_LIB.read_text()))
+
+
+def _dockerfile_args():
+    """The Dockerfile's CLI defaults, keyed the way ci.sh keys its pins."""
+    out = {}
+    for a, av, b, bv in ARG.findall(DOCKERFILE.read_text()):
+        out[a or b] = av or bv
+    return out
 
 
 def test_the_pins_are_findable():
@@ -87,4 +98,44 @@ def test_cli_version_input_does_not_default_to_latest(path):
     assert default == "" or EXACT.match(default), (
         f"{path.parent.name}: cli-version default {default!r} should be empty "
         "(use the action's pin) or an exact version"
+    )
+
+
+# ── The sandbox image ───────────────────────────────────────────────────────
+#
+# The Dockerfile defaulted all three CLIs to `latest` long after #63 pinned
+# them in ci.sh, and a comment justified it by pointing at a release workflow
+# that does not exist. The experimental surface is exactly where a floating
+# install of an agentic CLI survives, because nobody reads it.
+
+
+def test_the_dockerfile_args_are_findable():
+    args = _dockerfile_args()
+    assert args, f"no CLI version ARGs found in {DOCKERFILE.name}"
+    assert set(args) == {"CLAUDE", "CODEX", "COPILOT"}, sorted(args)
+
+
+@pytest.mark.parametrize("tool", ["CLAUDE", "CODEX", "COPILOT"])
+def test_the_dockerfile_does_not_float(tool):
+    version = _dockerfile_args()[tool]
+    assert version != "latest", (
+        f"Dockerfile defaults {tool} to `latest`. The image bakes in an "
+        "agentic CLI that reads untrusted PR content; nothing overrides this "
+        "ARG, because nothing builds the image."
+    )
+    assert EXACT.match(version), f"{tool} is pinned to {version!r}, not an exact version"
+
+
+@pytest.mark.parametrize("tool", ["CLAUDE", "CODEX", "COPILOT"])
+def test_the_dockerfile_agrees_with_ci_sh(tool):
+    """One set of pins, two consumers.
+
+    Equality rather than two independent exactness checks: the failure mode
+    worth catching is a bump applied to ci.sh and forgotten here, which leaves
+    both sides "pinned" and disagreeing about which version the engine runs
+    against.
+    """
+    assert _dockerfile_args()[tool] == _pins()[tool], (
+        f"{tool}: Dockerfile says {_dockerfile_args()[tool]}, "
+        f"ci.sh says {_pins()[tool]} — bump both."
     )
