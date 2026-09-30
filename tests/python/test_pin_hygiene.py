@@ -63,18 +63,78 @@ def test_no_doc_or_example_pins_this_repo_by_tag_or_branch():
     )
 
 
-def test_acw_ref_is_never_documented_as_a_tag():
-    # ACW_REF is the instruction sync's pin. It is a plain env var, so nothing
-    # validates it at run time — the docs are the only guard.
+# ── the instruction sync is the documented exception ───────────────────────
+# ACW_REF used to be required to be a SHA. It is now `main` on purpose: the
+# sync executes nothing (it copies Markdown), never pushes to a default
+# branch, and lands every change as a PR whose diff is plain English someone
+# reads. A pin would put an unread gate in front of a read one, and would make
+# the sync's schedule inert — a fixed ref never produces a diff.
+#
+# The risk of an exception is that it reads as the rule eroding. So it is not
+# enough for it to be true; it has to be EXPLAINED wherever it is visible.
+# That is what these two tests hold.
+
+# Wording that establishes the PR, not a pin, as the control.
+_GATE_PHRASES = ("the pr is the gate", "pr is the gate", "reviewable pr", "your team reviews")
+
+
+def test_every_acw_ref_surface_explains_that_the_pr_is_the_gate():
+    """An unexplained unpinned ref looks like an oversight.
+
+    Anyone who has read docs/security.md's pinning rule and then meets
+    `ACW_REF: main` should find the reason in the same file, not have to go
+    looking — otherwise the sensible reaction is to "fix" it back to a SHA.
+    """
+    missing = []
+    for path in SCANNED:
+        text = path.read_text()
+        if "ACW_REF" not in text:
+            continue
+        low = text.lower()
+        if not any(phrase in low for phrase in _GATE_PHRASES):
+            missing.append(str(path.relative_to(ROOT)))
+    assert not missing, (
+        "file(s) mention ACW_REF without explaining that the PR is the gate: "
+        f"{missing}. An unexplained exception to the SHA rule reads as an "
+        "oversight and invites someone to 'fix' it."
+    )
+
+
+def test_acw_ref_values_are_main_or_a_sha_never_a_tag():
+    """`main` is the default; a SHA is the supported opt-in. A tag is neither.
+
+    The tag argument still holds here — it can be deleted and re-pointed — and
+    it buys nothing `main` does not, so it is the one value that is simply
+    wrong.
+    """
     pattern = re.compile(r"ACW_REF:\s*(\S+)")
     bad = [
         (p, n, ref, line)
         for p, n, ref, line in _scan(pattern)
-        if not SHA_RE.match(ref) and ref not in PLACEHOLDERS
+        if ref != "main" and not SHA_RE.match(ref) and ref not in PLACEHOLDERS
     ]
-    assert not bad, "ACW_REF documented as a non-SHA ref:\n" + "\n".join(
+    assert not bad, "ACW_REF set to something other than main or a SHA:\n" + "\n".join(
         f"  {p}:{n}  {ref}\n    {line}" for p, n, ref, line in bad
     )
+
+
+def test_no_acw_ref_line_suggests_a_tag_in_a_trailing_comment():
+    """The value can be right while the comment beside it is wrong.
+
+    The example carried `ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char
+    SHA, or v1.0.0` four lines under a block saying "NOT a tag". The
+    value-only check above could not see it, because the value was an
+    allowlisted placeholder.
+    """
+    bad = []
+    for path in SCANNED:
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if "ACW_REF:" not in line or "#" not in line:
+                continue
+            comment = line.split("#", 1)[1]
+            if re.search(r"\bv\d+\.\d+", comment) or "tag" in comment.lower():
+                bad.append(f"{path.relative_to(ROOT)}:{n}  {line.strip()}")
+    assert not bad, "ACW_REF line whose comment offers a tag:\n  " + "\n  ".join(bad)
 
 
 def test_docs_do_not_offer_a_tag_as_an_acceptable_pin():
