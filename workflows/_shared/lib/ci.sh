@@ -160,14 +160,64 @@ ci::ensure_base_ref() {
   fi
 }
 
+# Pinned AI CLI versions — the default when `cli-version` is not set.
+#
+# This used to default to `latest`, which meant a workflow SHA-pinned the action,
+# enforced SHA-only pins in CI, documented a threat model about mutable refs —
+# and then installed an AGENTIC CLI, unpinned, at runtime. That CLI reads
+# untrusted PR content with shell and file-read tools. It was the least-pinned
+# and highest-privilege thing in the job.
+#
+# Exact versions rather than a caret range, and the reason differs from the
+# action rule: npm FORBIDS republishing a version, so `@scope/pkg@1.2.3` is
+# immutable in a way a git tag is not. A range is not — `^1.2.3` resolves to
+# whatever exists at install time, which is `latest` with extra steps.
+#
+# These are plain strings in bash, so Dependabot cannot see them. Bumping is a
+# deliberate act: check the upstream changelog, bump here, let CI run.
+# `tests/python/test_cli_pin_hygiene.py` fails if one goes floating.
+_AI_CLI_PKG_CLAUDE="@anthropic-ai/claude-code"
+_AI_CLI_VER_CLAUDE="2.1.285"
+_AI_CLI_PKG_CODEX="@openai/codex"
+_AI_CLI_VER_CODEX="0.159.2"
+_AI_CLI_PKG_COPILOT="@github/copilot"
+_AI_CLI_VER_COPILOT="1.0.89"
+
 # ci::install_ai_cli — npm-install the chosen AI CLI on the runner.
-# Reads: AI_TOOL, CLI_VERSION.
+# Reads: AI_TOOL, CLI_VERSION (optional; overrides the pin above).
+#
+# Jenkins does not use this — its agents need the CLI pre-installed, and
+# ai_review::require_cli errors when it is absent. This is the Actions path
+# only, which is also the only path that installs anything at runtime.
 ci::install_ai_cli() {
+  local pkg version
   case "${AI_TOOL}" in
-    claude) npm install -g "@anthropic-ai/claude-code@${CLI_VERSION}" ;;
-    codex) npm install -g "@openai/codex@${CLI_VERSION}" ;;
-    copilot) npm install -g "@github/copilot@${CLI_VERSION}" ;;
+    claude)
+      pkg="${_AI_CLI_PKG_CLAUDE}"
+      version="${_AI_CLI_VER_CLAUDE}"
+      ;;
+    codex)
+      pkg="${_AI_CLI_PKG_CODEX}"
+      version="${_AI_CLI_VER_CODEX}"
+      ;;
+    copilot)
+      pkg="${_AI_CLI_PKG_COPILOT}"
+      version="${_AI_CLI_VER_COPILOT}"
+      ;;
+    *) return 0 ;;
   esac
+
+  # An explicit cli-version wins, including `latest` for anyone who wants the
+  # floating behaviour back. Saying so is the point: it is now a choice.
+  if [[ -n "${CLI_VERSION:-}" ]]; then
+    version="${CLI_VERSION}"
+    if [[ "${version}" == "latest" ]]; then
+      echo "::warning::cli-version: latest installs an unpinned agentic CLI that reads untrusted PR content. Installing ${pkg}@latest only because you asked; prefer an exact version."
+    fi
+  fi
+
+  echo "Installing ${pkg}@${version}"
+  npm install -g "${pkg}@${version}"
 }
 
 # ci::gate_result — read review_action from the findings JSON, echo it, write it

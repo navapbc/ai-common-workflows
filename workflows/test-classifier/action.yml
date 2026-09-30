@@ -150,9 +150,13 @@ inputs:
     required: false
     default: "true"
   cli-version:
-    description: "npm version of the AI CLI to install."
+    description: >-
+      npm version of the AI CLI to install. Defaults to a version pinned in
+      this action — an agentic CLI that reads untrusted PR content should not
+      float. Set an exact version to override, or `latest` to opt back into
+      floating (logged as a warning).
     required: false
-    default: "latest"
+    default: ""
 
 outputs:
   result:

@@ -109,7 +109,7 @@ Endpoint inputs are shared with the security review and apply per tool:
 | `azure-openai-endpoint` / `azure-openai-api-key` / `azure-openai-api-version` | — / — / `2024-10-21` | provider=azure |
 | `anthropic-base-url` / `openai-base-url` | — | Custom gateway endpoint |
 | `copilot-provider-base-url` / `-type` / `-api-key`, `copilot-model` | — | ai-tool=copilot BYOK |
-| `install-cli` / `cli-version` | `true` / `latest` | npm-install the AI CLI on the runner |
+| `install-cli` / `cli-version` | `true` / pinned | npm-install the AI CLI on the runner. `cli-version` defaults to a version **pinned in the action** — an agentic CLI that reads untrusted PR content should not float. Override with an exact version, or `latest` to opt back into floating (logged as a warning) |
 
 ## Outputs
 
