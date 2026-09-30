@@ -2,6 +2,11 @@
 #
 #   git tag -s v1.0.0 -m "v1.0.0" && git push origin v1.0.0
 #
+# `-s` is a habit, not a gate: nothing below inspects the tag object, so `-a`
+# works if you have no GPG key. Push the tag from a terminal — publishing from
+# the GitHub UI creates the release itself, and `gh release create` below then
+# fails on a release that already exists.
+#
 # What a release IS here: a GitHub Release pointing at one immutable commit,
 # plus notes telling a consumer the SHA to pin. Nothing is built or uploaded —
 # the action is source that GitHub fetches at `uses:` time, so the tag's commit
@@ -43,8 +48,13 @@ jobs:
       - name: The tag must be on main
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=200 origin main
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/FETCH_HEAD; then
+          # `FETCH_HEAD`, not `origin/FETCH_HEAD` — the latter is not a ref, so
+          # `merge-base` exits non-zero on every tag and the gate rejects
+          # everything. And no `--depth`: checkout already fetched the full
+          # history, and a shallow fetch on top of it would hide a merge base
+          # older than the cutoff, turning this back into a blanket reject.
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
             echo "::error::${GITHUB_REF_NAME} (${GITHUB_SHA}) is not an ancestor of main. Release only from merged commits."
             exit 1
           fi

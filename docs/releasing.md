@@ -9,12 +9,27 @@ artifact.
 
 ```bash
 git checkout main && git pull --ff-only
-git tag -s v1.0.0 -m "v1.0.0"
+git tag -s v1.0.0 -m "v1.0.0"   # or -a, if you have no GPG key configured
 git push origin v1.0.0
 ```
 
 `.github/workflows/release.yml` does the rest. Pre-releases work too —
 `v1.2.0-rc.1` is marked as a pre-release automatically.
+
+`-s` signs the tag and is the better habit ([docs/security.md](security.md)
+explains why the tag's own provenance is worth having), but it fails outright
+with `gpg: No secret key` if you have no key for your committer identity. The
+workflow does not inspect the tag object, so `-a` — or even a bare `git tag` —
+releases fine; the signature is provenance for a human reader, not a gate.
+
+### Don't publish from the GitHub UI
+
+Releases → "Draft a new release" creates the tag *and* the release in one
+action. The tag push still fires this workflow, which then fails at
+`gh release create` because the release already exists — leaving the release
+published with GitHub's auto-generated changelog instead of the SHA-pin notes,
+and a red ✗ beside it. Push the tag from a terminal and let the workflow
+publish.
 
 The Jenkins plugin releases on its own `jenkins-plugin-v*` tag namespace, which
 this workflow deliberately does not match.
