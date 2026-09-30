@@ -402,6 +402,33 @@ and format as the PR review, so the two are comparable. Plus a **posture**
 paragraph: the two or three sentences of judgment you can't get from a finding
 list.
 
+### Everything LOW and above is reported
+
+The floor is **LOW**, and there is no flag to raise it. The rubric reports
+every finding it assesses at LOW or higher and drops only the
+`Informational` band below it (`skills/base/code-security.md`, severity
+ladder). A whole-repo audit against a codebase nobody has reviewed before will
+therefore surface LOWs, and that is intended — the report is something you
+read and triage, not a gate. This entrypoint cannot fail a build; `--gate` is
+rejected outright.
+
+Two reasons there is no `--min-severity`, in case the LOWs feel like noise:
+
+- **Telling the model to skip a band costs detection.** Current models follow a
+  severity filter literally, so "only report MEDIUM and above" also loses
+  things the model would have *called* LOW and you would have called MEDIUM.
+  Anthropic's own guidance for code-review harnesses is to remove such filters
+  and move any filtering downstream.
+- **Filtering afterwards saves nothing here.** The tokens are already spent by
+  the time a finding exists, and the output is a report you skim — skipping a
+  section is free, unlike the PR review, where each finding costs a comment on
+  someone's diff.
+
+If a report is genuinely drowning in LOWs, the rubric treats that as a
+calibration failure rather than a threshold problem: *"An audit that reports
+forty MEDIUMs gets read once. The reader's trust is the scarce resource."* The
+lever that does exist is **scope** — see below.
+
 ## Trimming scope and cost
 
 ```bash
