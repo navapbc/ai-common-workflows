@@ -203,6 +203,22 @@ Consequently `.github/secret_scanning.yml` excludes `tests/corpus/**`,
 that is always noise is one people stop reading, and the next alert might be
 real.
 
+That reasoning is sound and the exclusion is currently unnecessary, which is
+worth stating rather than leaving as an implication. Measured on 2026-09-30
+with secret scanning enabled: case 01's full AWS pair, pushed as a new blob
+into `engines/**` — deliberately *not* excluded — raised no alert. GitHub's
+AWS detector is provider-validated, and a fixture cannot be confirmed live.
+Pattern-only detection is `secret_scanning_non_provider_patterns`, a paid
+Secret Protection feature that cannot be enabled on this repo today; the API
+accepts the request with HTTP 200 and leaves it `disabled`, as it does for
+`secret_scanning_validity_checks`.
+
+So the exclusion is insurance against a licensing change, not a response to
+noise anyone has seen. It stays for that reason. The same measurement showed
+push protection — which `paths-ignore` does **not** govern — does not reject
+these fixtures either; see [tests/corpus/README.md](../tests/corpus/README.md)
+for what to do if that ever changes.
+
 The exclusion is a blind spot, so it has a compensating control.
 `tests/python/test_secret_fixtures.py` fails when:
 
