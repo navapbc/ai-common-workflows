@@ -426,6 +426,28 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The CMS ARS profile is now `cms-ars-5.1`.** ARS is a versioned standard and
+  the profile name did not say which revision it implemented — the revision
+  lived only in prose, 19 mentions, already inconsistent (roughly half omitted
+  it).
+  Two requirements settle it. Programs sit on **different revisions during an
+  assessment cycle**, so the repo has to carry more than one at once, which an
+  unversioned directory cannot express. And "which revision did this judge
+  against?" has to be **answerable from the tooling**: the audit already
+  recorded the profile string in its report header, and a posted review now
+  carries a `Judged against:` line, so `base,cms-ars-5.1` states the revision
+  where `base,cms-ars` could not.
+  **No alias, no deprecation shim** — there are no consumer repos yet. An old
+  name fails at `resolve_profiles`' existing `exit 2`, whose message lists
+  bundled profiles via `find` and so needs no maintenance. An unversioned name
+  is deliberately *not* an alias for "latest": that is the mutable pointer the
+  versioning removes.
+  The revision is in the **directory** name only. Rubric filenames are the
+  layering join key — `rubric_block` matches a profile's file to the floor's by
+  identical filename — so a versioned filename would break composition.
+  `docs/profiles.md` gains a **Versioning a profile** section; it had no
+  versioning policy at all.
+
 - **The Copilot instruction sync now tracks `main` instead of a pinned SHA.**
   It was pinned *and* cron'd, and the two cancelled out: a fixed ref re-fetches
   identical content forever, the workflow is idempotent ("no diff → no PR"), so
@@ -801,6 +823,31 @@ follow [Semantic Versioning](https://semver.org/).
   `security-compliance-review/harness/ai-security-compliance-review`).
 
 ### Fixed
+
+- **The framework-neutral floor instructed CMS ARS citations.**
+  `skills/base/pr-review.md` said *"For compliance findings, always include the
+  NIST 800-53 Rev 5 control ID and the CMS ARS 5.1 control ID"*, and the
+  example JSON cited ARS too. So `--profile base` — a program with no CMS
+  relationship — was told to cite CMS controls. The layering tests could not
+  see it: they check that a profile's file is appended, not what the floor
+  already says.
+  Versioning made it sharper, since a floor naming one revision contradicts
+  whichever profile is actually loaded. The floor now says to cite only from a
+  framework a loaded profile names, and to describe the control objective in
+  plain language when none does. The capability moved rather than disappearing:
+  `skills/profiles/cms-ars-5.1/iac-compliance.md` has carried the citation
+  instruction all along.
+  `tests/python/test_floor_is_framework_neutral.py` holds it, scoped to
+  framework **revisions** rather than framework names — the floor legitimately
+  describes what PHI is and why HIPAA cares, and banning the word would gut
+  real detection content. A paragraph that names a profile in backticks is
+  exempt, because pointing at where a framework lives is not citing it; the
+  profile names come from disk so the exemption cannot drift. A complementary
+  test fails if the capability is deleted rather than moved.
+  Two stale claims went with it: `action.yml:6` and
+  `docs/security-compliance-review.md:7` said "(CMS ARS by default)" when the
+  default is `base`, and the two Jenkins Jelly placeholders offered `baseline`,
+  which the engine rejects outright — it requires `base` or `none` first.
 
 - **The audit docs still described adjudication as on.** It has defaulted to
   `off` since the default moved, and the audit inherits that from the shared

@@ -12,7 +12,7 @@ is the framework-neutral floor and it always applies; it recommends strong
 modern defaults without mandating a specific agency's FIPS posture.
 
 If your repo also syncs `ai-review-auth-additions.instructions.md` (a
-compliance-profile overlay, e.g. `cms-ars`), read it together with this file.
+compliance-profile overlay, e.g. `cms-ars-5.1`), read it together with this file.
 It supplements this file and, for the specific points it names — notably
 FIPS-approved algorithm choices — its guidance takes precedence.
 

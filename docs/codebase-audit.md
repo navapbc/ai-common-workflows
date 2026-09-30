@@ -195,7 +195,7 @@ remember.
 audit --output-parent-dir ~/audits              # whole repo
 audit --output-parent-dir ~/audits terraform/   # one directory — much cheaper
 audit --dry-run                                 # what would it cost? no AI call
-audit --output-parent-dir ~/audits --profile base,cms-ars   # CMS ARS / NIST 800-53
+audit --output-parent-dir ~/audits --profile base,cms-ars-5.1   # CMS ARS / NIST 800-53
 ```
 
 Worth folding the output directory into the alias so you never type it:
@@ -267,20 +267,20 @@ explicit member of it. The first entry must be `base` or `none`:
 
 ```bash
 audit --output-parent-dir ~/audits --profile base              # the default — floor only
-audit --output-parent-dir ~/audits --profile base,cms-ars      # floor + CMS ARS 5.1 / NIST 800-53
-audit --output-parent-dir ~/audits --profile base,cms-ars,./my-overlay
+audit --output-parent-dir ~/audits --profile base,cms-ars-5.1      # floor + CMS ARS 5.1 / NIST 800-53
+audit --output-parent-dir ~/audits --profile base,cms-ars-5.1,./my-overlay
 ```
 
 Sources layer in order and each only ever *adds* to what precedes it, so the
 last entry wins a genuine conflict. `base` is the default, so you can leave
 `--profile` off entirely.
 
-A bare `--profile cms-ars` is a **configuration error**, not a shortcut —
+A bare `--profile cms-ars-5.1` is a **configuration error**, not a shortcut —
 omitting the floor is a quiet way to audit against citations for checks you no
 longer have, so it has to be deliberate:
 
 ```
-ERROR: AI_REVIEW_PROFILE must start with 'base' or 'none' (got 'cms-ars').
+ERROR: AI_REVIEW_PROFILE must start with 'base' or 'none' (got 'cms-ars-5.1').
 ```
 
 `none,<your-profile>` is the escape hatch if your program supplies the entire
@@ -513,8 +513,8 @@ and files over 256 KB. Each skip is printed so you know what wasn't examined.
 | `stdin is not a TTY` | Add `--yes` for a scripted run |
 | `--resume needs --output-parent-dir` | Resume has to know which bundle to continue |
 | `--output-parent-dir '…' does not exist` | `mkdir -p` it first — the audit will not create it |
-| `must start with 'base' or 'none'` | Prefix the list: `--profile base,cms-ars` |
-| `--profile 'x' is not a known profile` | After `base`, use `cms-ars` or a directory path — see [profiles.md](profiles.md) |
+| `must start with 'base' or 'none'` | Prefix the list: `--profile base,cms-ars-5.1` |
+| `--profile 'x' is not a known profile` | After `base`, use `cms-ars-5.1` or a directory path — see [profiles.md](profiles.md) |
 | `--gate is not supported by the audit` | By design — use the PR review action for gating |
 
 Full flag list: `audit --help`, or the

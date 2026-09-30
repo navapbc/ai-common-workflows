@@ -10,7 +10,7 @@
     <f:textbox placeholder="model id / Bedrock model id / Azure deployment (optional)"/>
   </f:entry>
   <f:entry title="Compliance profile" field="profile">
-    <f:textbox placeholder="baseline (default) | cms-ars | profile name or path"/>
+    <f:textbox placeholder="base (default) | base,cms-ars-5.1 | ordered list or path"/>
   </f:entry>
   <f:entry title="Gate" field="gate">
     <f:textbox default="none" placeholder="none | unstable | failure"/>

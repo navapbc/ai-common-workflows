@@ -5,8 +5,8 @@ explicit member of that list, not an implicit extra:
 
 ```yaml
     profile: base                        # the floor alone
-    profile: base,cms-ars                # floor + CMS additions
-    profile: base,cms-ars,pci-dss        # floor + CMS + PCI; PCI wins a conflict
+    profile: base,cms-ars-5.1                # floor + CMS additions
+    profile: base,cms-ars-5.1,pci-dss        # floor + CMS + PCI; PCI wins a conflict
     profile: none,my-agency-everything   # NO floor; you supply the whole rubric
 ```
 
@@ -27,11 +27,11 @@ condition rather than in a profile.
 **The first entry must be `base` or `none`.** That is not ceremony. Omitting
 the floor is a silent, severe failure — the review still runs, still posts,
 still reports a verdict, and has checked almost nothing against 1,200-odd lines
-of rubric that are no longer there. `profile: cms-ars` is a natural thing to
+of rubric that are no longer there. `profile: cms-ars-5.1` is a natural thing to
 type, so it is a configuration error rather than a quiet downgrade:
 
 ```
-::error::AI_REVIEW_PROFILE must start with 'base' or 'none' (got 'cms-ars').
+::error::AI_REVIEW_PROFILE must start with 'base' or 'none' (got 'cms-ars-5.1').
 ```
 
 `base` must also be *first*: listed later it would outrank the overlays layered
@@ -62,7 +62,7 @@ after it.
 | Source | Adds | Use when |
 |---|---|---|
 | `base` *(required first entry, unless `none`)* | Nothing — it **is** the framework-neutral CIS / NIST CSF / OWASP floor. | Always, unless a profile is replacing the rubric wholesale |
-| `cms-ars` | CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations for the floor's findings, plus CMS/HIPAA-specific checks the floor doesn't cover (MFA, vulnerability/posture monitoring, WAF/DoS, malware/image provenance, pipeline integrity, and a detailed PHI/PII log-content review) | CMS systems and contractors |
+| `cms-ars-5.1` | CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations for the floor's findings, plus CMS/HIPAA-specific checks the floor doesn't cover (MFA, vulnerability/posture monitoring, WAF/DoS, malware/image provenance, pipeline integrity, and a detailed PHI/PII log-content review) | CMS systems and contractors |
 
 ## Selecting a profile
 
@@ -73,11 +73,11 @@ overlay.
   ```yaml
   - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@<sha>
     with:
-      profile: base,cms-ars
+      profile: base,cms-ars-5.1
   ```
 - **Jenkins** — the `profile` step parameter (or the global default):
   ```groovy
-  aiSecurityComplianceReview(profile: 'base,cms-ars')
+  aiSecurityComplianceReview(profile: 'base,cms-ars-5.1')
   ```
 - **Engine directly** — the `--profile` flag or the `AI_REVIEW_PROFILE`
   environment variable; the flag wins. Both entrypoints accept it.
@@ -88,7 +88,7 @@ overlay.
   adopted the list form:
   ```yaml
   env:
-    PROFILE: baseline   # or cms-ars, or your own profile
+    PROFILE: baseline   # or cms-ars-5.1, or your own profile
   ```
 
 ## How resolution works
@@ -130,6 +130,41 @@ reaches the model. If you find yourself needing to turn a base check off, that
 is a signal the check belongs behind a base-level condition rather than in a
 profile.
 
+## Versioning a profile
+
+A profile that implements a **versioned standard carries the revision in its
+name** — `cms-ars-5.1`, not `cms-ars`. Three reasons:
+
+- **Revisions coexist.** Programs sit on different revisions during an
+  assessment cycle. Sibling directories let one repo serve both; a single
+  unversioned directory cannot.
+- **Provenance is answerable.** "Which revision did this judge against?" is
+  answered by the config itself. The audit already records the profile string
+  in its report header, and a posted review carries a `Judged against:` line,
+  so the revision travels with the output rather than living in someone's head.
+- **An unversioned name is a mutable pointer.** `cms-ars` meaning "whatever we
+  implement today" changes what a consumer is judged against without them
+  choosing — the same failure the SHA-pinning rule exists to prevent.
+
+So there is **no `cms-ars` alias for "latest"**. An old or unversioned name
+fails resolution with an error listing what is bundled. Moving revision is a
+deliberate one-line edit, and that is the point.
+
+The revision belongs in the **directory** name only. Rubric filenames are the
+join key — `ai_review::rubric_block` matches a profile's file to the floor's by
+identical filename — so `iac-compliance.md` must be spelled the same in every
+profile. A versioned filename would break layering.
+
+Frameworks without published revisions need no version. This applies where the
+standard itself is versioned and a program can be assessed against a specific
+edition.
+
+**The floor names no revision.** `skills/base/` is framework-neutral; a
+revision there would contradict whichever profile is actually loaded, and is
+loaded even by programs with no relationship to that framework. Enforced by
+`tests/python/test_floor_is_framework_neutral.py`. The floor may point at a
+profile by name — that says where the framework lives, it does not cite it.
+
 ## Adding a profile (agency or state variant)
 
 > Profiles are the right home for **framework- or language-specific** rules
@@ -143,7 +178,7 @@ profile.
    containing only your **additions** to the floor — control-ID citations for
    findings the floor already covers (a cross-reference table is enough; don't
    restate the check), plus any checks genuinely specific to your framework
-   that the floor doesn't have. Start from `skills/profiles/cms-ars/iac-compliance.md`
+   that the floor doesn't have. Start from `skills/profiles/cms-ars-5.1/iac-compliance.md`
    as a worked example of the additive shape. Do **not** copy the floor's
    checks into your file — that duplicates content that already always
    applies and risks the two drifting apart.
@@ -154,7 +189,7 @@ profile.
    always syncs, and your `*-additions` files layer on top. See
    [copilot-instructions.md](copilot-instructions.md).
 3. Reference it after `base`: `profile: base,<name>` (Action/Jenkins) or
-   `AI_REVIEW_PROFILE=base,<name>`. List several — `profile: base,cms-ars,<name>`
+   `AI_REVIEW_PROFILE=base,<name>`. List several — `profile: base,cms-ars-5.1,<name>`
    — and the last one wins any conflict. Use `none,<name>` only if your profile
    is meant to replace the floor entirely.
 
@@ -167,7 +202,7 @@ directory in *your* checkout containing an `iac-compliance.md` (or any other
 rubric filename). It is treated exactly like a bundled profile's file — an
 addition layered on top of the base, never a replacement — so it only needs
 your organization's deltas. A path can appear in a list alongside a bundled
-name: `profile: base,cms-ars,./compliance/my-overlay`. No change to this repo
+name: `profile: base,cms-ars-5.1,./compliance/my-overlay`. No change to this repo
 required.
 
 > Do not invent control identifiers you can't source. If your agency's catalog

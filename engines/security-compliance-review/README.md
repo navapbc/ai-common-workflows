@@ -53,7 +53,7 @@ experimental sandbox and reserved for a future token-stripped AI phase.
 |---|---|---|
 | `AI_REVIEW_TOOL` | yes | `claude` \| `codex` \| `copilot` |
 | `AI_REVIEW_PROVIDER` | no | `api` (default) \| `bedrock` (claude or codex) \| `vertex` (claude) \| `azure` (codex) |
-| `AI_REVIEW_PROFILE` | no | Ordered list of rubric sources, first entry `base` (default) or `none`, then profile names / directory paths: `base`, `base,cms-ars`, `none,my-everything`. Sources layer in order, each only adding to what is above it, and the last listed wins a conflict. `finding-adjudication.md` is always read from `skills/base/` and is outside this list — see [docs/profiles.md](../../docs/profiles.md) |
+| `AI_REVIEW_PROFILE` | no | Ordered list of rubric sources, first entry `base` (default) or `none`, then profile names / directory paths: `base`, `base,cms-ars-5.1`, `none,my-everything`. Sources layer in order, each only adding to what is above it, and the last listed wins a conflict. `finding-adjudication.md` is always read from `skills/base/` and is outside this list — see [docs/profiles.md](../../docs/profiles.md) |
 | `AI_REVIEW_MODEL` | no | Model override (`--model`); Bedrock model ID (bedrock; required for codex) or Azure deployment name (azure) |
 | `ANTHROPIC_API_KEY` | claude+api | Public Anthropic API key |
 | `OPENAI_API_KEY` | codex | Public OpenAI API key |

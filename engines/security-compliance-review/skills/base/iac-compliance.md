@@ -7,7 +7,7 @@ in a pull request. This is the compliance floor: it always applies,
 regardless of which `profile` is selected.
 
 A profile may layer additional, framework-specific checks on top of this
-(e.g. `cms-ars` adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations
+(e.g. `cms-ars-5.1` adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 control-ID citations
 and CMS/HIPAA-specific checks). When it does, that addition is included
 immediately after this perspective in the prompt and takes precedence over
 this file on any conflict — see [docs/profiles.md](../../../../docs/profiles.md).
@@ -148,6 +148,6 @@ which categories were skipped as not applicable to this diff, and why.
   prevent a full assessment.
 - **Not a tool replacement:** complements but does not replace `checkov`,
   `tfsec`, `cfn-lint`, `kube-score`, or a CSPM. Run those in CI too.
-- **Bound to a specific framework?** Use the `cms-ars` profile for CMS ARS 5.1 /
+- **Bound to a specific framework?** Use the `cms-ars-5.1` profile for CMS ARS 5.1 /
   NIST 800-53 Rev 5 control mapping (layered on top of this file, not instead
   of it), or add a profile under `skills/profiles/` (see docs/profiles.md).

@@ -5,7 +5,7 @@
 #   export ANTHROPIC_API_KEY=sk-...
 #   bash tests/corpus/run.sh                    # every case
 #   bash tests/corpus/run.sh 01 04              # only these (prefix match)
-#   bash tests/corpus/run.sh --profile base,cms-ars
+#   bash tests/corpus/run.sh --profile base,cms-ars-5.1
 #
 # Deliberately NOT part of `bash tests/run.sh`: every case is a real model call.
 # See README.md in this directory for what the corpus can and cannot tell you.

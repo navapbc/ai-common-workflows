@@ -32,7 +32,7 @@ A **base** instruction set that everyone gets, plus optional per-profile
 ```
 base/instructions/                # generic OWASP / CIS / NIST CSF — ALWAYS synced
 profiles/baseline/                # no additions (the base alone) — the default
-profiles/cms-ars/instructions/    # CMS ARS 5.1 / NIST 800-53 additions, layered on the base
+profiles/cms-ars-5.1/instructions/    # CMS ARS 5.1 / NIST 800-53 additions, layered on the base
 ```
 
 Copilot code review reads any `*.instructions.md` file in a repo's
@@ -54,13 +54,13 @@ instructions and are trivial to identify and upgrade.
 
 **Profile additions (synced only when you select that profile)** — named
 `*-additions.instructions.md`, each scoped to the same paths as the base file
-it supplements. `cms-ars` ships three: `ai-review-security-additions`,
+it supplements. `cms-ars-5.1` ships three: `ai-review-security-additions`,
 `ai-review-iac-additions`, and `ai-review-auth-additions`, adding NIST/ARS
 control-ID citations, PHI severity items, the FIPS algorithm posture, and
 CMS-specific checks. Each states plainly that it supplements — never replaces
 — its base file, and which of its points override the base on conflict.
 
-This means a profile can only ever *add* review coverage: selecting `cms-ars`
+This means a profile can only ever *add* review coverage: selecting `cms-ars-5.1`
 never drops a generic OWASP/CIS check, and selecting `baseline` (or nothing)
 still gets the full framework-neutral floor.
 
@@ -77,7 +77,7 @@ Your existing `.github/copilot-instructions.md`, if any, is never touched.
 Copy [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
 into your repo's `.github/workflows/`, set two values, and merge:
 
-- `PROFILE` — the compliance profile to track (`baseline` default, `cms-ars`, …).
+- `PROFILE` — the compliance profile to track (`baseline` default, `cms-ars-5.1`, …).
 - `ACW_REF` — which ref to copy from. `main` by default, and deliberately not
   pinned: this job executes nothing, it copies Markdown and opens a PR your
   team reviews, so **the PR is the gate**. A pin would add a second gate on a
@@ -125,7 +125,7 @@ done
 
 # 2. Profile additions, layered on top. Skip this block for `baseline`
 #    (it has none — the base set above is the whole thing).
-profile="cms-ars"
+profile="cms-ars-5.1"
 for f in security iac auth; do
   curl -fsSL "${root}/profiles/${profile}/instructions/ai-review-${f}-additions.instructions.md" \
     -o ".github/instructions/ai-review/ai-review-${f}-additions.instructions.md"

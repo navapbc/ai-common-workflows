@@ -14,7 +14,7 @@ This file, and the other `ai-review-*.instructions.md` files alongside it,
 always apply — they are self-contained: everything Copilot needs for the
 framework-neutral review is here. If your repo also syncs a compliance-profile
 overlay (files named `ai-review-*-additions.instructions.md`, e.g. for
-`cms-ars`), treat those as **supplements** to this file, never replacements —
+`cms-ars-5.1`), treat those as **supplements** to this file, never replacements —
 read both together. Where an overlay's guidance differs from this file (a
 stricter severity, a mandatory citation format), the **overlay's guidance
 wins** for that point; everything else here still applies.

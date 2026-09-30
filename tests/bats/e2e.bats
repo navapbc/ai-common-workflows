@@ -77,21 +77,21 @@ teardown() {
   [[ "$output" == *"base"* ]]
 }
 
-@test "profile: base,cms-ars selected via AI_REVIEW_PROFILE" {
-  AI_REVIEW_PROFILE=base,cms-ars run bash "${ENGINE}" --against origin/main --dry-run
+@test "profile: base,cms-ars-5.1 selected via AI_REVIEW_PROFILE" {
+  AI_REVIEW_PROFILE=base,cms-ars-5.1 run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"cms-ars"* ]]
+  [[ "$output" == *"Profile:"*"cms-ars-5.1"* ]]
 }
 
 @test "profile: a bare profile name without base is refused" {
   # Dropping the floor has to be deliberate: the review would otherwise run,
   # report a verdict, and have checked almost nothing.
-  AI_REVIEW_PROFILE=cms-ars run bash "${ENGINE}" --against origin/main --dry-run
+  AI_REVIEW_PROFILE=cms-ars-5.1 run bash "${ENGINE}" --against origin/main --dry-run
   [ "$status" -eq 2 ]
   [[ "$output" == *"must start with 'base' or 'none'"* ]]
 }
 
-@test "profile: the compliance floor applies under base; cms-ars only adds to it" {
+@test "profile: the compliance floor applies under base; cms-ars-5.1 only adds to it" {
   local log_baseline="${WORK}/prompt-baseline.log"
   STUB_PROMPT_LOG="${log_baseline}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
     run bash "${ENGINE}" --against origin/main --json-only
@@ -100,30 +100,30 @@ teardown() {
   ! grep -q -- "ADDITIONS" "${log_baseline}"
 
   local log_cms="${WORK}/prompt-cms.log"
-  AI_REVIEW_PROFILE=base,cms-ars STUB_PROMPT_LOG="${log_cms}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
+  AI_REVIEW_PROFILE=base,cms-ars-5.1 STUB_PROMPT_LOG="${log_cms}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
     run bash "${ENGINE}" --against origin/main --json-only
   [ "$status" -eq 0 ]
   grep -q -- "COMPLIANCE PERSPECTIVE ────" "${log_cms}"
-  grep -q -- "COMPLIANCE PERSPECTIVE — cms-ars ADDITIONS" "${log_cms}"
+  grep -q -- "COMPLIANCE PERSPECTIVE — cms-ars-5.1 ADDITIONS" "${log_cms}"
 }
 
 @test "profile: --profile flag sets the rubric sources" {
-  run bash "${ENGINE}" --profile base,cms-ars --against origin/main --dry-run
+  run bash "${ENGINE}" --profile base,cms-ars-5.1 --against origin/main --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"base,cms-ars"* ]]
+  [[ "$output" == *"Profile:"*"base,cms-ars-5.1"* ]]
 }
 
 @test "profile: --profile=<list> form works too" {
-  run bash "${ENGINE}" --profile=base,cms-ars --against origin/main --dry-run
+  run bash "${ENGINE}" --profile=base,cms-ars-5.1 --against origin/main --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"base,cms-ars"* ]]
+  [[ "$output" == *"Profile:"*"base,cms-ars-5.1"* ]]
 }
 
 @test "profile: --profile overrides AI_REVIEW_PROFILE" {
-  AI_REVIEW_PROFILE=base run bash "${ENGINE}" --profile base,cms-ars \
+  AI_REVIEW_PROFILE=base run bash "${ENGINE}" --profile base,cms-ars-5.1 \
     --against origin/main --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"cms-ars"* ]]
+  [[ "$output" == *"cms-ars-5.1"* ]]
 }
 
 @test "profile: --profile with no value does not swallow the next flag" {
@@ -134,7 +134,7 @@ teardown() {
 }
 
 @test "profile: --profile rejects a bare name without base" {
-  run bash "${ENGINE}" --profile cms-ars --against origin/main --dry-run
+  run bash "${ENGINE}" --profile cms-ars-5.1 --against origin/main --dry-run
   [ "$status" -eq 2 ]
   [[ "$output" == *"must start with 'base' or 'none'"* ]]
 }

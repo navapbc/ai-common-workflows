@@ -6,7 +6,7 @@ applyTo: "**"
 
 **This supplements `ai-review-security.instructions.md`, which always
 applies — do not restate its guidance.** This file adds two things for the
-`cms-ars` profile:
+`cms-ars-5.1` profile:
 
 1. **PHI-specific severity-ladder items** the base file's generic ladder
    doesn't cover.

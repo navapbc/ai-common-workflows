@@ -37,7 +37,7 @@ In the `env:` block at the top:
 
 | Value | Set it to |
 |---|---|
-| `PROFILE` | `baseline` (framework-neutral OWASP / CIS / NIST CSF) or `cms-ars` (adds NIST/ARS control-ID citations, PHI severity items, FIPS posture, CMS checks) |
+| `PROFILE` | `baseline` (framework-neutral OWASP / CIS / NIST CSF) or `cms-ars-5.1` (adds NIST/ARS control-ID citations, PHI severity items, FIPS posture, CMS checks) |
 | `ACW_REF` | `main` — the sync copies Markdown and opens a PR your team reviews, so **the PR is the gate**, not a pin ([why this is the exception](security.md#the-instruction-syncs-one-exception)). Pin a commit SHA instead if your program requires it; updates then arrive only when you edit it |
 
 A `PROFILE` that doesn't exist fails the run loudly, before anything is copied
@@ -114,7 +114,7 @@ while a machine-user PAT gets you one that runs CI normally.
 Actions → **Sync AI-review Copilot instructions** → Run workflow.
 
 You get a PR adding `.github/instructions/ai-review/` — four base files, plus
-three more if `PROFILE: cms-ars`. Merge it.
+three more if `PROFILE: cms-ars-5.1`. Merge it.
 
 From then on it runs weekly and is idempotent: no upstream change, no PR. To
 upgrade, nothing — `ACW_REF` tracks `main`, so the next scheduled sync opens a

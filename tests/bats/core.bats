@@ -433,16 +433,36 @@ _dirs_count() { printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | grep -c . ; }
   [[ "${AI_REVIEW_RUBRIC_DIRS}" == *"/skills/base"* ]]
 }
 
-@test "rubric: base,cms-ars resolves both in order" {
-  AI_REVIEW_PROFILE=base,cms-ars ai_review::resolve_profiles
+# Layering mechanics below are asserted against whatever profile is bundled,
+# not a hardcoded name. Renaming cms-ars -> cms-ars-5.1 meant editing fifteen
+# assertions that never cared what the profile was called; the next revision
+# should not repeat that. Tests that are genuinely ABOUT the name still pin it.
+_a_bundled_profile() {
+  find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d \
+    -exec basename {} \; | sort | head -1
+}
+
+@test "rubric: base,<profile> resolves both in order" {
+  local prof
+  prof="$(_a_bundled_profile)"
+  AI_REVIEW_PROFILE="base,${prof}" ai_review::resolve_profiles
   [ "$(_dirs_count)" -eq 2 ]
   [[ "$(printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | head -1)" == *"/skills/base" ]]
-  [[ "$(printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | tail -1)" == *cms-ars ]]
+  [[ "$(printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | tail -1)" == *"${prof}" ]]
 }
 
 @test "rubric: whitespace around list entries is tolerated" {
-  AI_REVIEW_PROFILE="base , cms-ars" ai_review::resolve_profiles
+  AI_REVIEW_PROFILE="base , $(_a_bundled_profile)" ai_review::resolve_profiles
   [ "$(_dirs_count)" -eq 2 ]
+}
+
+@test "rubric: a versioned profile name resolves (dots are not glob chars)" {
+  # cms-ars-5.1 carries a dot. resolve_profiles word-splits on commas with no
+  # `set -f`, so a name containing a glob metacharacter would break; `.` and
+  # `-` do not. Pinned deliberately — this one IS about the name's shape.
+  AI_REVIEW_PROFILE=base,cms-ars-5.1 ai_review::resolve_profiles
+  [ "$(_dirs_count)" -eq 2 ]
+  [[ "${AI_REVIEW_RUBRIC_DIRS}" == *"cms-ars-5.1"* ]]
 }
 
 @test "rubric: a directory path may follow base" {
@@ -454,20 +474,20 @@ _dirs_count() { printf '%s' "${AI_REVIEW_RUBRIC_DIRS}" | grep -c . ; }
 # ── the guards ──────────────────────────────────────────────────────────────
 
 @test "rubric: omitting base or none is a config error, not a quiet downgrade" {
-  AI_REVIEW_PROFILE=cms-ars run ai_review::resolve_profiles
+  AI_REVIEW_PROFILE=cms-ars-5.1 run ai_review::resolve_profiles
   [ "$status" -eq 2 ]
   [[ "$output" == *"must start with 'base' or 'none'"* ]]
   [[ "$output" == *"by accident"* ]]
 }
 
 @test "rubric: base listed after a profile is a config error" {
-  AI_REVIEW_PROFILE=cms-ars,base run ai_review::resolve_profiles
+  AI_REVIEW_PROFILE=cms-ars-5.1,base run ai_review::resolve_profiles
   [ "$status" -eq 2 ]
   [[ "$output" == *"must be the FIRST entry"* ]]
 }
 
 @test "rubric: none listed after a profile is a config error" {
-  AI_REVIEW_PROFILE=cms-ars,none run ai_review::resolve_profiles
+  AI_REVIEW_PROFILE=cms-ars-5.1,none run ai_review::resolve_profiles
   [ "$status" -eq 2 ]
   [[ "$output" == *"must be the FIRST entry"* ]]
 }

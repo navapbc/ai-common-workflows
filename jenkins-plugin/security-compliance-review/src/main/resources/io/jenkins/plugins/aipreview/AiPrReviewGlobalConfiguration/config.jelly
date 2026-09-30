@@ -9,7 +9,7 @@
     </f:entry>
     <f:entry title="Default model" field="model"><f:textbox/></f:entry>
     <f:entry title="Default compliance profile" field="profile">
-      <f:textbox default="baseline" placeholder="baseline | cms-ars | profile name or path"/>
+      <f:textbox default="base" placeholder="base | base,cms-ars-5.1 | ordered list or path"/>
     </f:entry>
     <f:entry title="Default gate" field="gate">
       <f:textbox default="none" placeholder="none | unstable | failure"/>
