@@ -88,7 +88,7 @@ inputs:
       framework-neutral floor) or `none` (no floor — your profile supplies the
       whole rubric). Then any profile names under the engine's skills/profiles/
       or paths to custom profile directories: `base`, `base,cms-ars-5.1`,
-      `base,cms-ars-5.1,pci-dss`, `none,my-agency-everything`. Sources layer in
+      `base,cms-ars-5.1,pci-dss-4.0`, `none,my-agency-everything`. Sources layer in
       order and the last listed wins a conflict; a source only ever adds to
       what is above it. The first entry must be `base` or `none`, so the floor
       cannot be dropped by accident.

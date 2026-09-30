@@ -426,6 +426,32 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Consistency sweep after the profile rename, and a test so it stops being a
+  sweep.** Renaming `cms-ars` introduced a fresh contradiction: three places
+  offered `pci-dss` as an example profile *on the same line as*
+  `cms-ars-5.1` — `base,cms-ars-5.1,pci-dss` in `docs/profiles.md`,
+  `core.sh` and the action's `profile:` description. PCI DSS publishes
+  revisions, so the rule was being broken in the act of stating it. Now
+  `pci-dss-4.0`.
+  The sweep also caught `docs/adding-workflows.md` still describing profiles as
+  *"resolved from `skills/profiles/<name>/` with fallback to `skills/base/`"* —
+  the pre-additive override model, the same stale claim fixed in
+  `architecture.md`, in a file edited two PRs ago without anyone noticing. It
+  now describes the floor-plus-appended-layers model and points at the
+  versioning convention.
+  `tests/python/test_profile_naming.py` enforces all three parts of the rule:
+  bundled profile directories implementing a versioned standard carry a
+  revision; illustrative names in any doc, comment or config carry one too,
+  because an example is the copy people paste; and rubric **filenames** never
+  do, since they are the layering join key and a versioned filename would stop
+  composition silently rather than failing.
+  Its contrast exemption is scoped **per standard**, not per line: a sentence
+  like "`cms-ars-5.1`, not `cms-ars`" has to state the bad form, but
+  `base,cms-ars-5.1,pci-dss` carries one of each and is precisely the bug — a
+  blanket "this line mentions a versioned name" exemption would have excused
+  it. Verified by injecting that exact line, a de-versioned profile directory,
+  and a versioned rubric filename.
+
 - **The CMS ARS profile is now `cms-ars-5.1`.** ARS is a versioned standard and
   the profile name did not say which revision it implemented — the revision
   lived only in prose, 19 mentions, already inconsistent (roughly half omitted

@@ -6,7 +6,7 @@ explicit member of that list, not an implicit extra:
 ```yaml
     profile: base                        # the floor alone
     profile: base,cms-ars-5.1                # floor + CMS additions
-    profile: base,cms-ars-5.1,pci-dss        # floor + CMS + PCI; PCI wins a conflict
+    profile: base,cms-ars-5.1,pci-dss-4.0        # floor + CMS + PCI; PCI wins a conflict
     profile: none,my-agency-everything   # NO floor; you supply the whole rubric
 ```
 

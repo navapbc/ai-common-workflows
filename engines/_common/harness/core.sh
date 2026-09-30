@@ -756,7 +756,7 @@ ai_review::extract_review_json() {
 #
 #   base                       the framework-neutral floor, alone
 #   base,cms-ars-5.1               floor + CMS additions
-#   base,cms-ars-5.1,pci-dss       floor + CMS + PCI; PCI wins a conflict
+#   base,cms-ars-5.1,pci-dss-4.0       floor + CMS + PCI; PCI wins a conflict
 #   none,my-agency-everything  NO floor — the program supplies the whole rubric
 #
 # Sources layer in list order and each is told it outranks everything above it,
