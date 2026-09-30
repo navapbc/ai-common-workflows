@@ -213,7 +213,9 @@ $ audit --dry-run
   Files:          98
   Batches:        4 (concurrency 4)
   Profile:        base
-  Adjudication:   self
+  Tool:           claude
+  Provider:       api (PUBLIC endpoint — see docs/private-endpoints.md for in-boundary options)
+  Adjudication:   off
   Expected calls: ~4 first-pass
 ```
 
@@ -408,7 +410,6 @@ list.
 audit --exclude 'vendor/*' --exclude '*_test.go'   # skip noise
 audit --include '*.tf'                             # only Terraform
 audit --max-file-bytes 100000                      # skip big generated files
-audit --no-adjudicate                              # cheaper, noisier first pass
 audit --jobs 8                                     # more parallelism
 ```
 

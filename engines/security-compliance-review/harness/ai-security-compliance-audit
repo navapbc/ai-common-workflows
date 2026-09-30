@@ -142,7 +142,8 @@ Cost control — check scope before spending:
   --list-batches            Print the batch plan and exit. No AI call.
   --dry-run / -n            Print the full plan and exit. No AI call.
   --jobs <n>                Fan-out concurrency (default ${AI_REVIEW_JOBS:-4}).
-  --no-adjudicate           Skip adjudication (cheaper, noisier first pass).
+  --no-adjudicate           Force adjudication off. It is already off by
+                            default; use this to override AI_ADJUDICATION.
 
 Environment:
   AI_REVIEW_TOOL            claude | codex | copilot   (required)
