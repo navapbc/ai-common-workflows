@@ -1,0 +1,86 @@
+# Dependabot version updates.
+#
+# docs/security.md hands consumers a dependabot config to paste and tells them
+# to keep this action's pin fresh. Running one here is the same argument
+# applied to ourselves: every pin in this repo was current the day someone
+# typed it, and nothing but memory kept it that way.
+#
+# Dependabot preserves whichever pin format it finds — a SHA-pinned `uses:`
+# comes back SHA-pinned with its `# vX.Y.Z` comment rewritten, not loosened to
+# a tag. So this cannot quietly undo the rule tests/python/test_pin_hygiene.py
+# enforces.
+version: 2
+
+updates:
+  # ── GitHub Actions ────────────────────────────────────────────────────────
+  #
+  # `/` covers .github/workflows/. It does NOT cover workflows/*/action.yml,
+  # and it does not need to: those composites run pure bash and reference no
+  # external action (only `uses: ./…`, which is this repo). If one ever gains
+  # an external `uses:`, this file needs a matching entry —
+  # tests/python/test_dependabot_coverage.py fails when that happens, so the
+  # gap cannot open silently.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    # One PR for the routine bumps, separate PRs for majors — a major is a
+    # behaviour change worth reading on its own.
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # ── Jenkins plugin (Maven reactor) ────────────────────────────────────────
+  #
+  # The reactor root; Dependabot walks the modules from here. This is the one
+  # ecosystem whose output is a downloadable artifact, so a stale transitive
+  # dependency here ships to an admin's Jenkins controller rather than staying
+  # inside a CI run.
+  - package-ecosystem: maven
+    directory: "/jenkins-plugin"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(jenkins)"
+    groups:
+      jenkins-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # ── Dockerfile ────────────────────────────────────────────────────────────
+  #
+  # Supports the experimental, unshipped egress sandbox
+  # (engines/_common/sandbox/). No workflow builds it, so there is no published
+  # image to be vulnerable — monthly, because the base image going stale is a
+  # real cost the day the sandbox ships and no cost before then.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "deps(docker)"
+# ── What Dependabot cannot see ───────────────────────────────────────────────
+#
+# The AI CLI pins. `ci::install_ai_cli`
+# (workflows/_shared/lib/ci.sh) installs `@anthropic-ai/claude-code`,
+# `@openai/codex` and `@github/copilot` at exact versions, but they are shell
+# string literals rather than a manifest — there is no package.json for
+# Dependabot to read, and adding one purely to be scanned would make the CLIs
+# look like build dependencies of a repo that has no build.
+#
+# So those three pins are maintained by hand and by nothing else. The versions
+# appear in exactly one place — the `_AI_CLI_VER_*` assignments in ci.sh; the
+# docs describe the default as "pinned in the action" without restating a
+# number, on purpose. tests/python/test_cli_pin_hygiene.py asserts they stay
+# *exact*, which catches them going floating but cannot tell you a pin is a
+# year old. Review them when you cut a release.
