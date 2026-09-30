@@ -586,7 +586,17 @@ audit::doctor() {
         if command -v "${tool}" >/dev/null 2>&1; then
           audit::doctor_row "${tool} CLI" "ok" "$(command -v "${tool}")"
         else
-          audit::doctor_missing "${tool} CLI" "npm install -g @anthropic-ai/claude-code (or the CLI for your tool)"
+          # The hint has to name the tool the operator actually chose. A
+          # hardcoded Claude package told a copilot user to install Claude
+          # Code, which is the one thing doctor exists to not do.
+          local cli_hint
+          case "${tool}" in
+            claude) cli_hint="npm install -g @anthropic-ai/claude-code" ;;
+            codex) cli_hint="npm install -g @openai/codex" ;;
+            copilot) cli_hint="npm install -g @github/copilot" ;;
+            *) cli_hint="install the CLI for AI_REVIEW_TOOL=${tool}" ;;
+          esac
+          audit::doctor_missing "${tool} CLI" "${cli_hint}"
         fi
         ;;
       *)
@@ -615,6 +625,18 @@ audit::doctor() {
         fi
       else
         audit::doctor_row "endpoint" "ok" "${provider} — in your boundary"
+      fi
+      # configure_endpoint can succeed and still have something to say — most
+      # importantly for copilot, whose model auth is a GitHub token it never
+      # hard-fails on ("the copilot CLI must already be authenticated on this
+      # host"). Discarding that turned "ok" into a claim doctor could not
+      # back: no token at all still printed a clean row. Warnings are echoed
+      # under the row that earned them, indented like the FAILED path.
+      if [[ -n "${endpoint_out}" ]]; then
+        printf '%s\n' "${endpoint_out}" |
+          grep -v "^\[.*\] Endpoint: tool=" |
+          grep . |
+          sed 's/^/      /' >&2 || true
       fi
     else
       AUDIT_DOCTOR_FAIL=1

@@ -772,6 +772,32 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`--doctor` was unusable for the Copilot CLI, in two ways.**
+  It printed `npm install -g @anthropic-ai/claude-code` as the install hint for
+  **any** missing CLI, so a copilot user was told to install Claude Code. The
+  engine already knew the right package for each tool
+  (`core.sh` `require_cli`); doctor just used a hardcoded fallback.
+  Worse, it reported `endpoint ok` for copilot with **no GitHub token at all**.
+  Copilot's model auth *is* a GitHub token and `endpoints.sh` never hard-fails
+  on a missing one — it warns that the CLI "must already be authenticated on
+  this host" — but doctor discarded everything `configure_endpoint` printed
+  whenever it exited 0. For the one tool whose credential check is advisory,
+  the advice was thrown away, and "ok" became a claim doctor could not back.
+  Warnings emitted on the success path are now echoed under the row that
+  earned them, indented like the failure path, with the routine
+  `Endpoint: tool=...` audit line filtered out so only real warnings appear.
+- **`docs/codebase-audit.md` said nothing about how to use Copilot.** The word
+  appeared once, in a comment, as `# or codex, or copilot`. There is now a
+  section covering what actually differs: copilot takes no API key (its auth is
+  `GITHUB_TOKEN` / `GH_TOKEN` / `COPILOT_GITHUB_TOKEN`, or an existing host
+  login); **`AI_REVIEW_CLI_NATIVE_AUTH=1` does nothing for it**, which matters
+  because the page introduces that flag ten lines earlier and a reader would
+  reasonably try it; a missing token warns rather than fails, so the run dies
+  later inside the CLI; it runs on GitHub's models, so "public endpoint" means
+  something different here; and the BYOK settings — documented in
+  `private-endpoints.md` only as Action inputs — are plain environment
+  variables locally.
+
 - **A pull request from a fork is now skipped with a notice, not failed.**
   It used to die in the engine with `requires ANTHROPIC_API_KEY`, putting a red
   check on every external contribution — one the contributor could not act on
