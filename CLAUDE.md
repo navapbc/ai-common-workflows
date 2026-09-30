@@ -84,6 +84,9 @@ internals.
 - Branch off `main`; open a PR and get CI green (including the Jenkins build)
   before merge. PRs are typically **squash-merged**, so don't rely on individual
   commit granularity surviving.
+- **Releasing:** tag `vX.Y.Z` on `main` and the release workflow does the rest —
+  see [docs/releasing.md](docs/releasing.md). There is deliberately no moving
+  `vX` alias; a release helps a consumer *find* a SHA, not avoid pinning one.
 - `CHANGELOG.md` is `merge=union` (`.gitattributes`), so two branches adding an
   entry at the same spot rebase cleanly with both kept instead of conflicting.
   Check the resulting order — union concatenates, it does not think. GitHub's
