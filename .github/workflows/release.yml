@@ -60,6 +60,60 @@ jobs:
           fi
           echo "Tag is on main."
 
+      # A release exists so a consumer can FIND a SHA (see the header). If the
+      # code behind that SHA is identical to the last release's, the version
+      # number is the only thing that changed, and an upgrade that changes
+      # nothing is how people learn to stop reading upgrades.
+      #
+      # This was asked as a question first — "is it time for 0.1.1?" — five
+      # commits after v0.1.0, all of them repo hygiene, docs and the unshipped
+      # sandbox image. Answering it meant running a diff by hand. A gate
+      # answers it before anyone has to ask.
+      - name: The release must change something a consumer runs
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+
+          # Baseline is the most recent STABLE release reachable from this tag.
+          # Pre-releases are deliberately not baselines: promoting
+          # v1.2.0-rc.1 to v1.2.0 has an identical surface by design, and that
+          # is a legitimate release this gate must not refuse.
+          # No grep pipeline here on purpose. `set -o pipefail` plus a `grep`
+          # that matches nothing makes the assignment fail, which under
+          # `set -e` kills the step — so the first release of a fresh repo,
+          # the one case with no baseline, was refused by the gate meant to
+          # wave it through. Caught by
+          # "change gate: the first release has no baseline and passes".
+          tags="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged "${GITHUB_SHA}" || true)"
+          prev=""
+          while read -r t; do
+            [[ -z "${t}" ]] && continue
+            [[ "${t}" == *-* ]] && continue                 # a pre-release
+            [[ "${t}" == "${GITHUB_REF_NAME}" ]] && continue # this tag
+            prev="${t}"
+            break
+          done <<<"${tags}"
+
+          if [[ -z "${prev}" ]]; then
+            echo "No earlier stable release to compare against; nothing to check."
+            exit 0
+          fi
+
+          # `workflows/` and `engines/` are what a consumer's job actually
+          # runs. Docs are shipped too, but a doc fix does not require anyone
+          # to move a pin — they can read docs on main.
+          changed="$(git diff --name-only "${prev}" "${GITHUB_SHA}" -- workflows engines)"
+
+          if [[ -z "${changed}" ]]; then
+            echo "::error::${GITHUB_REF_NAME} runs exactly the same code as ${prev}: no change under workflows/ or engines/."
+            echo "::error::Nothing was published, so delete the tag and release when there is something to release:"
+            echo "::error::  git tag -d ${GITHUB_REF_NAME} && git push origin :refs/tags/${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+          echo "Changed since ${prev}:"
+          echo "${changed}" | sed 's/^/  /'
+
       # The consumer-facing surface, derived rather than listed. A hardcoded
       # list is how the previous attempt broke: it named
       # `harness/ai-pr-review` long after the file was renamed, so every
