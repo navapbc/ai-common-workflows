@@ -21,7 +21,7 @@ export ANTHROPIC_API_KEY=sk-...
 #   export AI_REVIEW_CLI_NATIVE_AUTH=1     (public endpoint — docs/private-endpoints.md)
 bash tests/corpus/run.sh                 # every case
 bash tests/corpus/run.sh 01 04           # just these
-bash tests/corpus/run.sh --profile base,cms-ars
+bash tests/corpus/run.sh --profile base,cms-ars-5.1
 ```
 
 You get a per-case table and a summary:

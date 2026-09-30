@@ -16,7 +16,7 @@ per-profile additions:
   these, whatever profile they track.
 - `copilot-instructions/profiles/<profile>/instructions/ai-review-*-additions.instructions.md`
   — that profile's *additions*, layered on top. `baseline` (the default) has
-  none; `cms-ars` has three, adding NIST/ARS control-ID citations, PHI
+  none; `cms-ars-5.1` has three, adding NIST/ARS control-ID citations, PHI
   severity items, the FIPS algorithm posture, and CMS-specific checks.
 
 Consumer repos receive the base files plus their profile's additions (if any)

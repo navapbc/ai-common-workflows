@@ -148,9 +148,9 @@ EOF
 # ── profile ─────────────────────────────────────────────────────────────────
 
 @test "audit: --profile selects a bundled profile after base" {
-  run bash "${AUDIT}" --profile base,cms-ars --dry-run
+  run bash "${AUDIT}" --profile base,cms-ars-5.1 --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Profile:"*"cms-ars"* ]]
+  [[ "$output" == *"Profile:"*"cms-ars-5.1"* ]]
 }
 
 @test "audit: default profile is base" {
@@ -160,7 +160,7 @@ EOF
 }
 
 @test "audit: a bare profile name without base is refused" {
-  run bash "${AUDIT}" --profile cms-ars --dry-run
+  run bash "${AUDIT}" --profile cms-ars-5.1 --dry-run
   [ "$status" -eq 2 ]
   [[ "$output" == *"must start with 'base' or 'none'"* ]]
 }
@@ -181,7 +181,7 @@ EOF
   run bash "${AUDIT}" --profile base,nope --dry-run
   [ "$status" -eq 2 ]
   [[ "$output" == *"not a known profile"* ]]
-  [[ "$output" == *"cms-ars"* ]]
+  [[ "$output" == *"cms-ars-5.1"* ]]
 }
 
 @test "audit: --profile accepts a custom directory path after base" {
@@ -404,7 +404,7 @@ EOF
 }
 
 @test "audit: --doctor surfaces a bad profile" {
-  AI_REVIEW_PROFILE=cms-ars run bash "${AUDIT}" --doctor
+  AI_REVIEW_PROFILE=cms-ars-5.1 run bash "${AUDIT}" --doctor
   [ "$status" -eq 1 ]
   [[ "$output" == *"profile"*"FAILED"* ]]
   [[ "$output" == *"must start with 'base' or 'none'"* ]]

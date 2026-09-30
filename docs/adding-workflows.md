@@ -145,9 +145,14 @@ the per-provider setup.
 
 If your workflow judges code against a control framework, make the framework a
 **profile** rather than hardcoding it — the same pattern the review uses
-(`AI_REVIEW_PROFILE`, resolved from the engine's `skills/profiles/<name>/` with
-fallback to `skills/base/`, or a bring-your-own directory path). This lets one workflow
-serve several agencies without forks. Follow the settled convention rather
+(`AI_REVIEW_PROFILE`, an ordered list resolved from the engine's
+`skills/profiles/<name>/` or a bring-your-own directory path; the copy in
+`skills/base/` is the floor and applies always, with each listed profile
+appended after it). This lets one workflow serve several agencies without
+forks. If the framework is a **versioned standard**, the profile directory
+carries the revision — `cms-ars-5.1`, not `cms-ars` — so revisions can coexist
+and a run can say which one it judged against
+([why](profiles.md#versioning-a-profile)). Follow the settled convention rather
 than inventing a new one: rubric sources are an ordered list whose first entry
 is `base` or `none`, every source only *adds* to what precedes it, and the last
 listed wins a conflict. There is no per-file override — a program that needs to

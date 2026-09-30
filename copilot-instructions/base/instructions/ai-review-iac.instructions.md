@@ -12,7 +12,7 @@ applies: reference control *themes* (CIS Benchmarks, NIST CSF Functions)
 rather than a specific agency catalog.
 
 If your repo also syncs `ai-review-iac-additions.instructions.md` (a
-compliance-profile overlay, e.g. `cms-ars`), read it together with this file:
+compliance-profile overlay, e.g. `cms-ars-5.1`), read it together with this file:
 it adds control-ID citations for these same checks and may add checks this
 file doesn't have. It supplements this file, never replaces it.
 

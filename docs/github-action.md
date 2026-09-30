@@ -54,7 +54,7 @@ three:
         with:
           ai-tool: claude
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          profile: base            # add ,cms-ars if you track CMS ARS
+          profile: base            # add ,cms-ars-5.1 if you track CMS ARS
 ```
 
 **Ignore the rest until you have a reason to reach for one.** The groups below
@@ -69,7 +69,7 @@ two. Endpoint inputs apply per tool: `bedrock` → `claude` or `codex`;
 | `ai-tool` | `claude` | `claude` \| `codex` \| `copilot` |
 | `anthropic-api-key` | — | Anthropic key (claude, provider=api) |
 | `openai-api-key` | — | OpenAI key (codex) |
-| `profile` | `base` | Ordered rubric sources, first entry `base` or `none`: `base,cms-ars`. Later entries add and win conflicts — see [profiles.md](profiles.md) |
+| `profile` | `base` | Ordered rubric sources, first entry `base` or `none`: `base,cms-ars-5.1`. Later entries add and win conflicts — see [profiles.md](profiles.md) |
 | `github-token` | `${{ github.token }}` | Token to post the review (`pull-requests: write`) |
 
 ### Deciding how loud it is

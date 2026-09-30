@@ -755,8 +755,8 @@ ai_review::extract_review_json() {
 # shared base is an explicit member of that list, not an implicit extra:
 #
 #   base                       the framework-neutral floor, alone
-#   base,cms-ars               floor + CMS additions
-#   base,cms-ars,pci-dss       floor + CMS + PCI; PCI wins a conflict
+#   base,cms-ars-5.1               floor + CMS additions
+#   base,cms-ars-5.1,pci-dss-4.0       floor + CMS + PCI; PCI wins a conflict
 #   none,my-agency-everything  NO floor — the program supplies the whole rubric
 #
 # Sources layer in list order and each is told it outranks everything above it,
@@ -769,7 +769,7 @@ ai_review::extract_review_json() {
 #
 # Why `none` is required rather than inferred from base's absence: omitting the
 # floor by accident is a silent, severe failure — the review still runs, still
-# posts, still reports a verdict, and checked almost nothing. `profile: cms-ars`
+# posts, still reports a verdict, and checked almost nothing. `profile: cms-ars-5.1`
 # is a natural thing to type, so it must be an error rather than a quiet
 # downgrade. The first entry has to be `base` or `none`; there is no way to
 # type your way into dropping the floor.

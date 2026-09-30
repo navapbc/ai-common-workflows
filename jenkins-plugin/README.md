@@ -5,7 +5,7 @@ security & compliance review engine as the [GitHub Action](../docs/github-action
 on your Jenkins agents. Supports Claude, Codex, and Copilot on the public API or
 a private endpoint (Bedrock, Vertex, Azure OpenAI, or a custom gateway), with a
 selectable compliance `profile` — an ordered list of rubric sources starting
-with `base` or `none`, e.g. `base` (the default floor) or `base,cms-ars`.
+with `base` or `none`, e.g. `base` (the default floor) or `base,cms-ars-5.1`.
 
 The plugin is thin: it bundles its engine + `engines/_common` (a snapshot, zipped at build
 time), extracts it onto the agent at runtime, and runs it. Shared machinery

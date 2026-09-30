@@ -5,7 +5,7 @@
 # Usage (run from the root of the repo being audited):
 #   ai-security-compliance-audit                      # whole repo (tracked files)
 #   ai-security-compliance-audit terraform/ src/api/  # only these paths
-#   ai-security-compliance-audit --profile cms-ars infra/
+#   ai-security-compliance-audit --profile cms-ars-5.1 infra/
 #   ai-security-compliance-audit --list-files          # scope only, no AI call
 #   ai-security-compliance-audit --dry-run             # plan + cost shape, no AI call
 #
@@ -53,7 +53,7 @@ SKILL_HUMAN_NAME="AI Security & Compliance Audit"
 
 # ── Rubric composition ──────────────────────────────────────────────────────
 # AI_REVIEW_PROFILE (or --profile) is an ordered list of rubric sources, and the shared
-# base is an explicit member of it: `base`, `base,cms-ars`, or `none,<profile>`
+# base is an explicit member of it: `base`, `base,cms-ars-5.1`, or `none,<profile>`
 # to supply the whole rubric yourself. Sources layer in order and the last one
 # wins a conflict. See ai_review::resolve_profiles in _common — including why
 # the first entry must be `base` or `none`, and why finding-adjudication.md
@@ -90,7 +90,7 @@ repository is audited; with paths, only those files (directories recurse).
 
   ai-security-compliance-audit
   ai-security-compliance-audit terraform/
-  ai-security-compliance-audit --profile cms-ars infra/ src/api/
+  ai-security-compliance-audit --profile cms-ars-5.1 infra/ src/api/
 
 Scope:
   <path>...                 Limit the audit to these files/directories.
@@ -103,7 +103,7 @@ Rubric:
                             entry must be $(base) (the shared floor) or $(none)
                             (no floor — you supply the whole rubric), then any
                             profile names or directory paths:
-                              base | base,cms-ars | none,my-everything
+                              base | base,cms-ars-5.1 | none,my-everything
                             Sources layer in order and the last listed wins a
                             conflict; each only adds to what is above it.
 
@@ -169,7 +169,7 @@ audit::parse_flags() {
       --profile)
         # `$# -ge 2` alone would accept a following FLAG as the value.
         if [[ $# -lt 2 || "$2" == -* ]]; then
-          ai_review::err "--profile requires a value (e.g. base,cms-ars)."
+          ai_review::err "--profile requires a value (e.g. base,cms-ars-5.1)."
           exit 2
         fi
         AI_REVIEW_PROFILE="$2"

@@ -59,7 +59,7 @@ source "${AI_COMMON_HOME}/scm/${AI_REVIEW_SCM}.sh"
 
 # ── Rubric composition ──────────────────────────────────────────────────────
 # AI_REVIEW_PROFILE is an ordered list of rubric sources, and the shared
-# base is an explicit member of it: `base`, `base,cms-ars`, or `none,<profile>`
+# base is an explicit member of it: `base`, `base,cms-ars-5.1`, or `none,<profile>`
 # to supply the whole rubric yourself. Sources layer in order and the last one
 # wins a conflict. See ai_review::resolve_profiles in _common — including why
 # the first entry must be `base` or `none`, and why finding-adjudication.md
@@ -105,7 +105,7 @@ Environment variables:
   AI_REVIEW_PROFILE        Ordered rubric sources. First entry must be $(base)
                            (default — the shared floor) or $(none) (no floor).
                            Then profile names under skills/profiles/ or
-                           directory paths:  base | base,cms-ars |
+                           directory paths:  base | base,cms-ars-5.1 |
                            none,my-everything. Sources layer in order and the
                            last listed wins a conflict; each only adds to what
                            is above it. finding-adjudication.md is always read
@@ -362,7 +362,7 @@ while [[ $# -gt 0 ]]; do
       # Reject a following flag as the value: `--profile --against main` would
       # otherwise resolve a profile literally named "--against".
       if [[ -z "${2:-}" || "${2}" == -* ]]; then
-        ai_review::err "--profile requires a value (e.g. base,cms-ars)"
+        ai_review::err "--profile requires a value (e.g. base,cms-ars-5.1)"
         exit 2
       fi
       AI_REVIEW_PROFILE="$2"

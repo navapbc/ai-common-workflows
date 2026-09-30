@@ -4,7 +4,7 @@ Point your pipeline at it and get inline review comments on every pull
 request. It works against the public API or a private LLM endpoint (Amazon
 Bedrock, Google Vertex, Azure OpenAI, or a custom gateway) so code and diffs
 can stay inside your boundary. The compliance rubric is a selectable
-[profile](profiles.md) (CMS ARS by default).
+[profile](profiles.md) (`base` by default).
 
 For the full input/output reference, see [github-action.md](github-action.md)
 (GitHub Action) or [jenkins-plugin/README.md](../jenkins-plugin/README.md)
@@ -228,7 +228,7 @@ it never replaces or weakens the floor:
 ```yaml
         with:
           profile: base       # default — floor only, no agency overlay
-        # profile: cms-ars    # adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 citations + CMS/HIPAA checks
+        # profile: cms-ars-5.1    # adds CMS ARS 5.1 / NIST SP 800-53 Rev 5 citations + CMS/HIPAA checks
         # profile: ./my-org-profile   # bring your own — additions only, layered the same way
 ```
 

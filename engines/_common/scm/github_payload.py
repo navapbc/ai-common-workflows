@@ -89,6 +89,24 @@ def max_comments():
         return DEFAULT_MAX_COMMENTS
 
 
+def judged_against():
+    """The rubric sources this review used, for the body — or None.
+
+    Provenance a reader can cite. The audit has recorded this all along
+    (`meta.json` -> the report header); a posted review said nothing about what
+    it judged against, so "which revision was this?" had no answer outside the
+    run log. It matters more now that profile names carry a standard's
+    revision: `base,cms-ars-5.1` states the revision, `base,cms-ars` could not.
+
+    Returns None when unset or plain `base`, so an ordinary review gains no
+    line it does not need.
+    """
+    raw = (os.environ.get("AI_REVIEW_PROFILE") or "").strip()
+    if not raw or raw == "base":
+        return None
+    return raw
+
+
 def post_when_clean():
     """Post a review even when the model found nothing?
 
@@ -476,6 +494,9 @@ def build_payload(data, existing_comments_ndjson, pr_files_ndjson):
     parts = [summary.rstrip()]
     if SCOPE_DISCLAIMER not in summary:
         parts.append(SCOPE_DISCLAIMER)
+    profile = judged_against()
+    if profile:
+        parts.append(f"_Judged against:_ `{profile}`")
     parts.extend(body_sections)
     if AI_ATTRIBUTION not in summary:
         parts.append(AI_ATTRIBUTION)

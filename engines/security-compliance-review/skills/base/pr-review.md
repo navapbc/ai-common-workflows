@@ -211,7 +211,7 @@ between the markers must be a single object with the schema below.
       "perspective": "compliance",
       "severity": "HIGH",
       "title": "RDS instance without encryption at rest",
-      "description": "The RDS instance is provisioned without `storage_encrypted = true` and no `kms_key_id`. This violates NIST SC-12 and SC-28 (and the corresponding CMS ARS 5.1 controls), which require encryption at rest for all data stores. Use a customer-managed KMS key rather than the default AWS-managed key.",
+      "description": "The RDS instance is provisioned without `storage_encrypted = true` and no `kms_key_id`. Data stores must be encrypted at rest. Use a customer-managed KMS key rather than the default AWS-managed key.",
       "suggestion_kind": "applicable",
       "suggestion_body": "  storage_encrypted = true\n  kms_key_id        = aws_kms_key.rds.arn"
     },
@@ -259,8 +259,11 @@ between the markers must be a single object with the schema below.
   - `description` — the explanation that goes into the rendered comment body.
     For security findings, include the OWASP category reference where
     applicable (e.g., "OWASP A03:2021 – Injection"). For compliance findings,
-    always include the NIST 800-53 Rev 5 control ID and the CMS ARS 5.1
-    control ID where they differ (e.g., "NIST AC-3, CMS ARS AC-3(HIGH)").
+    cite control IDs **only from a control framework a loaded profile names**,
+    in the form that profile specifies. If no profile names one, cite no
+    control IDs — describe the control objective in plain language instead.
+    Inventing a citation, or reaching for a framework nobody asked about, is
+    worse than omitting one.
   - `suggestion_kind` — `"applicable"` if the fix can be applied as-is at the
     target line via GitHub's `` ```suggestion `` block;
     `"reference"` if the fix is a new resource elsewhere, a structural
