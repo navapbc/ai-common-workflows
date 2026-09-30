@@ -48,8 +48,8 @@ consumers** — it holds zero knowledge of who uses it. Instead, each consumer
 runs a small sync workflow in its own repo that *pulls* the files:
 
 [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/copilot-instructions-sync.yml)
-— copied into a consumer's `.github/workflows/`, it checks out this repo at a
-pinned `ACW_REF`, copies the base `ai-review-*.instructions.md` plus the chosen
+— copied into a consumer's `.github/workflows/`, it checks out this repo at
+`ACW_REF` (`main` by default), copies the base `ai-review-*.instructions.md` plus the chosen
 `PROFILE`'s `*-additions` files (if it has any) into
 `.github/instructions/ai-review/`, removes any `*-additions` left over from a
 profile the repo no longer tracks, and opens (or updates) a PR on the branch
@@ -90,9 +90,22 @@ workflow's header comment):
 Just keep the source files correct: edit the base
 `ai-review-*.instructions.md` for a change everyone should get, or a profile's
 `ai-review-*-additions.instructions.md` for one only that profile should get.
-Consumers pick the change up the next time their sync workflow runs against a
-ref they've pinned to. Cut a release so consumers have something to move to —
-the release is how they find the SHA; the SHA is what they pin.
+Consumers pick the change up on their next scheduled sync, as a PR their team
+reviews — `ACW_REF` tracks `main`, so a correction to the base rubric reaches
+every consumer without anyone bumping a ref.
+
+**The PR is the gate.** The sync never pushes to a consumer's default branch,
+so nothing you write here lands anywhere without a human reading the diff and
+merging it. That is why this is the one place the project does not require a
+commit SHA: the job copies Markdown and executes nothing, a SHA would add a
+second gate on a value nobody reads in front of a gate on content they do, and
+a fixed ref would make the schedule pointless because it never produces a diff.
+A consumer whose program requires pinning still can — see
+[copilot-review-setup.md](copilot-review-setup.md) — and then updates arrive
+only when they edit that line.
+
+Practically: assume a base-rubric change is in front of every consumer within a
+week of merging, subject to their review. Write it accordingly.
 
 When adding a profile, write only the deltas — don't restate base checks in an
 additions file, or the two copies will drift the way the old per-profile

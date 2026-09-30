@@ -1,10 +1,22 @@
 # Keep this repo's AI-review Copilot instructions in sync with ai-common-workflows.
 #
 # PULL model: copy this file into your repo's .github/workflows/. It fetches the
-# ai-review-*.instructions.md files from ai-common-workflows (pinned to a ref you
-# control) and opens a PR that updates .github/instructions/ai-review/. It uses only this
-# repo's own GITHUB_TOKEN — no central distributor, and ai-common-workflows needs
-# no knowledge of your repo.
+# ai-review-*.instructions.md files from ai-common-workflows and opens a PR that
+# updates .github/instructions/ai-review/. It uses only this repo's own
+# GITHUB_TOKEN — no central distributor, and ai-common-workflows needs no
+# knowledge of your repo.
+#
+# THE PR IS THE GATE. This workflow never pushes to your default branch. Every
+# change arrives as a reviewable PR on `ai-review/instructions-sync`, and the
+# diff is plain English your team reads before merging — so nothing from
+# upstream reaches your repository without a human agreeing to it.
+#
+# That is why ACW_REF tracks `main` rather than a commit SHA, unlike everything
+# else in this project. Nothing here executes: the job copies Markdown. Pinning
+# would add a second gate on a SHA nobody reads, in front of a gate on content
+# they do read — and it would make the schedule below pointless, because a
+# fixed ref never produces a diff. Actions used BY this workflow are still
+# SHA-pinned, because those do run code in your job.
 #
 # What gets synced: the BASE instruction set always, plus — if PROFILE names a
 # profile that has them — that profile's `*-additions` files layered on top. The
@@ -12,7 +24,7 @@
 # additions, so it syncs the base alone. Switching PROFILE later removes the
 # previous profile's additions automatically.
 #
-# Setup: set PROFILE and pin ACW_REF below, then merge.
+# Setup: set PROFILE below, then merge. ACW_REF tracks `main` by default.
 #
 # How the PR gets opened — pick one (the workflow supports all three):
 #
@@ -56,11 +68,17 @@ permissions:
 env:
   # Compliance profile to track: baseline (default) | cms-ars | <your profile>.
   PROFILE: baseline
-  # Pin ai-common-workflows to a full commit SHA. NOT a tag — a tag is a
-  # mutable pointer that can be re-created against different content, and
-  # nothing here would notice. Record which release it is in a comment.
+  # Which ref to copy the instructions FROM. `main` by design — see the
+  # "the PR is the gate" note in the header above. This is the one place in
+  # this project that is NOT pinned to a commit SHA, and the reason is that
+  # nothing here executes: the job copies Markdown and opens a PR your team
+  # reviews. Pinning would also make the schedule below pointless, since a
+  # fixed ref never produces a diff.
+  #
+  # Pin to a 40-character commit SHA instead if your program requires it.
+  # Updates then arrive only when someone edits this line.
   ACW_REPO: navapbc/ai-common-workflows
-  ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char SHA, or v1.0.0
+  ACW_REF: main
 
 jobs:
   sync:

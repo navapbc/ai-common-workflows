@@ -78,8 +78,13 @@ Copy [`examples/workflows/copilot-instructions-sync.yml`](../examples/workflows/
 into your repo's `.github/workflows/`, set two values, and merge:
 
 - `PROFILE` — the compliance profile to track (`baseline` default, `cms-ars`, …).
-- `ACW_REF` — pin `ai-common-workflows` to a full commit SHA. Not a tag: a
-  tag can be deleted and re-pointed at different content ([why](../docs/security.md)).
+- `ACW_REF` — which ref to copy from. `main` by default, and deliberately not
+  pinned: this job executes nothing, it copies Markdown and opens a PR your
+  team reviews, so **the PR is the gate**. A pin would add a second gate on a
+  value nobody reads, and would stop the schedule ever producing a diff. Pin a
+  commit SHA if your program requires it — updates then arrive only when you
+  edit it. Everything that *runs* is still SHA-pinned
+  ([why](../docs/security.md#the-instruction-syncs-one-exception)).
 
 On its schedule (and on demand), the workflow fetches the base
 `ai-review-*.instructions.md` files from `ai-common-workflows@<ACW_REF>` — plus

@@ -38,7 +38,7 @@ In the `env:` block at the top:
 | Value | Set it to |
 |---|---|
 | `PROFILE` | `baseline` (framework-neutral OWASP / CIS / NIST CSF) or `cms-ars` (adds NIST/ARS control-ID citations, PHI severity items, FIPS posture, CMS checks) |
-| `ACW_REF` | A commit SHA of `ai-common-workflows` ([why a SHA](security.md)) |
+| `ACW_REF` | `main` — the sync copies Markdown and opens a PR your team reviews, so **the PR is the gate**, not a pin ([why this is the exception](security.md#the-instruction-syncs-one-exception)). Pin a commit SHA instead if your program requires it; updates then arrive only when you edit it |
 
 A `PROFILE` that doesn't exist fails the run loudly, before anything is copied
 — it can't silently downgrade you.
@@ -117,7 +117,9 @@ You get a PR adding `.github/instructions/ai-review/` — four base files, plus
 three more if `PROFILE: cms-ars`. Merge it.
 
 From then on it runs weekly and is idempotent: no upstream change, no PR. To
-upgrade, bump `ACW_REF`. To change profile, edit `PROFILE` — the next sync adds
+upgrade, nothing — `ACW_REF` tracks `main`, so the next scheduled sync opens a
+PR with the change for your team to review. (If you pinned a SHA, bump it.) To
+change profile, edit `PROFILE` — the next sync adds
 or removes that profile's `*-additions` files and never touches the base.
 
 ## 5. Turn on Copilot review

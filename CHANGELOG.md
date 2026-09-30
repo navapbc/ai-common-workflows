@@ -426,6 +426,36 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The Copilot instruction sync now tracks `main` instead of a pinned SHA.**
+  It was pinned *and* cron'd, and the two cancelled out: a fixed ref re-fetches
+  identical content forever, the workflow is idempotent ("no diff → no PR"), so
+  the schedule did nothing until a human hand-edited `ACW_REF`.
+  `docs/copilot-instructions.md` claimed otherwise — "consumers pick the change
+  up the next time their sync workflow runs against a ref they've pinned to" —
+  which was simply false, and is why bumping `ACW_REF` kept coming up as manual
+  work.
+  **The PR is the gate.** The sync never pushes to a consumer's default branch;
+  every change lands as a reviewable PR whose diff is plain English. That is a
+  stronger control than a pin, not a weaker one: a SHA gates a forty-character
+  value nobody inspects, the PR gates the content itself. Requiring both put an
+  unread gate in front of a read one.
+  This is a deliberate **exception** to the SHA-only rule, not a relaxation of
+  it. The rule exists because `uses: org/repo@ref` runs that repository's code
+  in your job with your token — a mutable ref is a mutable execution path. The
+  sync executes nothing: it copies Markdown, and its only `uses:` is
+  `actions/checkout`, still SHA-pinned. `docs/security.md` gains **The
+  instruction sync's one exception** stating all of this, including the
+  residual risk (a compromised upstream plus a reviewer who merges without
+  reading) and the supported opt-in for programs that require a pin.
+  Because an unexplained exception reads as erosion and invites someone to
+  "fix" it back, `test_pin_hygiene.py` now holds that **every file mentioning
+  `ACW_REF` also explains that the PR is the gate**, that the value is `main`
+  or a SHA but never a tag, and — closing a loophole the old value-only check
+  could not see — that no `ACW_REF` line offers a tag in a trailing comment.
+  The example carried `ACW_REF: REPLACE_WITH_COMMIT_SHA # e.g. a 40-char SHA,
+  or v1.0.0` four lines below a block saying "NOT a tag"; the value was an
+  allowlisted placeholder, so nothing caught it.
+
 - **`docs/adding-workflows.md` refreshed.** It had drifted in three ways.
   Its repository tree omitted half of `engines/_common` — `gate_verdict.py`,
   `fold_review_json.py`, `write_audit_report.py`, `scm/github_payload.py`, the

@@ -161,9 +161,9 @@ layer around the runner/agent:
          directory: "/"
          schedule: { interval: weekly }
      ```
-     It cannot help with the instruction sync's `ACW_REF`: that is a plain
-     environment variable in a workflow, not a `uses:` reference, so nothing
-     recognizes it as a dependency. Bump it by hand when you take a release.
+     It does not apply to the instruction sync's `ACW_REF`, which tracks
+     `main` on purpose — see
+     [the instruction sync's one exception](#the-instruction-syncs-one-exception).
    - **Jenkins plugin:** install a specific released `.hpi` and **verify its
      build provenance** before uploading (requires `gh` ≥ 2.49):
      ```bash
@@ -238,6 +238,37 @@ authenticates as the built-in `GITHUB_TOKEN` that `actions/checkout` persisted,
 so granting it `Contents` would let it write to any branch for no gain. Issue
 it from a dedicated **machine user** rather than a person's account: it keeps the credential's reach to the repos the sync touches
 instead of everything one human can read, and the automation does not break
-when that human's access changes. Pin `ACW_REF` to a commit SHA — not a tag, for the
-reason in the pinning rule above — so upgrades are deliberate. See
-[copilot-instructions.md](copilot-instructions.md).
+when that human's access changes. `ACW_REF` is the one ref in this project that is **not** pinned — see
+[the instruction sync's one exception](#the-instruction-syncs-one-exception).
+See also [copilot-instructions.md](copilot-instructions.md).
+
+### The instruction sync's one exception
+
+Everything this project tells you to pin, you pin to a full commit SHA. The
+Copilot **instruction sync** is the single exception: its `ACW_REF` defaults to
+`main`.
+
+The pinning rule exists because `uses: org/repo@ref` runs that repository's
+code inside your job, with your token in scope — so a mutable ref is a mutable
+execution path. The instruction sync does none of that. It copies
+`ai-review-*.instructions.md` into a branch and opens a pull request. The only
+`uses:` in it is `actions/checkout`, which is SHA-pinned like everything else
+that runs.
+
+**The PR is the gate, and it is a stronger one.** The sync never pushes to your
+default branch. Every change arrives as a reviewable PR whose diff is plain
+English your team reads before merging. A SHA gates a forty-character value
+nobody inspects; the PR gates the content itself. Requiring both would put a
+weak unread gate in front of a strong read one — and pinning also makes the
+sync's schedule inert, because a fixed ref never produces a diff, so updates
+would only ever arrive when someone remembered to edit the line.
+
+The residual risk is a compromised upstream plus a reviewer who merges without
+reading. That is real, and it is why the files are prose rather than anything
+executable: a malicious instruction has to survive a human reading English.
+Worst case it degrades Copilot's review comments — advisory text — rather than
+running code or reaching a credential.
+
+**If your program requires a pin anyway**, set `ACW_REF` to a 40-character
+commit SHA. Updates then arrive only when someone edits that line, so put a
+calendar reminder against it or the instructions will quietly rot.
