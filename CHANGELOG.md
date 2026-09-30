@@ -850,6 +850,34 @@ follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The AI CLI was installed unpinned.** `cli-version` defaulted to `latest`,
+  so a consumer SHA-pinned the action, CI enforced SHA-only pins across every
+  doc and example, `docs/security.md` argued at length about mutable refs — and
+  then the job `npm install -g`'d an **agentic** CLI at a floating version. That
+  CLI is the component that reads the untrusted diff with shell and file-read
+  tools, which made it simultaneously the least-pinned and highest-privilege
+  thing in the run. Pinning the action was never the whole supply chain.
+  `cli-version` now defaults to a per-tool version pinned in
+  `workflows/_shared/lib/ci.sh` (`_AI_CLI_VER_*`), covering both the review and
+  the classifier, which shared the default. Jenkins is unaffected: its agents
+  need the CLI pre-installed, so the Actions path is the only one that installs
+  anything at runtime.
+  **Exact versions, not ranges**, and for a different reason than the action
+  rule. npm forbids republishing a version, so `@scope/pkg@1.2.3` is immutable
+  in the way a git tag is not; `^1.2.3` resolves at install time, which is
+  `latest` with extra steps.
+  `cli-version: latest` still works for anyone who wants it and now logs a
+  warning saying what it does — a choice rather than a default.
+  `tests/python/test_cli_pin_hygiene.py` and four bats cases hold it: each pin
+  is an exact `x.y.z`, the installer contains no floating literal, and neither
+  action's input defaults to `latest`. Verified against three regressions — a
+  pin reverted to `latest`, a pin turned into a caret range, and the input
+  default flipped back.
+  One limit stated in `docs/security.md` rather than papered over: these pins
+  are strings in bash, invisible to Dependabot, so nothing bumps them and the
+  test catches a pin going *floating* but not going *stale*. A pin that is
+  never reviewed is a CLI that never gets a security fix.
+
 - **The framework-neutral floor instructed CMS ARS citations.**
   `skills/base/pr-review.md` said *"For compliance findings, always include the
   NIST 800-53 Rev 5 control ID and the CMS ARS 5.1 control ID"*, and the

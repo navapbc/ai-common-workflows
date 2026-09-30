@@ -124,7 +124,7 @@ these moves your spend — `--dry-run` prints the expected call count.
 | `dry-run` | `false` | Print the plan, the batch routing and the expected call count; no AI call |
 | `pr-number` | event PR | Override the PR number. Off a `pull_request` event, set `base-ref` too |
 | `base-ref` | event base | Branch to diff against. Required with `pr-number` on a non-`pull_request` event — see [Re-running a review](#re-running-a-review) |
-| `install-cli` / `cli-version` | `true` / `latest` | npm-install the AI CLI on the runner |
+| `install-cli` / `cli-version` | `true` / pinned | npm-install the AI CLI on the runner. `cli-version` defaults to a version **pinned in the action** — an agentic CLI that reads untrusted PR content should not float. Override with an exact version, or `latest` to opt back into floating (logged as a warning) |
 
 ## Outputs
 

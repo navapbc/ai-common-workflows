@@ -242,6 +242,32 @@ when that human's access changes. `ACW_REF` is the one ref in this project that 
 [the instruction sync's one exception](#the-instruction-syncs-one-exception).
 See also [copilot-instructions.md](copilot-instructions.md).
 
+### The AI CLI is pinned too
+
+Pinning the action is not the whole supply chain. The job also `npm install -g`s
+the AI CLI on the runner, and that CLI is the **agentic** part: it reads the
+untrusted diff with shell and file-read tools. For a while it was installed at
+`latest`, which made it simultaneously the least-pinned and highest-privilege
+component in the run — a SHA-pinned action fetching a floating agent.
+
+`cli-version` now defaults to a version pinned inside the action
+(`workflows/_shared/lib/ci.sh`, the `_AI_CLI_VER_*` values), per tool.
+
+Exact versions, not ranges — and the reasoning differs from the rule above.
+An npm version is immutable because npm **forbids republishing one**, so
+`@scope/pkg@1.2.3` gives the guarantee a git tag cannot. `^1.2.3` does not: it
+resolves at install time, which is `latest` with extra steps.
+
+Two consequences worth planning for:
+
+- **Nothing bumps these for you.** They are strings in bash, so Dependabot
+  cannot see them, and a pin that is never bumped is a CLI that never gets a
+  security fix. Put a recurring review against it.
+  `tests/python/test_cli_pin_hygiene.py` catches a pin going *floating*; it
+  cannot catch one going *stale*.
+- **`cli-version: latest` still works** if you want it, and logs a warning
+  saying so. It is a choice now rather than a default.
+
 ### The instruction sync's one exception
 
 Everything this project tells you to pin, you pin to a full commit SHA. The

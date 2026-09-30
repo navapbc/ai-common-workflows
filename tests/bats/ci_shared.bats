@@ -181,6 +181,56 @@ setup() {
   grep -qx "skip=true" "${GITHUB_OUTPUT}"
 }
 
+# ── install_ai_cli ──────────────────────────────────────────────────────────
+# The CLI used to be installed at `latest`: a SHA-pinned action that then
+# fetched an unpinned agentic CLI at runtime. npm is stubbed here so nothing is
+# installed — only the resolved version is asserted.
+
+@test "install_ai_cli: each tool installs its pinned version by default" {
+  for tool in claude codex copilot; do
+    run env AI_TOOL="${tool}" CLI_VERSION="" bash -c "
+      source '${CI_LIB}'
+      npm() { echo \"npm \$*\"; }
+      ci::install_ai_cli"
+    [ "$status" -eq 0 ]
+    # An exact x.y.z, never `latest` and never a range.
+    [[ "$output" =~ npm\ install\ -g\ @[^@]+@[0-9]+\.[0-9]+\.[0-9]+ ]]
+    [[ "$output" != *"@latest"* ]]
+    [[ "$output" != *"^"* ]]
+  done
+}
+
+@test "install_ai_cli: an explicit cli-version overrides the pin" {
+  run env AI_TOOL=claude CLI_VERSION=1.2.3 bash -c "
+    source '${CI_LIB}'
+    npm() { echo \"npm \$*\"; }
+    ci::install_ai_cli"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"@anthropic-ai/claude-code@1.2.3"* ]]
+}
+
+@test "install_ai_cli: cli-version=latest still works, and warns" {
+  # Kept as a deliberate opt-out, but it must be visible in the log rather
+  # than silent — that silence is what let the old default go unnoticed.
+  run env AI_TOOL=claude CLI_VERSION=latest bash -c "
+    source '${CI_LIB}'
+    npm() { echo \"npm \$*\"; }
+    ci::install_ai_cli"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::"* ]]
+  [[ "$output" == *"unpinned agentic CLI"* ]]
+  [[ "$output" == *"@anthropic-ai/claude-code@latest"* ]]
+}
+
+@test "install_ai_cli: an unknown tool installs nothing" {
+  run env AI_TOOL=bard CLI_VERSION="" bash -c "
+    source '${CI_LIB}'
+    npm() { echo \"npm \$*\"; }
+    ci::install_ai_cli"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"npm install"* ]]
+}
+
 # ── gate_result ─────────────────────────────────────────────────────────────
 
 @test "gate_result writes result and does not fail when advisory" {
