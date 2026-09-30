@@ -64,6 +64,38 @@ A default changing behaviour is a breaking change even when no input is
 renamed — `adjudication` moving to `off` and `max-comments` moving to `50`
 both changed what every consumer gets without them editing anything.
 
+### While on 0.x
+
+This project starts at **`v0.1.0`**. Semver reserves major version zero for
+exactly this: the surface is not yet stable and may change. Numbering map:
+
+| Change | Bump | Example |
+|---|---|---|
+| Breaking — an input renamed or removed, a default that changes behaviour, a findings-JSON or exit-code change | **MINOR** | `0.1.0` → `0.2.0` |
+| Everything else — new optional input, better rubric, bug fix, docs | **PATCH** | `0.1.0` → `0.1.1` |
+
+That is the standard `0.x` convention, and the alternative is worse: under
+`1.x` the rule above would make every sensible default adjustment a major bump,
+and a number that increments on ordinary tuning stops telling anyone anything.
+`adjudication` moving to `off` is precisely the kind of change that should be
+cheap to make while nobody depends on it.
+
+**A breaking change in `0.x` is still breaking.** The bump is smaller; the
+CHANGELOG entry is not. Say what a consumer has to do.
+
+### Reaching 1.0.0
+
+Cut `1.0.0` when there is adoption worth protecting — a program depending on
+these defaults in a pipeline someone is accountable for. At that point the
+surface freezes under the normal rules and a breaking change costs a major
+version.
+
+Things worth having settled before then, none of which block a `0.x` release:
+the detection corpus large enough to catch a rubric regression; the two front
+ends agreeing on the gate verdict (the Jenkins plugin currently applies its own
+rule rather than calling `gate_verdict.py`); and more than one real production
+run behind the defaults.
+
 The rubric is not versioned by this scheme. It changes continuously and its
 effect is on judgment rather than interface; `tests/corpus/` is what measures
 that, and it is not part of the release gate.
