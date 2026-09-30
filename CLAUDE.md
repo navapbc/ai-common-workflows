@@ -78,6 +78,9 @@ internals.
   - Compliance profiles (`AI_REVIEW_PROFILE`, the review engine's `skills/profiles/`) → [docs/profiles.md](docs/profiles.md)
   - Copilot instruction distribution → [copilot-instructions/README.md](copilot-instructions/README.md)
   - Threat model / credentials → [docs/security.md](docs/security.md)
+  - Why something is the way it is → [docs/adr/](docs/adr/README.md)
+    (decisions + the alternatives rejected; not a description of current
+    behaviour)
 
 ## Commits & PRs
 
