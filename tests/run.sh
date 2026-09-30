@@ -23,7 +23,7 @@ if (( RUN_LINT )) && command -v shellcheck &>/dev/null; then
     engines/_common/harness/core.sh engines/_common/endpoints.sh \
     engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \
     workflows/_shared/lib/ci.sh \
-    tests/stubs/* tests/run.sh || fail=1
+    tests/stubs/* tests/run.sh tests/lint_workflow_shell.sh || fail=1
 fi
 
 if (( RUN_LINT )) && command -v shfmt &>/dev/null; then
@@ -33,6 +33,9 @@ fi
 
 echo "==> pytest"
 python3 -m pytest tests/python/ -q || fail=1
+
+echo "==> embedded workflow shell"
+bash tests/lint_workflow_shell.sh || fail=1
 
 echo "==> bats: core + e2e + ci_shared + test_classifier + audit + release"
 bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \

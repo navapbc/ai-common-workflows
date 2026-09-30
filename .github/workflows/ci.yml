@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: embedded workflow shell
+        run: bash tests/lint_workflow_shell.sh
+
       - name: shellcheck
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
@@ -24,7 +27,7 @@ jobs:
             engines/_common/harness/core.sh engines/_common/endpoints.sh \
             engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \
             workflows/_shared/lib/ci.sh \
-            tests/stubs/* tests/run.sh
+            tests/stubs/* tests/run.sh tests/lint_workflow_shell.sh
       - name: shfmt
         run: |
           curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt

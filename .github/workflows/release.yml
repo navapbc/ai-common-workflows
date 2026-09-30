@@ -112,7 +112,7 @@ jobs:
           fi
 
           echo "Changed since ${prev}:"
-          echo "${changed}" | sed 's/^/  /'
+          while read -r f; do echo "  ${f}"; done <<<"${changed}"
 
       # The consumer-facing surface, derived rather than listed. A hardcoded
       # list is how the previous attempt broke: it named
