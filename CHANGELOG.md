@@ -790,6 +790,15 @@ follow [Semantic Versioning](https://semver.org/).
   folds a re-read into the calls already being made (no extra call, more output
   tokens), `independent` adds exactly **one** call regardless of batch count,
   and `--no-adjudicate` forces off when the variable is set in the environment.
+  It is a **top-level `## Adjudication` section**, not a subsection of "The
+  four things you'll actually use" where it first landed — adjudication is not
+  one of the four, and a fifth thing hidden under a heading that promises four
+  is a thing readers skim past. It opens by saying what adjudication *is*
+  (findings are confirmed, downgraded or dropped; it can only remove or soften,
+  never add — verified against `finding-adjudication.md`), because every prior
+  mention on the page assumed the reader already knew, and links to
+  `github-action.md#adjudication-and-fan-out` for the full treatment. That page
+  had the explanation all along and `codebase-audit.md` linked to it zero times.
   It also says when it is worth it *for an audit*, which the `off` default does
   not settle: that default was measured on diffs, where `self` suppressed
   nothing, and an audit sends whole files rather than a change — more surface

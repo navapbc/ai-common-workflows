@@ -222,23 +222,31 @@ $ audit --dry-run
 A directory is usually the right scope. `audit terraform/` on a large repo is a
 couple of calls; `audit` on the same repo can be dozens.
 
-### Turning adjudication on
+## Adjudication
 
-`Adjudication: off` in that plan is the default. The audit reports its
-first-pass findings as written, because a current model re-checks its own work
-without being told to, and instructing it to costs tokens. Two modes turn it
-back on, as an environment variable:
+**What it is.** After the first pass produces findings, an adjudication pass
+re-examines them as a skeptic: each one is confirmed, downgraded, or dropped.
+It only ever removes or softens — it cannot add a finding — so it trades a
+little recall for precision. Full treatment, including the measurement behind
+the default, is in
+[the action reference](github-action.md#adjudication-and-fan-out); it is the
+same mechanism on both entrypoints.
+
+**It is off by default.** The audit reports its first-pass findings as written,
+because a current model re-checks its own work without being told to, and
+instructing it to costs tokens. `Adjudication: off` in the `--dry-run` plan is
+this. Two modes turn it back on, as an environment variable:
 
 ```bash
 AI_ADJUDICATION=self audit --output-parent-dir ~/audits
 AI_ADJUDICATION=independent audit --output-parent-dir ~/audits
 ```
 
-- **`self`** folds a skeptical re-read into the calls already being made. No
-  extra call; more output tokens per batch.
-- **`independent`** adds a fresh pass over the merged findings before the
-  report is written. Exactly **one** extra call no matter how many batches —
-  `--dry-run` shows it as `+ 1 adjudication`.
+| Mode | What runs | Cost |
+|---|---|---|
+| `off` (default) | nothing — first-pass findings as written | — |
+| `self` | a skeptical re-read folded into the calls already being made | no extra call; more output tokens per batch |
+| `independent` | a fresh pass over the **merged** findings before the report is written | exactly **one** extra call, however many batches — `--dry-run` shows `+ 1 adjudication` |
 
 `--no-adjudicate` forces off, which matters only if `AI_ADJUDICATION` is set in
 your shell profile or environment.
