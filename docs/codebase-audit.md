@@ -84,6 +84,48 @@ against the **public** endpoint, and says so on every run. See
 An audit sends the whole scope rather than a diff, so be deliberate about this
 one.
 
+### Copilot CLI
+
+Copilot does not take an API key, so none of the above applies to it. Its model
+auth **is a GitHub token**, and it reads one from the environment or from its
+own login:
+
+```bash
+export AI_REVIEW_TOOL=copilot
+# either a token in the environment...
+export GITHUB_TOKEN=ghp_...        # GH_TOKEN and COPILOT_GITHUB_TOKEN also work
+# ...or nothing here at all, if `copilot` is already signed in on this host
+```
+
+Three things that differ from `claude` and `codex`:
+
+- **`AI_REVIEW_CLI_NATIVE_AUTH=1` does nothing for copilot.** That flag exists
+  because the other two CLIs hard-fail without a key in the environment.
+  Copilot already assumes host authentication, so there is nothing to opt into.
+- **A missing token is a warning, not an error.** The run proceeds and fails
+  later inside the CLI if it turns out not to be signed in. `audit --doctor`
+  prints the warning under the `endpoint` row — read it, because the row itself
+  still says `ok`.
+- **It runs on GitHub's models**, so "public endpoint" means GitHub here rather
+  than Anthropic or OpenAI. Judge that against your program's boundary
+  separately from the API-key path above.
+
+Install it with `npm install -g @github/copilot`.
+
+**Bring your own endpoint.** Copilot can talk to a model endpoint you run
+instead of GitHub's. [private-endpoints.md](private-endpoints.md#copilot-byok-bring-your-own-key)
+documents this as Action inputs; locally the same settings are environment
+variables:
+
+```bash
+export COPILOT_PROVIDER_BASE_URL=https://llm-gw.internal/v1
+export COPILOT_PROVIDER_TYPE=anthropic      # openai | azure | anthropic
+export COPILOT_PROVIDER_API_KEY=...
+export COPILOT_MODEL=claude-sonnet-4-5
+```
+
+A GitHub token may still be needed for CLI entitlement even with BYOK.
+
 ## Check your setup first
 
 ```bash

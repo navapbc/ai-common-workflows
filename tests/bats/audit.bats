@@ -702,6 +702,47 @@ EOF
   [ "$status" -eq 1 ]
 }
 
+# ── doctor: the AI CLI row and endpoint warnings ────────────────────────────
+# doctor exists to name every missing piece in one pass. Two ways it failed
+# that for copilot: it printed the Claude package as the install hint for any
+# tool, and it threw away warnings configure_endpoint emitted on the success
+# path — so copilot with no GitHub token at all showed a clean "endpoint ok".
+
+@test "doctor: names the CLI package for the tool actually selected" {
+  # The hint only prints when the CLI is absent, and setup() puts the stubs on
+  # PATH — so strip it, the way the existing not-on-PATH test does.
+  PATH="/usr/bin:/bin" AI_REVIEW_TOOL=copilot run bash "${AUDIT}" --doctor
+  [[ "$output" == *"@github/copilot"* ]]
+  [[ "$output" != *"@anthropic-ai/claude-code"* ]]
+
+  PATH="/usr/bin:/bin" AI_REVIEW_TOOL=codex run bash "${AUDIT}" --doctor
+  [[ "$output" == *"@openai/codex"* ]]
+  [[ "$output" != *"@anthropic-ai/claude-code"* ]]
+
+  PATH="/usr/bin:/bin" AI_REVIEW_TOOL=claude run bash "${AUDIT}" --doctor
+  [[ "$output" == *"@anthropic-ai/claude-code"* ]]
+}
+
+@test "doctor: surfaces the copilot host-auth warning under the ok row" {
+  # copilot never hard-fails on a missing credential, so the warning is the
+  # only signal there is. Swallowing it made "ok" a claim doctor could not back.
+  run env -u GITHUB_TOKEN -u GH_TOKEN -u COPILOT_GITHUB_TOKEN \
+    AI_REVIEW_TOOL=copilot bash "${AUDIT}" --doctor
+  [[ "$output" == *"already be authenticated on this host"* ]]
+}
+
+@test "doctor: no spurious warning once a token is present" {
+  GITHUB_TOKEN=ghs_fake AI_REVIEW_TOOL=copilot run bash "${AUDIT}" --doctor
+  [[ "$output" != *"already be authenticated on this host"* ]]
+}
+
+@test "doctor: the endpoint audit line is not echoed as a warning" {
+  # configure_endpoint always prints "Endpoint: tool=... provider=..." on
+  # success; that is the row's own content, not a problem to report.
+  AI_REVIEW_TOOL=claude ANTHROPIC_API_KEY=sk-test run bash "${AUDIT}" --doctor
+  [[ "$output" != *"Endpoint: tool=claude"* ]]
+}
+
 @test "audit: warns when CI is set" {
   CI=true run bash "${AUDIT}" --list-files
   [ "$status" -eq 0 ]
