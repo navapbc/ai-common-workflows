@@ -5,6 +5,25 @@ telling a consumer the SHA to pin. Nothing is built or uploaded: the action is
 source that GitHub fetches at `uses:` time, so the tag's commit *is* the
 artifact.
 
+## Is there anything to release?
+
+A release exists so a consumer can **find a SHA**. If the code behind the new
+SHA is identical to the last release's, the version number is the only thing
+that changed, and an upgrade that changes nothing is how people learn to stop
+reading upgrades.
+
+```bash
+git diff --name-only "$(git describe --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')"..main -- workflows engines
+```
+
+Empty output means there is nothing to release. Repo hygiene, docs, tests, the
+Jenkins plugin and the unshipped sandbox image all live outside those two
+directories on purpose — they are real work, and none of them changes what a
+consumer's job runs.
+
+Don't take this on trust: the workflow **refuses** such a tag, before anything
+is published. See *What the workflow checks* below.
+
 ## Cutting one
 
 ```bash
@@ -38,6 +57,12 @@ this workflow deliberately does not match.
 
 - **The tag is an ancestor of `main`.** A tag can be pushed from anywhere;
   releasing a commit that never reached `main` would ship code no CI run saw.
+- **Something under `workflows/` or `engines/` changed** since the most recent
+  stable release reachable from this tag. Docs are shipped too, but a doc fix
+  does not require anyone to move a pin — they can read docs on `main`.
+  Pre-releases are never used as the baseline, so promoting `v1.2.0-rc.1` to
+  `v1.2.0` is not refused for having an identical surface, which it does by
+  design.
 - **The consumer-facing surface exists** — every `workflows/*/action.yml`, the
   shared CI library, the shared runtime, and every engine entrypoint.
 - **Every entrypoint is executable.** The actions invoke them as `bash <file>`,
