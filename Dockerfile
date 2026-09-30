@@ -32,7 +32,7 @@
 #
 # If this image is ever published: pull by digest, never by tag.
 
-FROM node:22-slim
+FROM node:26-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.285
 ARG CODEX_VERSION=0.159.2
