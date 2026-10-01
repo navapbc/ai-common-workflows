@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Run the full engine test suite: static checks, bats, and pytest.
-# Sandbox bats tests self-skip when Docker is unavailable.
 #
 #   tests/run.sh            # everything
 #   tests/run.sh --no-lint  # skip shellcheck/shfmt (e.g. not installed)
@@ -21,7 +20,7 @@ if (( RUN_LINT )) && command -v shellcheck &>/dev/null; then
     engines/security-compliance-review/harness/ai-security-compliance-audit \
     engines/test-classifier/harness/ai-test-classifier \
     engines/_common/harness/core.sh engines/_common/endpoints.sh \
-    engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \
+    engines/_common/scm/github.sh \
     workflows/_shared/lib/ci.sh \
     tests/stubs/* tests/run.sh tests/lint_workflow_shell.sh || fail=1
 fi
@@ -42,9 +41,6 @@ bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \
   tests/bats/test_classifier.bats tests/bats/audit.bats \
   tests/bats/release.bats || fail=1
 
-# tests/bats/sandbox.bats covers the experimental (unshipped) sandbox and is
-# not part of the default suite; run it manually with Docker if working on it.
-#
 # tests/corpus/ is the DETECTION corpus — fixture diffs with expected findings.
 # Everything above tests the envelope (does the JSON parse, does the gate fire)
 # and would still pass if the rubric reported nothing; the corpus is what tests

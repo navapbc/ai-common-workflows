@@ -39,8 +39,8 @@ in scope. Before adopting, three things are imperative:
 - **Review the engine** — it is deliberately small and readable (~2k lines of
   bash plus two short Python files, and the rubric markdown it inlines) — and
   **pin to a commit SHA**, not a mutable tag.
-- **Control egress** at the runner/infrastructure layer; there is no built-in
-  sandbox in this release.
+- **Control egress** at the runner/infrastructure layer. The engine runs
+  natively and enforces no network boundary of its own.
 
 Full trust model and checklist in [docs/security.md](docs/security.md).
 

@@ -18,9 +18,10 @@
 # its own location (ENGINE_HOME), never from the repository being reviewed.
 # Run it with the reviewed repository as the working directory.
 #
-# The --json-out / --post-only pair is the seam the sandboxed flow uses to
-# split the run into two processes: an AI phase with no SCM access or token
-# (writes --json-out), and a trusted post phase with no AI (reads --json-in).
+# The --json-out / --post-only pair splits the run into two processes: an AI
+# phase with no SCM access or token (writes --json-out), and a post phase with
+# no AI that holds the token (reads --json-in). Both shipped front ends use it;
+# it is what keeps the token out of the phase that reads untrusted PR content.
 #
 # Exit codes:
 #   0  APPROVE, or findings in advisory mode (or --dry-run / --no-block)
@@ -425,7 +426,7 @@ ai_review::resolve_profiles
 # pr-review.md carries the result marker and findings-JSON contract.
 ai_review::require_rubric pr-review.md
 
-# ── Post-only mode (trusted post phase of the sandboxed flow) ───────────────
+# ── Post-only mode (the token-holding post phase) ──────────────────────────
 if ((POST_ONLY == 1)); then
   if [[ -z "${PR_NUMBER}" ]] || [[ -z "${JSON_IN}" ]]; then
     ai_review::err "--post-only requires both --pr <number> and --json-in <file>."
@@ -723,8 +724,8 @@ pr_review::run() {
   # ── Gate ──────────────────────────────────────────────────────────────────
   # --gate fails the build on HIGH or CRITICAL findings. Lower findings are
   # still reported; the gate decides what fails, not what is reported. The
-  # verdict comes from _common so this agrees with the composite action and the
-  # sandbox wrapper. A verdict that cannot be determined (exit 2) blocks.
+  # verdict comes from _common so this agrees with the composite action.
+  # A verdict that cannot be determined (exit 2) blocks.
   if ((GATE_MODE == 1)); then
     local gate_rc=0
     printf '%s' "${review_json}" | ai_review::gate_blocks - || gate_rc=$?

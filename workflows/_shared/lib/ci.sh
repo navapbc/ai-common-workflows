@@ -252,8 +252,8 @@ ci::gate_result() {
 
   # One call does both jobs: validates and reports review_action, and decides
   # whether the review blocks. The decision lives in the engine's shared
-  # evaluator so this step, the engine's own --gate and the sandbox wrapper
-  # cannot drift apart on what "blocks" means.
+  # evaluator so this step and the engine's own --gate cannot drift apart on
+  # what "blocks" means.
   local out rc
   out="$(python3 "${verdict_py}" "${REVIEW_JSON}" 2>&1)"
   rc=$?

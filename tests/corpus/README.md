@@ -10,7 +10,7 @@ if the rubric were replaced with "report nothing". This corpus is the ratchet
 that stops a rubric edit quietly reducing detection.
 
 **It is not part of `bash tests/run.sh`.** Every case costs a real model call,
-so it runs on demand, like `tests/bats/sandbox.bats`.
+so it runs on demand rather than in CI.
 
 ## Running it
 

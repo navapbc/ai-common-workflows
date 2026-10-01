@@ -6,9 +6,9 @@ Invoked with the engine's findings JSON, as a file or on stdin:
     printf '%s' "${json}" | python3 gate_verdict.py -
 
 This is the single implementation of "does this review block". Before it there
-were four: the composite action's gate step, the security-review entrypoint,
-the sandbox wrapper, and (by reading `review_action` itself) the Jenkins
-plugin. Three of those compared `review_action != "APPROVE"`, which blocks on a
+were several: the composite action's gate step, the security-review
+entrypoint, and (by reading `review_action` itself) the Jenkins plugin. Most
+of those compared `review_action != "APPROVE"`, which blocks on a
 single LOW finding, because the AI emits a finding-bearing result for any
 finding at all. Keeping the comparison in one place is what lets the gate mean
 the same thing however the engine was launched.

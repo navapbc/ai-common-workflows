@@ -56,19 +56,6 @@ updates:
           - minor
           - patch
 
-  # ── Dockerfile ────────────────────────────────────────────────────────────
-  #
-  # Supports the experimental, unshipped egress sandbox
-  # (engines/_common/sandbox/). No workflow builds it, so there is no published
-  # image to be vulnerable — monthly, because the base image going stale is a
-  # real cost the day the sandbox ships and no cost before then.
-  - package-ecosystem: docker
-    directory: "/"
-    schedule:
-      interval: monthly
-    open-pull-requests-limit: 2
-    commit-message:
-      prefix: "deps(docker)"
 # ── What Dependabot cannot see ───────────────────────────────────────────────
 #
 # The AI CLI pins. `ci::install_ai_cli`

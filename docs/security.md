@@ -41,13 +41,16 @@ credentials, or to abuse the SCM token. Three things bound that:
 3. **Egress control on the runner** (below) — so data can't leave to an
    arbitrary destination.
 
-> **On the built-in sandbox.** An earlier design ran the review in a Docker
-> container with default-deny egress. It's not in this release — it was
-> unverified with real CLIs and broke on common container-in-container CI
-> topologies (see `engines/_common/sandbox/README.md`). Egress control is therefore
-> **your infrastructure's responsibility** today; a hardened built-in sandbox
-> is on the roadmap. This is the honest posture: the tool does not claim an
-> egress boundary it hasn't proven.
+> **There is no built-in sandbox, and no partial one.** The engine runs
+> natively on your runner or agent and enforces no network boundary.
+> **Egress control and sandboxing are your infrastructure's responsibility.**
+>
+> An earlier design ran the review in a Docker container with default-deny
+> egress. It never shipped, and the code was removed rather than left in the
+> tree looking available —
+> [ADR 0002](adr/0002-remove-the-experimental-egress-sandbox.md) records why,
+> and what a future attempt would have to prove first. The posture is the same
+> either way: the tool does not claim a boundary it does not enforce.
 
 ## Least-privilege credentials — do this
 
@@ -106,7 +109,7 @@ Scope the model credential to *invoking the one model*, not to the service.
 
 ## Egress control on the runner
 
-Because there's no built-in sandbox, constrain egress at the infrastructure
+Nothing in the engine constrains egress, so constrain it at the infrastructure
 layer around the runner/agent:
 
 - **Self-hosted runners / Jenkins agents in a VPC:** restrict the security
