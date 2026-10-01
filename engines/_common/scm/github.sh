@@ -14,9 +14,8 @@
 # GitHub Enterprise works through gh's own configuration: set GH_HOST to the
 # GHE hostname and GH_ENTERPRISE_TOKEN (or GH_TOKEN) for auth.
 #
-# In the sandboxed flow, none of this runs inside the review sandbox — the
-# post phase is a separate trusted process, and it is the only phase that
-# holds a GitHub token.
+# None of this runs during the AI phase. The post phase is a separate process,
+# and it is the only phase that holds a GitHub token.
 
 set -euo pipefail
 

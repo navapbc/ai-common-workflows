@@ -25,7 +25,7 @@ jobs:
           engines/security-compliance-review/harness/ai-security-compliance-audit \
             engines/test-classifier/harness/ai-test-classifier \
             engines/_common/harness/core.sh engines/_common/endpoints.sh \
-            engines/_common/scm/github.sh engines/_common/sandbox/sandbox.sh \
+            engines/_common/scm/github.sh \
             workflows/_shared/lib/ci.sh \
             tests/stubs/* tests/run.sh tests/lint_workflow_shell.sh
       - name: shfmt

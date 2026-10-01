@@ -4,9 +4,7 @@ This directory is the single source of truth for the AI security & compliance
 review. The
 composite GitHub Action references it in place, and the Jenkins plugin bundles
 a zip of it at build time and extracts it onto the agent. Both consume it
-through the contract on this page and nothing else. (The experimental sandbox
-image under `../_common/sandbox/` also copies it in, but is not shipped — see
-its README.)
+through the contract on this page and nothing else.
 
 ## Relocatability guarantee
 
@@ -42,10 +40,11 @@ bash <engines>/security-compliance-review/harness/ai-security-compliance-review 
 | `--jobs <n>` | Fan-out concurrency (default 4) |
 | `--list-batches` | Print the batch plan; no AI call |
 
-The `--json-out` / `--post-only` pair can split a run into a separable AI
-phase (no SCM access, no SCM token) and a trusted post phase (no AI). The
-shipped front ends run a single invocation; this seam is used by the
-experimental sandbox and reserved for a future token-stripped AI phase.
+The `--json-out` / `--post-only` pair splits a run into an AI phase (no SCM
+access, no SCM token) and a post phase that holds the token (no AI). This is
+how both shipped front ends keep the token out of the phase that reads
+untrusted PR content. It is a process boundary, not a sandbox — nothing here
+constrains the network.
 
 ## Environment
 
@@ -141,11 +140,10 @@ skills/profiles/<name>/     per-compliance-framework rubric additions/overrides 
 ../_common/                 the shared runtime (see ../_common/CONTRACT.md):
   harness/core.sh           flags, tool invocation, markers, adjudication, fan-out
   harness/gate_verdict.py   the one decision on whether a review blocks —
-                            shared with the composite action and the sandbox
+                            shared with the composite action
   harness/write_audit_report.py  the audit's report bundle: findings-first
                             _INDEX.md plus one doc per directory
   harness/fold_review_json.py  merges per-batch findings JSON (fan-out)
   endpoints.sh              provider → CLI env mapping + validation + audit line
   scm/github.sh + github_payload.py  PR discovery + review posting (SCM seam)
-  sandbox/                  EXPERIMENTAL Docker sandbox — not shipped
 ```

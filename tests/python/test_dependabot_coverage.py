@@ -57,7 +57,8 @@ def test_the_parser_finds_the_entries():
     [
         ("github-actions", "/", "the workflows under .github/workflows/"),
         ("maven", "/jenkins-plugin", "the Jenkins plugin reactor"),
-        ("docker", "/", "the sandbox image's Dockerfile"),
+        # No docker entry: the only Dockerfile served the experimental egress
+        # sandbox, removed with it. Re-add one with the manifest, not before.
     ],
 )
 def test_each_manifest_directory_is_watched(ecosystem, directory, why):

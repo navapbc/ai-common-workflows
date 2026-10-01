@@ -67,7 +67,7 @@ jobs:
       #
       # This was asked as a question first — "is it time for 0.1.1?" — five
       # commits after v0.1.0, all of them repo hygiene, docs and the unshipped
-      # sandbox image. Answering it meant running a diff by hand. A gate
+      # Jenkins plugin. Answering it meant running a diff by hand. A gate
       # answers it before anyone has to ask.
       - name: The release must change something a consumer runs
         run: |

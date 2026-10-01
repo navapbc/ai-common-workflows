@@ -75,8 +75,8 @@ GitHub does not guarantee those tarballs are byte-stable: a change to how they
 are generated has invalidated formula checksums across the ecosystem before, and
 a formula whose `sha256` stops matching is a broken install for everyone.
 Build-provenance attestation is also not possible on that channel, and the
-tarball would carry `tests/`, `jenkins-plugin/` and the Dockerfile unless
-`.gitattributes` grew `export-ignore` rules to trim them.
+tarball would carry `tests/` and `jenkins-plugin/` unless `.gitattributes`
+grew `export-ignore` rules to trim them.
 
 **Publish to PyPI, then build the formula from the sdist.** This would reuse
 `navapbc/homebrew-rebar`'s autobump workflow almost verbatim, which is a real
@@ -159,7 +159,7 @@ task.**
    the Jenkins plugin workflow, which already does exactly this for the `.hpi`:
    build, `sha256sum` sidecar, `actions/attest-build-provenance`, attach to the
    release. It needs `id-token: write` and `attestations: write` alongside
-   `contents: write`. Ship `engines/_common/` (minus the unshipped sandbox) and
+   `contents: write`. Ship `engines/_common/` and
    `engines/security-compliance-review/` whole rather than trimming to the
    audit's exact dependency set — the tarball then has the same layout as the
    repo, and there is no "we trimmed the wrong file" failure mode.

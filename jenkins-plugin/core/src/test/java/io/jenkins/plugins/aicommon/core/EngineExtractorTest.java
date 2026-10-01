@@ -31,7 +31,7 @@ public class EngineExtractorTest {
         assertTrue("entrypoint exists", entry.exists());
         assertTrue("entrypoint is executable", (entry.mode() & 0100) != 0);
         assertTrue("shared runtime present", dest.child("_common/harness/core.sh").exists());
-        assertTrue("sandbox present", dest.child("_common/sandbox/sandbox.sh").exists());
+        assertTrue("endpoints present", dest.child("_common/endpoints.sh").exists());
         assertTrue("skills present",
                 dest.child("security-compliance-review/skills/base/pr-review.md").exists());
     }

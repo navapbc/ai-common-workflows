@@ -912,8 +912,8 @@ ai_review::require_rubric() {
 # be determined — which a caller MUST treat as blocking, never as a pass. Logs
 # the reason and the blocking findings.
 #
-# The decision itself lives in harness/gate_verdict.py so the composite action,
-# this engine and the sandbox wrapper cannot drift apart on what "blocks" means.
+# The decision itself lives in harness/gate_verdict.py so the composite action
+# and this engine cannot drift apart on what "blocks" means.
 ai_review::gate_blocks() {
   local json="$1"
   local out rc

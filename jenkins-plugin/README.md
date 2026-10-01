@@ -54,8 +54,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @anthropic-ai/claude-code
 ```
 
-There is no built-in network sandbox in this release, so **egress control is
-your infrastructure's responsibility** — run the agent in a network that
+The engine enforces no network boundary, so **egress control and sandboxing
+are your infrastructure's responsibility** — run the agent in a network that
 restricts egress to your LLM endpoint, SCM, and the controller. See
 [docs/security.md](../docs/security.md).
 

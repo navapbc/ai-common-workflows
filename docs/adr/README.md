@@ -32,6 +32,7 @@ the decision.
 ## Records
 
 - [0001 — Distribute the codebase audit via Homebrew](0001-distribute-the-audit-via-homebrew.md) · **Proposed**
+- [0002 — Remove the experimental egress sandbox](0002-remove-the-experimental-egress-sandbox.md) · **Accepted**
 
 ## Decisions this repo has already made and not yet recorded
 

@@ -1,8 +1,8 @@
 """Tests for engines/_common/harness/gate_verdict.py — the single decision on
-whether a review result fails the build. Four call sites depend on it (the
-composite action's gate step, the security-review entrypoint's --gate, the
-sandbox wrapper, and the Jenkins plugin by way of review_action), so every
-fail-open path here is a gate that silently stops gating."""
+whether a review result fails the build. Three call sites depend on it (the
+composite action's gate step, the security-review entrypoint's --gate, and the
+Jenkins plugin by way of review_action), so every fail-open path here is a gate
+that silently stops gating."""
 
 import importlib.util
 import json

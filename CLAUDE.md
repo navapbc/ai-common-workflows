@@ -62,8 +62,11 @@ internals.
   This guarantee lives in the `action.yml` step `env:` blocks and the Jenkins
   `StepExecution` — keep it visible there, never hidden in shared bash.
 - **SHA-pin and least-privilege** everywhere in docs/examples; don't loosen.
-- **Egress is the consumer's responsibility** — there is no built-in sandbox.
-  Don't claim a network boundary the tool doesn't enforce.
+- **Egress and sandboxing are the consumer's responsibility.** The engine runs
+  natively on the runner or agent and enforces no network boundary. Don't claim
+  one. An experimental Docker/egress-proxy sandbox was removed in full — see
+  [docs/adr/0002](docs/adr/0002-remove-the-experimental-egress-sandbox.md) — so
+  there is no partial implementation to point at.
 - **Secrets via env, never argv or logs.**
 
 ## Sharp edges

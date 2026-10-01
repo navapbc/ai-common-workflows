@@ -173,8 +173,8 @@ in-boundary compute too — see [private-endpoints.md](private-endpoints.md).
 5. Post one PR review with inline suggestions — idempotently, so re-runs don't
    pile up duplicate comments.
 
-The review runs natively on your runner; there is no built-in network sandbox
-yet, so egress control is your infrastructure's responsibility — see
+The review runs natively on your runner and enforces no network boundary, so
+egress control and sandboxing are your infrastructure's responsibility — see
 [security.md](security.md).
 
 ## Why there are no language-specific rubrics

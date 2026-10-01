@@ -81,9 +81,10 @@ you think the documentation is wrong, but they aren't advisories:
   is the most useful form to send it in — see
   [tests/corpus/README.md](tests/corpus/README.md).
 - **No egress sandbox.** There is deliberately no network boundary around the
-  AI phase; restricting egress is the consumer's responsibility, and the docs
-  don't claim otherwise. `engines/_common/sandbox/` is experimental and
-  unshipped.
+  AI phase. Restricting egress — and sandboxing the run at all — is the
+  consumer's responsibility, and the docs don't claim otherwise. There is no
+  partial implementation in the tree either; see
+  [docs/adr/0002](docs/adr/0002-remove-the-experimental-egress-sandbox.md).
 - **Diffs leaving your perimeter on the public API.** Expected, and the reason
   Bedrock/Vertex/Azure OpenAI and internal-gateway support exists. Choosing a
   provider is a deployment decision.

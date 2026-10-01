@@ -26,7 +26,6 @@ engines/
     endpoints.sh                     #   provider → CLI mapping (api · bedrock · vertex · azure)
     scm/<name>.sh                    #   SCM seam — github ships; others implement 3 fns
     scm/github_payload.py            #   findings JSON → GitHub review payload
-    sandbox/                         #   experimental egress sandbox; NOT shipped or enabled
     CONTRACT.md                      #   the interface every entrypoint targets
   security-compliance-review/        # workflow 1
     harness/ai-security-compliance-review             #   THIN entrypoint → sources _common
@@ -109,8 +108,9 @@ Every workflow in this repo follows these, and a new one inherits them:
    does (the AI phase runs with no SCM token in scope).
 4. **Secrets via env, never argv or logs.** No secret should appear in a process
    command line or in build output.
-5. **Egress is the consumer's boundary.** There is no built-in network sandbox;
-   state that plainly and point at [security.md](security.md).
+5. **Egress is the consumer's boundary.** Nothing here enforces a network
+   boundary, and a new workflow must not imply one. State it plainly and point
+   at [security.md](security.md).
 6. **Support a dry run.** A `--dry-run` / `dry-run: true` path that prints the
    plan without calling the model or writing anything makes the workflow safe to
    trial and easy to test.

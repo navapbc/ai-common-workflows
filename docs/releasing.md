@@ -16,9 +16,8 @@ reading upgrades.
 git diff --name-only "$(git describe --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*')"..main -- workflows engines
 ```
 
-Empty output means there is nothing to release. Repo hygiene, docs, tests, the
-Jenkins plugin and the unshipped sandbox image all live outside those two
-directories on purpose — they are real work, and none of them changes what a
+Empty output means there is nothing to release. Repo hygiene, docs, tests and
+the Jenkins plugin all live outside those two directories on purpose — they are real work, and none of them changes what a
 consumer's job runs.
 
 Don't take this on trust: the workflow **refuses** such a tag, before anything

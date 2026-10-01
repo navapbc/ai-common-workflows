@@ -18,7 +18,6 @@ adapters; the generic harness is written once and never copied (see
      re-expressed; can't run the           harness/core.sh  ──▶ AI CLI (claude/codex/copilot)
      harness)                              endpoints.sh          via api/bedrock/vertex/azure/gateway
                                            scm/github.sh    ──▶ SCM (gh api) — post phase only
-                                           sandbox/  (experimental, not shipped)
 ```
 
 Workflows today: **security-compliance-review** (`harness/ai-security-compliance-review`) and
@@ -73,8 +72,10 @@ the AI phase; and if `actions/checkout` persisted credentials, a token is in
 `.git/config` regardless — check out with `persist-credentials: false` for the
 strongest isolation (see [security.md](../docs/security.md)).
 
-The experimental egress sandbox lives in `engines/_common/sandbox/` (see its
-README) and is not shipped.
+The engine enforces no network boundary: it runs natively on the runner or
+agent, and egress control is the consumer's infrastructure responsibility. An
+experimental Docker/egress-proxy sandbox was removed rather than left in the
+tree — see [ADR 0002](adr/0002-remove-the-experimental-egress-sandbox.md).
 
 ## The SCM seam
 
