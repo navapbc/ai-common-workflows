@@ -4,7 +4,8 @@
 # AI test classifier: triages each failing test of a pull request's change
 # into APPLICATION_BUG / TEST_BUG / FLAKY_FAILURE / ENVIRONMENT_ISSUE and
 # (optionally) posts ONE advisory PR comment with the verdicts and a 👍/👎
-# feedback ask. Diagnostic only — it never edits code or tests.
+# feedback ask. A run that found nothing to triage posts nothing unless
+# AI_REVIEW_POST_WHEN_CLEAN=1. Diagnostic only — it never edits code or tests.
 #
 # Usage:
 #   ai-test-classifier                                # local: committed+staged, report-only
@@ -166,7 +167,8 @@ while [[ $# -gt 0 ]]; do
       # through the real posting/metrics path — validate the comment + 👍/👎 +
       # Testing Events pipeline without a live (slow/costly) agent run. Pair with
       # --post-comment / --submit to actually post + record. Set
-      # AI_SIMULATE_RESULT=NO_ACTION to exercise the true-negative path;
+      # AI_SIMULATE_RESULT=NO_ACTION to exercise the true-negative path (quiet
+      # unless AI_REVIEW_POST_WHEN_CLEAN=true or it supersedes a verdict);
       # defaults to a CLASSIFIED filler.
       SIMULATE=1
       shift
@@ -585,6 +587,14 @@ Environment:
                        diff (0; same as --no-run-suite).
   AI_SUITE_MAX_TURNS / AI_SUITE_TIMEOUT_SECS
                        Agentic turn budget (80) and hard timeout (1500s).
+  AI_REVIEW_POST_WHEN_CLEAN
+                       Post the "no action required" comment on EVERY clean
+                       run (default false). The NO_ACTION result marker and the
+                       job's own check already report a clean run; this makes
+                       the true negative — and its 👍/👎 reaction — visible on
+                       the PR. Off, a clean run still posts when it supersedes
+                       a verdict posted on an earlier push. Verdicts always
+                       post either way.
   METRICSAI_WEBHOOK_URL / METRICSAI_WEBHOOK_KEY
                        When BOTH are set, an interactive run prompts "helpful?"
                        and writes a metrics row automatically (no --submit
@@ -610,6 +620,121 @@ fi
 # text — the shared extractor, parameterized by AI_REVIEW_JSON_MARKER above.
 extract_classifier_json() {
   ai_review::extract_review_json "$1"
+}
+
+# Post the "no action required" comment when nothing needed triage?
+#
+# Default false. A green PR already shows the job's check; adding "I looked and
+# nothing failed" to every green PR is a bot comment per PR per push, and on a
+# healthy repo that is most pushes — which is how the classifier becomes
+# wallpaper and the one verdict that matters gets scrolled past. Teams tuning
+# the classifier turn it back on: the true negative's 👍/👎 reaction is the only
+# feedback a true negative can produce, and the harvester needs a comment to
+# attach it to. Same spellings and the same loud-on-typo rule as the security
+# review's AI_REVIEW_POST_WHEN_CLEAN (engines/_common/scm/github_payload.py),
+# so one setting means one thing across the workflows.
+post_when_clean() {
+  local raw
+  raw="$(printf '%s' "${AI_REVIEW_POST_WHEN_CLEAN:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  case "${raw}" in
+    "" | false | 0 | no | off) return 1 ;;
+    true | 1 | yes | on) return 0 ;;
+  esac
+  # A typo must not silently choose. Loud, and default to the quiet behaviour,
+  # which is the one that cannot spam a PR.
+  ai_review::warn "AI_REVIEW_POST_WHEN_CLEAN='${AI_REVIEW_POST_WHEN_CLEAN}' is not a boolean; treating it as false (no comment posted when nothing needed triage)."
+  return 1
+}
+
+# True (exit 0) when the classifier JSON carries no classifications — the agent
+# ran and found nothing to triage. Unparseable JSON is NOT clean: that is the
+# posting path's error to report, not a reason to stay silent.
+classifier_json_is_clean() {
+  local classifier_json="$1"
+  printf '%s' "${classifier_json}" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if not (data.get("classifications") or []) else 1)
+' 2>/dev/null
+}
+
+# True (exit 0) when the newest classifier comment already on the PR is a
+# VERDICT (the triage table), as opposed to no classifier comment at all or a
+# "no action required" one. This is the one clean run that carries
+# information: a push that fixed what an earlier push was flagged for. Staying
+# quiet there would leave the stale verdict as the PR's last classifier word
+# (the engine never edits or minimizes earlier comments), so the quiet default
+# posts exactly then — and only then, so clean pushes never chain no-action
+# comments. Both comment surfaces are read (review comments are the default
+# post; issue comments are the fallback), matched on the stable anchor line the
+# renderer always emits first. Any failure — no gh, no slug, API error — is
+# "not a verdict": a lookup problem must never turn into a comment on a
+# healthy PR. Args: PR number.
+latest_classifier_comment_is_verdict() {
+  local pr_number="$1"
+  command -v gh &>/dev/null || return 1
+  command -v python3 &>/dev/null || return 1
+  local repo_slug
+  repo_slug="$(ai_review::repo_slug 2>/dev/null)" || return 1
+  [[ -n "${repo_slug}" ]] || return 1
+  local existing
+  existing="$({
+    gh api --paginate "repos/${repo_slug}/pulls/${pr_number}/comments" \
+      --jq '.[] | {created_at: .created_at, body: .body}' 2>/dev/null || true
+    gh api --paginate "repos/${repo_slug}/issues/${pr_number}/comments" \
+      --jq '.[] | {created_at: .created_at, body: .body}' 2>/dev/null || true
+  })"
+  [[ -n "${existing}" ]] || return 1
+  printf '%s\n' "${existing}" | python3 -c '
+import json, sys
+ANCHOR = "test-classifier: AI triage of failing tests"
+latest = None
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        c = json.loads(line)
+    except Exception:
+        continue
+    body = c.get("body") or ""
+    if not body.startswith(ANCHOR):
+        continue
+    key = c.get("created_at") or ""
+    if latest is None or key > latest[0]:
+        latest = (key, body)
+if latest is None:
+    sys.exit(1)
+sys.exit(1 if "no action required" in latest[1] else 0)
+'
+}
+
+# The ONE posting seam for both post surfaces (the in-process --post-comment run
+# and the trusted --post-only phase): render the body and post it — unless the
+# run is clean and the caller has not asked for clean runs to post. The one
+# exception to quiet: a clean run that supersedes a posted verdict (see
+# latest_classifier_comment_is_verdict). Args: PR number, classifier JSON
+# block, want_reaction_ask (see render_pr_comment_body). Returns 0 whether it
+# posted or deliberately stayed quiet; the log says which.
+post_classification_comment() {
+  local pr_number="$1"
+  local classifier_json="$2"
+  local want_reaction_ask="${3:-1}"
+
+  if classifier_json_is_clean "${classifier_json}" && ! post_when_clean; then
+    if latest_classifier_comment_is_verdict "${pr_number}"; then
+      echo "[test-classifier] Nothing needed triage, but the PR's latest classifier comment is a verdict; posting 'no action required' so it is visibly superseded."
+    else
+      echo "[test-classifier] Nothing needed triage; not posting a comment. The job's own check is the signal that it ran. Set post-when-clean / AI_REVIEW_POST_WHEN_CLEAN=true to post the 'no action required' comment anyway."
+      return 0
+    fi
+  fi
+  local comment_body
+  comment_body="$(render_pr_comment_body "${classifier_json}" "${want_reaction_ask}")"
+  post_comment_to_github "${pr_number}" "${comment_body}"
 }
 
 # Strip the machine-only markers from the AI output for HUMAN display: the
@@ -732,11 +857,12 @@ else:
     banner = ("> **Inferred, not observed** — the suite was not run for this triage, so these "
               "verdicts are predicted from the diff. See the summary for why.")
 
-# True-negative branch: the agent ran and found nothing to triage. We STILL post
-# a comment (not silence) so the developer can 👍/👎 it — that reaction is the
-# only tuning signal a true negative can produce, and the metrics harvester needs
-# a comment to attach the reaction to. Keep the same anchor line above so the
-# harvester matches it by the `test-classifier:` prefix.
+# True-negative branch: the agent ran and found nothing to triage. Rendered only
+# when post-when-clean is on (post_classification_comment decides; by default a
+# clean run posts nothing). When it does post, it is so the developer can 👍/👎
+# it — that reaction is the only tuning signal a true negative can produce, and
+# the metrics harvester needs a comment to attach the reaction to. Keep the same
+# anchor line above so the harvester matches it by the `test-classifier:` prefix.
 if not classifications:
     lines.append("## AI Test Classifier — no action required")
     lines.append("")
@@ -1082,7 +1208,9 @@ print(json.dumps(dict(zip(keys, sys.argv[1:1+len(keys)]))))
 # lets the full downstream path (parse_result → extract_classifier_json →
 # render_pr_comment_body → post_comment_to_github → submit_metrics_row) run
 # without invoking the agent. Set AI_SIMULATE_RESULT=NO_ACTION to exercise the
-# true-negative comment + row instead of the default CLASSIFIED table.
+# true-negative path instead of the default CLASSIFIED table (its comment posts
+# only with AI_REVIEW_POST_WHEN_CLEAN=true or when superseding a verdict; the
+# metrics row fires either way).
 ai_review::synthetic_output() {
   local kind="${AI_SIMULATE_RESULT:-CLASSIFIED}"
   local mode="INFERRED"
@@ -1115,7 +1243,8 @@ SIM
 test_classifier::run() {
   # --post-only: trusted post phase. Post a previously produced JSON, no AI
   # call. Parse args so --against resolves (the comment anchors to a changed
-  # file); the CI-side comment always carries the 👍/👎 ask.
+  # file); the CI-side comment always carries the 👍/👎 ask. A clean run posts
+  # nothing unless AI_REVIEW_POST_WHEN_CLEAN says otherwise.
   if ((POST_ONLY == 1)); then
     if [[ -z "${PR_NUMBER}" ]]; then
       ai_review::err "--post-only requires --pr <number>."
@@ -1126,14 +1255,13 @@ test_classifier::run() {
       exit 2
     fi
     ai_review::parse_args "${REMAINING_FOR_LIB[@]+"${REMAINING_FOR_LIB[@]}"}"
-    local json_block comment_body
+    local json_block
     json_block="$(cat "${JSON_IN}")"
     if [[ -z "${json_block}" ]]; then
       ai_review::err "--json-in file is empty: ${JSON_IN}"
       exit 1
     fi
-    comment_body="$(render_pr_comment_body "${json_block}" 1)"
-    post_comment_to_github "${PR_NUMBER}" "${comment_body}"
+    post_classification_comment "${PR_NUMBER}" "${json_block}" 1
     exit 0
   fi
 
@@ -1285,14 +1413,14 @@ test_classifier::run() {
 
   # ── Post ONE PR comment with the verdicts. ────────────────────────────────
   # --post-comment is what CI passes to actually post; omit it for a local dry
-  # view (the JSON/report still prints to stdout). A comment is posted on BOTH
-  # results: CLASSIFIED (the verdict table) AND NO_ACTION (a "no action required"
-  # comment). The true negative is posted so its 👍/👎 reaction can be harvested
-  # by the metrics loop — suppressing it (the earlier behavior) made true
-  # negatives invisible to tuning. render_pr_comment_body renders a dedicated
-  # "no action required" body when classifications is empty. The comment carries
-  # the 👍/👎 reaction ask on a CI/--post-comment run; when we capture the signal
-  # via the terminal prompt (--submit or auto-submit) the ask is omitted.
+  # view (the JSON/report still prints to stdout). CLASSIFIED always posts the
+  # verdict table. NO_ACTION posts a "no action required" body only when
+  # AI_REVIEW_POST_WHEN_CLEAN is on: the true negative's 👍/👎 reaction is the
+  # only tuning signal it can produce, but on a healthy repo it is also a bot
+  # comment on nearly every push, so it is opt-in (post_classification_comment
+  # decides). The comment carries the 👍/👎 reaction ask on a CI/--post-comment
+  # run; when we capture the signal via the terminal prompt (--submit or
+  # auto-submit) the ask is omitted.
   if ((POST_COMMENT == 1)); then
     if [[ -z "${AI_REVIEW_PR_NUMBER:-}" ]]; then
       ai_review::err "--post-comment requires a discoverable PR. Use --pr <number> or ensure 'gh pr view' resolves. (A --unpushed local run has no PR, so it is report-only — drop --post-comment.)"
@@ -1312,9 +1440,7 @@ test_classifier::run() {
     # ask (1); prompt-capturing run → no ask (0). Both surfaces stay alive.
     local want_reaction_ask=1
     ((do_submit == 1)) && want_reaction_ask=0
-    local comment_body
-    comment_body="$(render_pr_comment_body "${json_block}" "${want_reaction_ask}")"
-    post_comment_to_github "${AI_REVIEW_PR_NUMBER}" "${comment_body}"
+    post_classification_comment "${AI_REVIEW_PR_NUMBER}" "${json_block}" "${want_reaction_ask}"
   fi
 
   # ── Capture the helpfulness signal + write the Testing Events row. ─────────

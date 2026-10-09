@@ -6,6 +6,27 @@ follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The test classifier no longer comments on a PR when nothing needed
+  triage.** A "no action required" comment on every green push was one more
+  bot comment in timelines already full of them, several per PR, with nothing
+  for the author to do — all noise, no signal, as a consumer put it. The job's
+  own check already shows the classifier ran, and the `result` output still
+  reports `NO_ACTION`. The comment existed so a true negative's 👍/👎 reaction
+  could be harvested for tuning, so that stays available: set
+  **`post-when-clean: true`** (`AI_REVIEW_POST_WHEN_CLEAN=true` on the engine)
+  to post it. Same name, same spellings, and the same loud-on-typo default as
+  the security review's setting, so one knob means one thing across the
+  workflows. Verdicts always post, whatever the setting.
+  One clean run still posts by default: the one that supersedes a verdict.
+  The engine never edits or hides earlier comments, so a fix push that came
+  back clean after a `APPLICATION_BUG` verdict would otherwise leave that
+  stale verdict as the PR's last classifier word. The post phase now reads the
+  PR's newest classifier comment first; a verdict there means "no action
+  required" posts, a no-action comment there means nothing posts (so clean
+  pushes never chain), and a failed lookup stays quiet.
+
 ### Added
 
 - **Release automation**, re-cut against `main` rather than merging #10.

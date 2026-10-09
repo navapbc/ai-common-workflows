@@ -10,7 +10,9 @@
 # `run-suite: false` for a read-only pass that predicts from the diff.
 #
 # Run it in parallel with your build — no `needs:`. It is advisory and never
-# gates the build unless you opt in with `gate: true`.
+# gates the build unless you opt in with `gate: true`. When nothing needed
+# triage it posts nothing; set `post-when-clean: true` to get the "no action
+# required" comment (and its 👍/👎 feedback) on the PR anyway.
 name: AI test classifier
 on:
   pull_request:
