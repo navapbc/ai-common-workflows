@@ -2,7 +2,8 @@
 
 `uses: navapbc/ai-common-workflows/workflows/test-classifier@<commit-sha>` — a
 composite action that triages the failing tests on a pull request and posts
-one advisory PR comment. Pin to a commit SHA ([why](security.md)).
+one advisory PR comment when there is something to triage. Pin to a commit SHA
+([why](security.md)).
 
 ## The problem it solves
 
@@ -74,13 +75,43 @@ when the suite can't run (no test command, missing toolchain) — and never
 applies IaC test suites without a guaranteed teardown (see the skill's IaC
 ladder in `engines/test-classifier/skills/base/test-classifier.md`).
 
+## Clean PRs stay quiet
+
+When nothing needed triage, the classifier posts nothing. The job's own check
+already shows that it ran, and a "no action required" comment on every green
+push is one more bot comment in a PR timeline that is already full of them —
+which is how teams stop reading the one verdict that matters. The run log says
+what happened:
+
+```
+[test-classifier] Nothing needed triage; not posting a comment. The job's own
+check is the signal that it ran. Set post-when-clean /
+AI_REVIEW_POST_WHEN_CLEAN=true to post the 'no action required' comment anyway.
+```
+
+One clean run still posts: the one that supersedes a verdict. If an earlier
+push on the same PR got a verdict comment and a later push comes back clean,
+the classifier posts "no action required" so the stale verdict is not the last
+thing a reviewer sees. It never edits or hides earlier comments, so this is
+how a fix becomes visible. It checks the PR's newest classifier comment before
+staying quiet, and a clean push after a no-action comment posts nothing, so
+clean pushes never chain. If that lookup fails, the run stays quiet.
+
+Set `post-when-clean: true` to post the true negative on every clean run
+instead. The reason to want it is the feedback loop below: a true negative's
+👍/👎 reaction is the only signal it can produce, so a team actively measuring
+the classifier's precision may prefer the comment to the silence. Verdicts
+always post, whatever the setting. The `result` output reports `NO_ACTION`
+either way.
+
 ## The feedback loop
 
 The comment ends with a **React 👍 if right / 👎 if wrong** ask (on a 👎,
 reply with a one-line reason). Reactions and replies are harvestable off the
 GitHub API, which is how a team measures classifier precision over time and
 decides whether to trust it with more (e.g. gating). Nothing in this repo
-depends on any particular metrics backend.
+depends on any particular metrics backend. True negatives only enter that loop
+with `post-when-clean: true` (see above).
 
 ## Inputs
 
@@ -95,6 +126,7 @@ Endpoint inputs are shared with the security review and apply per tool:
 | `openai-api-key` | — | OpenAI key (codex) |
 | `github-token` | `${{ github.token }}` | Token to post the comment (`pull-requests: write`) |
 | `post-comment` | `true` | Post the one classification comment |
+| `post-when-clean` | `false` | Post the "no action required" comment on every clean run. Off by default: the job's own check already shows the classifier ran, so a green PR gets no comment, except a clean push that supersedes an earlier verdict. Turn it on to keep every true negative in the 👍/👎 feedback loop. Verdicts always post |
 | `gate` | `false` | Fail the job when failing tests were classified |
 | `dry-run` | `false` | Print the plan; no AI call |
 | `pr-number` | event PR | Override the PR number. Off a `pull_request` event, set `base-ref` too |

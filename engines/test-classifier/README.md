@@ -24,8 +24,10 @@ For each failing test of the change under test, the classifier emits one of
 four verdicts — `APPLICATION_BUG`, `TEST_BUG`, `FLAKY_FAILURE`,
 `ENVIRONMENT_ISSUE` — with a category, a confidence, and a one-line rationale,
 then posts ONE PR comment with the verdict table and a 👍/👎 reaction ask (the
-tuning signal). It is diagnostic only: it never edits code or tests. Two
-signal modes:
+tuning signal). A run that found nothing to triage posts nothing, unless
+`AI_REVIEW_POST_WHEN_CLEAN=1` or the PR's latest classifier comment is a
+verdict that this clean run supersedes. It is diagnostic only: it never edits
+code or tests. Two signal modes:
 
 - **OBSERVED** (default): the agent locates, installs, and runs the repo's
   test suite, then classifies the failures it actually observed.
@@ -78,6 +80,7 @@ to the post phase so the comment can anchor to a changed file.
 | `AI_RUN_SUITE` | no | `1` (default, OBSERVED) \| `0` (INFERRED; same as `--no-run-suite`) |
 | `AI_SUITE_MAX_TURNS` | no | Agentic turn budget for the suite run (default 80) |
 | `AI_SUITE_TIMEOUT_SECS` | no | Hard wall-clock ceiling on the AI call (default 1500) |
+| `AI_REVIEW_POST_WHEN_CLEAN` | no | Post the "no action required" comment on every clean run (default `false`). The `NO_ACTION` result marker and the job's own check already report a clean run; this makes the true negative, and its 👍/👎 reaction, visible on the PR. Off, a clean run still posts when it supersedes a verdict posted on an earlier push. Verdicts always post |
 | `AI_REVIEW_REPO` | no | `owner/name` override when the PR lives off the `origin` remote |
 | `GITHUB_TOKEN` / `GH_TOKEN` | posting | Auth for `gh`; only the post phase needs it |
 | `METRICSAI_WEBHOOK_URL`, `METRICSAI_WEBHOOK_KEY`, `METRICSAI_WEBHOOK_TAB` | no | Optional local metrics sink (interactive runs only) |
