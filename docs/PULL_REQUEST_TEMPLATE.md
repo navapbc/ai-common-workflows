@@ -20,6 +20,7 @@ Which AI Tool(s) did you use:
 - [ ] Claude_Code
 - [ ] Claude
 - [ ] Gemini
+- [ ] OpenAI_Codex
 - [ ] Google_Search_AI_assist
 
 Optional — for learning, not audited:
