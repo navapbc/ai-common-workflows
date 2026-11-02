@@ -1,4 +1,0 @@
-## Test Classifier Report
-
-Something went sideways and the agent forgot the contract: there is a report
-but no JSON block and no result marker.
