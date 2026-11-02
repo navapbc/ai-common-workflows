@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Static checks (shell, actions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: embedded workflow shell
+        run: bash tests/lint_workflow_shell.sh
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -x -P SCRIPTDIR \
+            engines/security-compliance-review/harness/ai-security-compliance-review \
+          engines/security-compliance-review/harness/ai-security-compliance-audit \
+            engines/test-classifier/harness/ai-test-classifier \
+            engines/_common/harness/core.sh engines/_common/endpoints.sh \
+            engines/_common/scm/github.sh \
+            workflows/_shared/lib/ci.sh \
+            tests/stubs/* tests/run.sh tests/lint_workflow_shell.sh
+      - name: shfmt
+        run: |
+          curl -fsSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
+          shfmt -d -i 2 -ci engines workflows/_shared/lib
+      - name: actionlint
+        uses: reviewdog/action-actionlint@v1
+        with:
+          fail_level: error
+
+  python:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: python -m pytest tests/python/ -q
+
+  bats:
+    name: bats (engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y bats
+      - name: core + e2e + ci_shared + test_classifier + release
+        run: |
+          bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \
+            tests/bats/test_classifier.bats tests/bats/audit.bats \
+            tests/bats/release.bats
+
+  action-self-test:
+    name: Action self-test (dry-run, no keys)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # Dry-run exercises the composite wiring and env mapping without an AI
+      # CLI or keys. On push (no PR context) the action skips cleanly; on a PR
+      # it runs the dry-run plan.
+      - uses: ./workflows/security-compliance-review
+        with:
+          ai-tool: claude
+          dry-run: true
+          post-comments: false
+          install-cli: false
+      - uses: ./workflows/test-classifier
+        with:
+          ai-tool: claude
+          dry-run: true
+          post-comment: false
+          install-cli: false

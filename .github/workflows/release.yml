@@ -1,0 +1,180 @@
+# Cut a release of the GitHub Action from a tag.
+#
+#   git tag -s v1.0.0 -m "v1.0.0" && git push origin v1.0.0
+#
+# `-s` is a habit, not a gate: nothing below inspects the tag object, so `-a`
+# works if you have no GPG key. Push the tag from a terminal — publishing from
+# the GitHub UI creates the release itself, and `gh release create` below then
+# fails on a release that already exists.
+#
+# What a release IS here: a GitHub Release pointing at one immutable commit,
+# plus notes telling a consumer the SHA to pin. Nothing is built or uploaded —
+# the action is source that GitHub fetches at `uses:` time, so the tag's commit
+# *is* the artifact.
+#
+# What a release is NOT: a moving `vX` alias. An earlier draft force-moved `v1`
+# each release and offered `@v1` as a pin. That is the mutable pointer
+# docs/security.md forbids — "a tag can be deleted and re-created against
+# different content, and nothing here would notice" — and it would have shipped
+# a supported way to defeat the rule the rest of the repo enforces. Releases
+# exist so a consumer can FIND a SHA, not so they can avoid pinning one.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*" # pre-releases: v1.2.0-rc.1
+      # `jenkins-plugin-v*` is a separate namespace, deliberately unmatched.
+
+permissions:
+  contents: write # create the release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never interrupt a half-created release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # need main's history for the ancestry check
+
+      # A tag can be pushed from anywhere. Releasing a commit that never
+      # reached main would ship code no CI run ever saw.
+      - name: The tag must be on main
+        run: |
+          set -euo pipefail
+          # `FETCH_HEAD`, not `origin/FETCH_HEAD` — the latter is not a ref, so
+          # `merge-base` exits non-zero on every tag and the gate rejects
+          # everything. And no `--depth`: checkout already fetched the full
+          # history, and a shallow fetch on top of it would hide a merge base
+          # older than the cutoff, turning this back into a blanket reject.
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
+            echo "::error::${GITHUB_REF_NAME} (${GITHUB_SHA}) is not an ancestor of main. Release only from merged commits."
+            exit 1
+          fi
+          echo "Tag is on main."
+
+      # A release exists so a consumer can FIND a SHA (see the header). If the
+      # code behind that SHA is identical to the last release's, the version
+      # number is the only thing that changed, and an upgrade that changes
+      # nothing is how people learn to stop reading upgrades.
+      #
+      # This was asked as a question first — "is it time for 0.1.1?" — five
+      # commits after v0.1.0, all of them repo hygiene, docs and the unshipped
+      # Jenkins plugin. Answering it meant running a diff by hand. A gate
+      # answers it before anyone has to ask.
+      - name: The release must change something a consumer runs
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+
+          # Baseline is the most recent STABLE release reachable from this tag.
+          # Pre-releases are deliberately not baselines: promoting
+          # v1.2.0-rc.1 to v1.2.0 has an identical surface by design, and that
+          # is a legitimate release this gate must not refuse.
+          # No grep pipeline here on purpose. `set -o pipefail` plus a `grep`
+          # that matches nothing makes the assignment fail, which under
+          # `set -e` kills the step — so the first release of a fresh repo,
+          # the one case with no baseline, was refused by the gate meant to
+          # wave it through. Caught by
+          # "change gate: the first release has no baseline and passes".
+          tags="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname --merged "${GITHUB_SHA}" || true)"
+          prev=""
+          while read -r t; do
+            [[ -z "${t}" ]] && continue
+            [[ "${t}" == *-* ]] && continue                 # a pre-release
+            [[ "${t}" == "${GITHUB_REF_NAME}" ]] && continue # this tag
+            prev="${t}"
+            break
+          done <<<"${tags}"
+
+          if [[ -z "${prev}" ]]; then
+            echo "No earlier stable release to compare against; nothing to check."
+            exit 0
+          fi
+
+          # `workflows/` and `engines/` are what a consumer's job actually
+          # runs. Docs are shipped too, but a doc fix does not require anyone
+          # to move a pin — they can read docs on main.
+          changed="$(git diff --name-only "${prev}" "${GITHUB_SHA}" -- workflows engines)"
+
+          if [[ -z "${changed}" ]]; then
+            echo "::error::${GITHUB_REF_NAME} runs exactly the same code as ${prev}: no change under workflows/ or engines/."
+            echo "::error::Nothing was published, so delete the tag and release when there is something to release:"
+            echo "::error::  git tag -d ${GITHUB_REF_NAME} && git push origin :refs/tags/${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+          echo "Changed since ${prev}:"
+          while read -r f; do echo "  ${f}"; done <<<"${changed}"
+
+      # The consumer-facing surface, derived rather than listed. A hardcoded
+      # list is how the previous attempt broke: it named
+      # `harness/ai-pr-review` long after the file was renamed, so every
+      # release would have failed on a check that was itself stale. Globs go
+      # stale only if the layout changes, and then they fail loudly — an
+      # unmatched glob stays literal and trips the -e test below.
+      - name: The consumer surface is present and runnable
+        run: |
+          set -euo pipefail
+          missing=0
+
+          for path in \
+            workflows/*/action.yml \
+            workflows/_shared/lib/ci.sh \
+            engines/_common/harness/core.sh \
+            engines/_common/endpoints.sh \
+            engines/*/harness/ai-*; do
+            if [[ ! -e "${path}" ]]; then
+              echo "::error::missing from the release tree: ${path}"
+              missing=1
+            fi
+          done
+
+          # Entrypoints are invoked as `bash <file>` by the actions, so a
+          # missing exec bit is invisible in CI — and breaks the moment someone
+          # installs the tree and runs it directly.
+          for entrypoint in engines/*/harness/ai-*; do
+            if [[ -e "${entrypoint}" && ! -x "${entrypoint}" ]]; then
+              echo "::error::not executable: ${entrypoint}"
+              missing=1
+            fi
+          done
+
+          ((missing == 0)) || exit 1
+          echo "Surface present; entrypoints executable."
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          prerelease=()
+          [[ "${version}" == *-* ]] && prerelease=(--prerelease)
+
+          {
+            echo "## Pin this release by SHA"
+            echo
+            echo '```yaml'
+            echo "      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@${GITHUB_SHA} # ${version}"
+            echo '```'
+            echo
+            echo "Pin the 40-character SHA, not \`${version}\`. A tag is a mutable"
+            echo "pointer — it can be deleted and re-created against different content,"
+            echo "and nothing in your workflow would notice. The trailing comment records"
+            echo "which release the SHA is, so an upgrade stays a reviewable one-line diff."
+            echo "See [docs/security.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/security.md)."
+          } > notes.md
+
+          gh release create "${version}" \
+            --title "${version}" \
+            --notes-file notes.md \
+            --generate-notes \
+            "${prerelease[@]+"${prerelease[@]}"}"

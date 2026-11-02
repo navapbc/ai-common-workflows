@@ -1,0 +1,11 @@
+{
+  "clean": false,
+  "findings": [
+    {
+      "path": "src/enroll.py",
+      "min_severity": "HIGH",
+      "perspective": "security",
+      "must_match": ["log"]
+    }
+  ]
+}
