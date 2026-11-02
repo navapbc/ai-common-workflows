@@ -1,0 +1,12 @@
+{
+  "clean": false,
+  "findings": [],
+  "forbidden": [
+    {
+      "path": "infra/rds.tf",
+      "min_severity": "LOW",
+      "perspective": "compliance",
+      "must_match": ["encrypt"]
+    }
+  ]
+}

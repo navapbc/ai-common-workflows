@@ -1,0 +1,591 @@
+"""Tests for engines/_common/scm/github_payload.py — the review-JSON → GitHub API
+payload transform. This is the highest-defect-density code in the engine
+(idempotency de-dup, diff-position filtering, 422-avoidance), so it gets the
+most exhaustive coverage."""
+
+import importlib.util
+import json
+import os
+import pathlib
+
+import pytest
+
+_MODULE_PATH = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "engines" / "_common" / "scm" / "github_payload.py"
+)
+_spec = importlib.util.spec_from_file_location("github_payload", _MODULE_PATH)
+gp = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gp)
+
+
+def _finding(path="src/app.py", line=3, perspective="security", severity="CRITICAL", **kw):
+    base = {
+        "path": path,
+        "line": line,
+        "side": "RIGHT",
+        "perspective": perspective,
+        "severity": severity,
+        "title": "Some finding",
+        "description": "Details.",
+        "suggestion_kind": "applicable",
+        "suggestion_body": "fixed = True",
+    }
+    base.update(kw)
+    return base
+
+
+def _review(action="COMMENT", comments=None):
+    return {"review_action": action, "summary": "s", "comments": comments or []}
+
+
+def _existing(path, line, perspective, ours=True):
+    marker = "_Reviewed by AI, was this helpful?" if ours else "human note"
+    body = f"{perspective}(high): title\n\n{marker}"
+    return json.dumps({"path": path, "line": line, "body": body})
+
+
+# ── render_body ──────────────────────────────────────────────────────────────
+
+def test_render_body_applicable_uses_suggestion_fence():
+    body = gp.render_body(_finding(suggestion_kind="applicable"))
+    assert "```suggestion" in body
+    assert body.rstrip().endswith("👎._")
+
+
+def test_render_body_reference_uses_language_fence():
+    body = gp.render_body(_finding(suggestion_kind="reference", suggestion_language="hcl"))
+    assert "```hcl" in body
+    assert "```suggestion" not in body
+
+
+# ── patch parsing / diff positions ──────────────────────────────────────────
+
+def test_parse_patch_added_and_context_lines():
+    patch = "@@ -1,2 +1,3 @@\n context\n+added\n-removed\n context2"
+    right, left = gp.parse_patch(patch)
+    # new-side numbering: 1 context, 2 added, 3 context2
+    assert right == {1, 2, 3}
+    # old-side numbering: 1 context, 2 removed, 3 context2
+    assert left == {1, 2, 3}
+
+
+# ── build_payload: happy path ───────────────────────────────────────────────
+
+def test_two_findings_in_diff_produce_two_inline_comments():
+    files = json.dumps({"filename": "src/app.py", "patch": "@@ -1,1 +1,4 @@\n+a\n+b\n+c\n+d"})
+    payload, _ = gp.build_payload(
+        _review(comments=[_finding(line=3), _finding(line=4, perspective="compliance", severity="HIGH")]),
+        "",
+        files,
+    )
+    assert payload["event"] == "COMMENT"
+    assert len(payload["comments"]) == 2
+    assert gp.AI_ATTRIBUTION in payload["body"]
+
+
+# ── idempotency: de-dup by (path, line, perspective) ────────────────────────
+
+def test_suppresses_finding_already_anchored():
+    existing = _existing("src/app.py", 3, "security")
+    payload, msgs = gp.build_payload(_review(comments=[_finding(line=3)]), existing, "")
+    # Only finding was already posted on an unchanged line → skip sentinel.
+    assert payload is None
+    assert any("Suppressed 1" in m for m in msgs)
+
+
+def test_same_line_different_perspective_not_suppressed():
+    existing = _existing("src/app.py", 3, "security")
+    payload, _ = gp.build_payload(
+        _review(comments=[_finding(line=3, perspective="compliance", severity="HIGH")]),
+        existing,
+        "",
+    )
+    assert payload is not None
+    assert len(payload["comments"]) == 1
+
+
+def test_outdated_comment_line_null_does_not_anchor():
+    existing = json.dumps({"path": "src/app.py", "line": None,
+                           "body": "security(high): t\n_Reviewed by AI, was this helpful?_"})
+    payload, _ = gp.build_payload(_review(comments=[_finding(line=3)]), existing, "")
+    assert payload is not None  # re-commented because old comment is outdated
+
+
+def test_human_comment_does_not_anchor():
+    existing = _existing("src/app.py", 3, "security", ours=False)
+    payload, _ = gp.build_payload(_review(comments=[_finding(line=3)]), existing, "")
+    assert payload is not None  # not one of ours → not an anchor
+
+
+# ── diff-position filtering ─────────────────────────────────────────────────
+
+def test_finding_outside_diff_moved_to_body():
+    files = json.dumps({"filename": "src/app.py", "patch": "@@ -1,1 +1,1 @@\n+only_line_1"})
+    payload, msgs = gp.build_payload(_review(comments=[_finding(line=999)]), "", files)
+    assert payload["comments"] == []          # not inline (would 422)
+    assert "outside the diff" in payload["body"]
+    assert any("outside the PR diff" in m for m in msgs)
+
+
+def test_no_diff_info_disables_filtering():
+    # have_diff is False → findings are trusted as-is (body-only fallback in gh.sh guards the post).
+    payload, _ = gp.build_payload(_review(comments=[_finding(line=999)]), "", "")
+    assert len(payload["comments"]) == 1
+
+
+# ── malformed input tolerance ───────────────────────────────────────────────
+
+def test_unanchorable_comment_moved_to_body_not_dropped():
+    """A finding missing the fields needed to anchor an inline comment must
+    still reach the PR. Dropping it makes a real finding invisible."""
+    bad = {"path": "x", "line": 1, "severity": "CRITICAL", "title": "Vulnerable dep"}
+    payload, msgs = gp.build_payload(_review(comments=[bad]), "", "")
+    assert payload is not None, "a finding must never be silently dropped"
+    assert payload["comments"] == []  # cannot be inline-anchored
+    assert "Findings without a line anchor" in payload["body"]
+    assert "Vulnerable dep" in payload["body"]
+    assert any("moving it into the review body" in m for m in msgs)
+
+
+def test_finding_with_no_line_still_reaches_the_body():
+    bad = {"path": "requirements.txt", "perspective": "security",
+           "severity": "CRITICAL", "title": "CVE-2024-x", "description": "d"}
+    payload, _ = gp.build_payload(_review(comments=[bad]), "", "")
+    assert payload is not None
+    assert "requirements.txt" in payload["body"]
+
+
+def test_non_dict_comment_entry_ignored():
+    payload, msgs = gp.build_payload(_review(comments=["oops"]), "", "")
+    assert payload is None  # nothing postable at all
+    assert any("non-object" in m for m in msgs)
+
+
+def test_skip_message_does_not_claim_already_posted_when_nothing_was():
+    """The 'already posted on unchanged lines' explanation must only appear
+    when findings were actually suppressed by an existing comment."""
+    _, msgs = gp.build_payload(_review(action="COMMENT", comments=[]), "", "")
+    joined = " ".join(msgs)
+    assert "already posted" not in joined
+    assert "no postable findings" in joined
+
+
+def test_skip_message_says_already_posted_when_suppressed():
+    existing = _existing("src/app.py", 3, "security")
+    _, msgs = gp.build_payload(_review(comments=[_finding(line=3)]), existing, "")
+    assert any("already posted on unchanged lines" in m for m in msgs)
+
+
+def test_malformed_existing_comment_ndjson_ignored():
+    existing = "not json\n" + _existing("src/app.py", 3, "security")
+    payload, _ = gp.build_payload(_review(comments=[_finding(line=3)]), existing, "")
+    assert payload is None  # the valid anchor still suppresses
+
+
+# ── skip sentinel ───────────────────────────────────────────────────────────
+
+def test_comment_action_with_nothing_new_returns_skip():
+    payload, _ = gp.build_payload(_review(action="COMMENT", comments=[]), "", "")
+    assert payload is None
+
+
+# ── clean reviews are quiet by default ──────────────────────────────────────
+# The review used to post "I looked and found nothing" on every clean PR. On a
+# healthy repo that is most PRs, each one notifying every subscriber to say
+# nothing happened — which is how a reviewer becomes wallpaper. The job's own
+# check already carries that signal, so the acknowledgement is opt-in.
+
+def test_approve_with_no_comments_is_quiet_by_default(monkeypatch):
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    payload, messages = gp.build_payload(_review(action="APPROVE", comments=[]), "", "")
+    assert payload is None
+    # And it says why, naming the knob — silence that looks like a failure
+    # sends an operator hunting for a broken token.
+    assert any("No findings; not posting a review" in m for m in messages)
+    assert any("post-when-clean" in m for m in messages)
+
+
+def test_approve_with_no_comments_posts_when_asked(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", "true")
+    payload, _ = gp.build_payload(_review(action="APPROVE", comments=[]), "", "")
+    assert payload is not None
+    assert payload["event"] == "APPROVE"
+
+
+@pytest.mark.parametrize("raw", ["true", "TRUE", "1", "yes", "on"])
+def test_post_when_clean_accepts_the_usual_truthy_spellings(monkeypatch, raw):
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", raw)
+    assert gp.post_when_clean() is True
+
+
+@pytest.mark.parametrize("raw", ["", "false", "FALSE", "0", "no", "off"])
+def test_post_when_clean_accepts_the_usual_falsy_spellings(monkeypatch, raw):
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", raw)
+    assert gp.post_when_clean() is False
+
+
+def test_post_when_clean_garbage_stays_quiet_and_warns(monkeypatch, capsys):
+    # Defaulting a typo to the LOUD behaviour would spam a PR on every push,
+    # which is the failure this input exists to prevent.
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", "yep")
+    assert gp.post_when_clean() is False
+    assert "is not a boolean" in capsys.readouterr().err
+
+
+def test_a_clean_review_that_asks_for_changes_still_posts(monkeypatch):
+    """The carve-out that keeps the quiet default safe.
+
+    REQUEST_CHANGES with no postable finding is a malformed or lost-findings
+    run. Swallowing it would leave an author with a blocked PR and no reason
+    given — the one clean-looking state that has to stay loud.
+    """
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    payload, _ = gp.build_payload(
+        _review(action="REQUEST_CHANGES", comments=[]), "", ""
+    )
+    assert payload is not None
+    assert payload["event"] == "REQUEST_CHANGES"
+
+
+def test_findings_are_never_swallowed_by_the_quiet_default(monkeypatch):
+    # The flag governs the EMPTY review only. A finding always posts.
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    payload, _ = gp.build_payload(_review(action="APPROVE", comments=[_finding()]), "", "")
+    assert payload is not None
+    assert payload["comments"]
+
+
+def test_a_body_only_finding_still_posts_when_clean_is_quiet(monkeypatch):
+    # "Clean" means nothing to say at all, not "nothing inline". A finding that
+    # could not be anchored lives in the body and must still reach the PR.
+    monkeypatch.delenv("AI_REVIEW_POST_WHEN_CLEAN", raising=False)
+    data = {
+        "review_action": "APPROVE",
+        "summary": "s",
+        "comments": [_finding(line=None)],
+    }
+    payload, _ = gp.build_payload(data, "", "")
+    assert payload is not None
+    assert "Findings without a line anchor" in payload["body"]
+
+
+# ── Suggestion: one-line summary ───────────────────────────────────────────
+# Restores the pre-restructure output format, where the "Suggestion:" header
+# carried a one-line summary derived from `description` unless the AI supplied
+# `suggestion_summary` explicitly.
+
+def test_explicit_suggestion_summary_is_used_verbatim():
+    body = gp.render_body(_finding(
+        description="Long description. Second sentence.",
+        suggestion_summary="Move the key to an environment variable",
+    ))
+    assert "Suggestion: Move the key to an environment variable\n" in body
+
+
+def test_suggestion_summary_falls_back_to_first_sentence():
+    body = gp.render_body(_finding(
+        description="An AWS access key is checked into source. Rotate it now."))
+    assert "Suggestion: An AWS access key is checked into source.\n" in body
+
+
+def test_suggestion_header_is_bare_when_nothing_to_summarize():
+    body = gp.render_body(_finding(description=""))
+    assert "\nSuggestion:\n" in body
+    assert "Suggestion: \n" not in body  # never a trailing space
+
+
+def test_blank_suggestion_summary_falls_back_rather_than_blanking():
+    body = gp.render_body(_finding(
+        description="Encryption at rest is missing here. More text.",
+        suggestion_summary="   "))
+    assert "Suggestion: Encryption at rest is missing here.\n" in body
+
+
+def test_first_sentence_does_not_split_on_a_trailing_abbreviation():
+    assert gp.first_sentence(
+        "Use a CMK, e.g. aws_kms_key.rds.arn, not the default. Next."
+    ) == "Use a CMK, e.g. aws_kms_key.rds.arn, not the default."
+
+
+def test_first_sentence_skips_a_too_short_leading_fragment():
+    assert gp.first_sentence("SC-12. Encryption at rest is required.") == \
+        "SC-12. Encryption at rest is required."
+
+
+def test_first_sentence_returns_whole_text_when_no_boundary():
+    assert gp.first_sentence("No terminal punctuation here") == \
+        "No terminal punctuation here"
+
+
+def test_first_sentence_empty_input():
+    assert gp.first_sentence("") == ""
+    assert gp.first_sentence(None) == ""
+
+
+def test_first_sentence_collapses_whitespace():
+    assert gp.first_sentence("Wrapped\n  across lines. Next.") == \
+        "Wrapped across lines."
+
+
+# ── inline-comment cap ──────────────────────────────────────────────────────
+# A review that buries the diff gets switched off, so inline comments are
+# capped and the remainder goes to the review body. The cap must never drop a
+# finding, and must never let a low-severity finding evict a critical one.
+
+def _n_findings(*severities):
+    return {
+        "review_action": "COMMENT",
+        "summary": "s",
+        "comments": [
+            _finding(path="src/a.py", line=i + 1, severity=s, title=f"f{i+1}-{s}")
+            for i, s in enumerate(severities)
+        ],
+    }
+
+
+def test_no_cap_applied_below_the_limit(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "5")
+    payload, _ = gp.build_payload(_n_findings(*["LOW"] * 5), "", "")
+    assert len(payload["comments"]) == 5
+    assert "not posted inline" not in payload["body"]
+
+
+def test_cap_keeps_the_most_severe_inline(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "3")
+    # Criticals deliberately last, so a naive head-of-list cap would drop them.
+    data = _n_findings("LOW", "LOW", "LOW", "LOW", "CRITICAL", "HIGH")
+    payload, _ = gp.build_payload(data, "", "")
+    assert len(payload["comments"]) == 3
+    inline = " ".join(c["body"] for c in payload["comments"])
+    assert "security(critical)" in inline
+    assert "security(high)" in inline
+
+
+def test_capped_findings_are_listed_in_the_body_not_dropped(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    data = _n_findings("CRITICAL", "LOW", "LOW", "LOW")
+    payload, _ = gp.build_payload(data, "", "")
+    assert len(payload["comments"]) == 2
+    assert "2 further finding(s) not posted inline" in payload["body"]
+    # every capped finding is named in the body
+    assert payload["body"].count("src/a.py") >= 2
+
+
+def test_cap_body_reports_counts_by_severity(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "1")
+    data = _n_findings("CRITICAL", "HIGH", "LOW", "LOW")
+    payload, _ = gp.build_payload(data, "", "")
+    assert "(1 high, 2 low)" in payload["body"]
+
+
+def test_cap_of_zero_means_no_cap(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "0")
+    payload, _ = gp.build_payload(_n_findings(*["LOW"] * 30), "", "")
+    assert len(payload["comments"]) == 30
+    assert "not posted inline" not in payload["body"]
+
+
+def _unwrapped(text):
+    """Collapse runs of whitespace, so assertions survive re-wrapping."""
+    return " ".join(text.split())
+
+
+def test_cap_default_is_applied_when_unset(monkeypatch):
+    monkeypatch.delenv("AI_REVIEW_MAX_COMMENTS", raising=False)
+    # Derived from the constant rather than hardcoded, so raising the default
+    # does not silently turn this into a test of the uncapped path — which is
+    # exactly what happened when it moved from 15 to 50.
+    n = gp.DEFAULT_MAX_COMMENTS + 5
+    payload, _ = gp.build_payload(_n_findings(*["LOW"] * n), "", "")
+    assert len(payload["comments"]) == gp.DEFAULT_MAX_COMMENTS
+
+
+def test_the_default_cap_is_generous_enough_for_a_first_review(monkeypatch):
+    """The cap is for the pathological PR, not for curating an ordinary one.
+
+    A first run on a repo nobody has reviewed before routinely trips 40-odd
+    findings; at 15 most of them arrived as a body list with no line anchor and
+    no suggested fix, which is the least useful form of the same information.
+    Pinned so a future tightening is a decision rather than a drift.
+    """
+    assert gp.DEFAULT_MAX_COMMENTS == 50
+    monkeypatch.delenv("AI_REVIEW_MAX_COMMENTS", raising=False)
+    payload, _ = gp.build_payload(_n_findings(*["CRITICAL"] * 44), "", "")
+    assert len(payload["comments"]) == 44
+    assert "Inline limit" not in payload["body"]
+
+
+# ── the review body says the limit was hit ──────────────────────────────────
+# A reader who sees inline comments has no way to know the review had more to
+# say unless the body tells them. The heading has to carry it: a caveat in the
+# middle of a paragraph below a 30-item list is not a notice.
+
+def test_the_body_says_the_limit_was_reached_and_names_it(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "3")
+    data = _n_findings(*["HIGH"] * 10)
+    payload, _ = gp.build_payload(data, "", "")
+    heading = next(
+        ln for ln in payload["body"].splitlines() if ln.startswith("#### ")
+    )
+    assert "Inline limit of 3 reached" in heading
+    assert "7 further finding(s) not posted inline" in heading
+    # And the total, so the reader can size what they are not seeing inline.
+    assert "10 anchorable finding(s)" in payload["body"]
+
+
+def test_the_operator_message_says_the_limit_was_reached(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    _, messages = gp.build_payload(_n_findings(*["HIGH"] * 5), "", "")
+    assert any("Inline limit of 2 reached" in m for m in messages)
+    assert any("no limit" in m for m in messages)
+
+
+def test_the_body_does_not_call_overflowing_criticals_low_severity(monkeypatch):
+    """The bug this wording exists to prevent.
+
+    When a diff trips more findings at the top severity than the cap allows,
+    CRITICALs overflow into the body — the cap keeps the most severe and breaks
+    ties on report order, so the tail of a 20-critical review is still
+    critical. The blurb used to call that tail "the lower-severity remainder",
+    which told the reader that command injection in an admin endpoint was a
+    low-severity leftover.
+    """
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    payload, _ = gp.build_payload(_n_findings(*["CRITICAL"] * 5), "", "")
+    body = payload["body"]
+
+    # The overflow really is critical here — otherwise this asserts nothing.
+    assert "(3 critical)" in body
+    assert "**security(critical)**" in body
+
+    assert "lower-severity remainder" not in body
+    # And it says so positively, rather than merely omitting the false claim.
+    # Normalized: the blurb is hard-wrapped, and where it wraps is not the
+    # behaviour under test.
+    assert "can still mean HIGH or CRITICAL" in _unwrapped(body)
+
+
+def test_the_body_still_promises_nothing_was_dropped(monkeypatch):
+    # The counterpart to the warning: the list is the complete remainder, so a
+    # reader is not left wondering whether findings vanished.
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    payload, _ = gp.build_payload(_n_findings(*["HIGH"] * 6), "", "")
+    assert "Nothing was dropped" in _unwrapped(payload["body"])
+    assert payload["body"].count("`src/a.py:") == 4
+
+
+def test_cap_garbage_value_falls_back_to_the_default(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "lots")
+    assert gp.max_comments() == gp.DEFAULT_MAX_COMMENTS
+
+
+def test_unrecognized_severity_does_not_evict_a_critical(monkeypatch):
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "1")
+    data = _n_findings("SEV_BANANA", "CRITICAL")
+    payload, _ = gp.build_payload(data, "", "")
+    assert "security(critical)" in payload["comments"][0]["body"]
+
+
+def test_inline_comments_stay_in_diff_order_after_capping(monkeypatch):
+    # Selection is by severity; emission order is the diff's, so comments land
+    # where the code is rather than in severity order.
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "2")
+    data = _n_findings("LOW", "CRITICAL", "LOW", "HIGH")
+    payload, _ = gp.build_payload(data, "", "")
+    lines = [c["line"] for c in payload["comments"]]
+    assert lines == sorted(lines)
+
+
+def test_a_capped_review_is_still_posted(monkeypatch):
+    # The skip sentinel must not fire just because everything overflowed.
+    monkeypatch.setenv("AI_REVIEW_MAX_COMMENTS", "1")
+    payload, _ = gp.build_payload(_n_findings("LOW", "LOW", "LOW"), "", "")
+    assert payload is not None
+    assert payload.get("event") or payload.get("comments")
+
+
+# ── scope disclaimer in the posted review ───────────────────────────────────
+# The docs saying "advisory" is not enough: a reader of the PR never opens the
+# docs. The disclaimer has to be in the artifact.
+
+def test_body_carries_the_scope_disclaimer():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s", "comments": [_finding()]}, "", "")
+    assert "Advisory, not exhaustive" in payload["body"]
+    assert "does not replace" in payload["body"]
+
+
+def test_disclaimer_names_the_scanners_it_complements():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s", "comments": [_finding()]}, "", "")
+    body = payload["body"]
+    assert "SAST" in body
+    assert "dependency" in body
+    assert "secret scanning" in body
+
+
+def test_disclaimer_flags_control_ids_as_model_generated():
+    # The liability case: an ARS/NIST citation in a PR comment reads like an
+    # audit artifact, and someone may carry it into a compliance deliverable.
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s", "comments": [_finding()]}, "", "")
+    body = payload["body"]
+    assert "control IDs" in body
+    assert "unverified" in body
+
+
+def test_disclaimer_is_not_duplicated_if_the_ai_already_included_it():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "s " + gp.SCOPE_DISCLAIMER,
+         "comments": [_finding()]}, "", "")
+    assert payload["body"].count("Advisory, not exhaustive") == 1
+
+
+def test_an_approve_review_also_carries_the_disclaimer(monkeypatch):
+    # A clean review is exactly when someone might over-read the result as
+    # "this code is secure" — so when a team opts into posting one, it still
+    # has to say what it did not look at.
+    monkeypatch.setenv("AI_REVIEW_POST_WHEN_CLEAN", "true")
+    payload, _ = gp.build_payload({"review_action": "APPROVE", "summary": "No findings."}, "", "")
+    assert "Advisory, not exhaustive" in payload["body"]
+
+
+# ── body ordering ───────────────────────────────────────────────────────────
+
+def test_the_feedback_ask_is_the_last_thing_in_the_body():
+    # It used to be appended before the overflow sections, so "was this
+    # helpful?" appeared above half the review and read as the end of it.
+    data = {
+        "review_action": "COMMENT",
+        "summary": "s",
+        "comments": [
+            _finding(),
+            {"path": "b.py", "perspective": "security", "severity": "LOW",
+             "title": "no anchor", "description": "d"},
+        ],
+    }
+    payload, _ = gp.build_payload(data, "", "")
+    body = payload["body"].rstrip()
+    assert body.endswith(gp.AI_ATTRIBUTION)
+    assert body.index("no anchor") < body.index(gp.AI_ATTRIBUTION)
+
+
+def test_the_disclaimer_precedes_the_finding_sections():
+    data = {
+        "review_action": "COMMENT",
+        "summary": "s",
+        "comments": [
+            {"path": "b.py", "perspective": "security", "severity": "LOW",
+             "title": "no anchor", "description": "d"},
+        ],
+    }
+    payload, _ = gp.build_payload(data, "", "")
+    body = payload["body"]
+    assert body.index("Advisory, not exhaustive") < body.index("no anchor")
+
+
+def test_the_ai_summary_stays_first():
+    payload, _ = gp.build_payload(
+        {"review_action": "COMMENT", "summary": "MY-SUMMARY-TEXT", "comments": [_finding()]}, "", "")
+    assert payload["body"].startswith("MY-SUMMARY-TEXT")

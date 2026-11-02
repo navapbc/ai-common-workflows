@@ -1,0 +1,60 @@
+## PR Review Report
+**Scope:** Diff against origin/main (2 files)
+**Perspectives applied:** Security; Compliance
+**Files reviewed:** src/app.py, infra/rds.tf
+**Context files loaded:** None
+
+---
+
+### Findings by file
+
+#### `src/app.py`
+
+- 🔴 **CRITICAL** | **security** | Secrets — Hardcoded AWS access key on line 3
+
+#### `infra/rds.tf`
+
+- 🟠 **HIGH** | **compliance** | SC-12/SC-28 — RDS without encryption at rest (line 2)
+
+---
+
+### Summary
+| Severity | Security | Compliance | Total |
+|---|---|---|---|
+| Critical | 1 | 0 | 1 |
+| High     | 0 | 1 | 1 |
+
+**Review recommendation:** COMMENT
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{
+  "review_action": "COMMENT",
+  "summary": "Reviewed 2 files against the base ref. Found 2 findings (1 critical, 1 high, 0 medium, 0 low).",
+  "comments": [
+    {
+      "path": "src/app.py",
+      "line": 3,
+      "side": "RIGHT",
+      "perspective": "security",
+      "severity": "CRITICAL",
+      "title": "Hardcoded AWS access key",
+      "description": "An AWS access key is checked into source. Rotate this credential immediately. OWASP A07:2021.",
+      "suggestion_kind": "applicable",
+      "suggestion_body": "api_key = os.environ[\"AWS_ACCESS_KEY_ID\"]"
+    },
+    {
+      "path": "infra/rds.tf",
+      "line": 2,
+      "side": "RIGHT",
+      "perspective": "compliance",
+      "severity": "HIGH",
+      "title": "RDS instance without encryption at rest",
+      "description": "storage_encrypted is not set. NIST SC-12/SC-28, CMS ARS SC-28.",
+      "suggestion_kind": "applicable",
+      "suggestion_body": "  storage_encrypted = true"
+    }
+  ]
+}
+<!-- AI_REVIEW_JSON_END -->
+
+<<<AI_REVIEW_RESULT:COMMENT>>>

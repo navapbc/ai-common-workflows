@@ -1,0 +1,20 @@
+## Adjudication Report
+
+Re-inspected both first-pass findings against the diff.
+
+### Dismissed / Downgraded by adjudication
+
+- [FALSE_POSITIVE] `src/app.py:3` — [orig: CRITICAL] secrets —
+  Reason: value is the AWS-documented example key AKIAIOSFODNN7EXAMPLE, not a live credential.
+- [FALSE_POSITIVE] `infra/rds.tf:2` — [orig: HIGH] SC-28 —
+  Reason: encryption is enforced by the account-level RDS default in modules/baseline.
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{
+  "review_action": "APPROVE",
+  "summary": "Adjudicated 2 first-pass findings; both dismissed as false positives. No confirmed findings remain.",
+  "comments": []
+}
+<!-- AI_REVIEW_JSON_END -->
+
+<<<AI_REVIEW_RESULT:APPROVE>>>

@@ -1,0 +1,1080 @@
+#!/usr/bin/env bash
+# ai-security-compliance-audit — AI-assisted security & compliance audit of an
+# existing codebase, for local ad-hoc use.
+#
+# Usage (run from the root of the repo being audited):
+#   ai-security-compliance-audit                      # whole repo (tracked files)
+#   ai-security-compliance-audit terraform/ src/api/  # only these paths
+#   ai-security-compliance-audit --profile cms-ars-5.1 infra/
+#   ai-security-compliance-audit --list-files          # scope only, no AI call
+#   ai-security-compliance-audit --dry-run             # plan + cost shape, no AI call
+#
+# This is the repo-scoped sibling of ai-security-compliance-review. Same
+# rubric, same severities, same findings JSON; different question — "what is
+# wrong with this code" rather than "what did this change do".
+#
+# DELIBERATELY LOCAL-ONLY. There is no composite action and no Jenkins step for
+# this entrypoint, it never posts anything, and it needs no SCM token or `gh`.
+# A full-repo audit costs roughly (files / batch size) model calls, which is
+# fine to run by hand and expensive to run on every push — so it is not wired
+# into any workflow, and it warns when it detects CI.
+#
+# It writes NOTHING into the audited repository: reports go to stdout, or to
+# paths you name with --json-out / --md-out, and scratch lives under $TMPDIR.
+# Nothing needs to be vendored into the audited repo — the rubric is read from
+# this engine's own directory.
+#
+# Exit codes:
+#   0  audit completed (clean or with findings — this tool never gates)
+#   1  unrecoverable runtime error (AI CLI failure, no parseable result)
+#   2  configuration error (bad flags, unknown profile, empty scope)
+
+set -euo pipefail
+
+# ENGINE_HOME is this workflow's engine (engines/security-compliance-review);
+# _common is its sibling. Both resolved from this script's own location so the
+# engine can be copied anywhere, and never from the audited repo's CWD.
+ENGINE_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AI_COMMON_HOME="$(cd "${ENGINE_HOME}/../_common" && pwd)"
+export ENGINE_HOME AI_COMMON_HOME
+
+# The audit's result vocabulary differs from the review's; _common parameterizes
+# it, so set it BEFORE sourcing core.sh (which defaults it).
+AI_REVIEW_MARKER_VOCAB="AUDIT_CLEAN|AUDIT_FINDINGS"
+export AI_REVIEW_MARKER_VOCAB
+
+# shellcheck source=../../_common/harness/core.sh
+source "${AI_COMMON_HOME}/harness/core.sh"
+# shellcheck source=../../_common/endpoints.sh
+source "${AI_COMMON_HOME}/endpoints.sh"
+
+SKILL_NAME="security-compliance-audit"
+SKILL_HUMAN_NAME="AI Security & Compliance Audit"
+
+# ── Rubric composition ──────────────────────────────────────────────────────
+# AI_REVIEW_PROFILE (or --profile) is an ordered list of rubric sources, and the shared
+# base is an explicit member of it: `base`, `base,cms-ars-5.1`, or `none,<profile>`
+# to supply the whole rubric yourself. Sources layer in order and the last one
+# wins a conflict. See ai_review::resolve_profiles in _common — including why
+# the first entry must be `base` or `none`, and why finding-adjudication.md
+# sits outside this mechanism.
+AI_REVIEW_PROFILE="${AI_REVIEW_PROFILE:-base}"
+
+# ── Flags ───────────────────────────────────────────────────────────────────
+SCOPE_PATHS=()
+INCLUDE_GLOBS=()
+EXCLUDE_GLOBS=()
+MAX_FILE_BYTES="${AI_AUDIT_MAX_FILE_BYTES:-262144}"
+JSON_OUT=""
+MD_OUT=""
+OUTPUT_PARENT=""
+ASSUME_YES="${AI_AUDIT_ASSUME_YES:-0}"
+RESUME=0
+RESUME_DIR=""
+ALL_DIRECTORIES=""
+DOCTOR=0
+JSON_ONLY=0
+LIST_FILES=0
+WORKER_MODE=0
+REMAINING_FOR_LIB=()
+
+ai_review::print_help() {
+  cat <<EOF
+${SKILL_HUMAN_NAME} — audit an existing codebase (local, ad-hoc)
+
+Usage:
+  ai-security-compliance-audit [flags] [<path>...]
+
+Run it from the root of the repo you want to audit. With no paths, the whole
+repository is audited; with paths, only those files (directories recurse).
+
+  ai-security-compliance-audit
+  ai-security-compliance-audit terraform/
+  ai-security-compliance-audit --profile cms-ars-5.1 infra/ src/api/
+
+Scope:
+  <path>...                 Limit the audit to these files/directories.
+  --include <glob>          Keep only paths matching this glob (repeatable).
+  --exclude <glob>          Drop paths matching this glob (repeatable).
+  --max-file-bytes <n>      Skip files larger than n bytes (default ${MAX_FILE_BYTES}).
+
+Rubric:
+  --profile <list>          Ordered rubric sources, default $(base). The first
+                            entry must be $(base) (the shared floor) or $(none)
+                            (no floor — you supply the whole rubric), then any
+                            profile names or directory paths:
+                              base | base,cms-ars-5.1 | none,my-everything
+                            Sources layer in order and the last listed wins a
+                            conflict; each only adds to what is above it.
+
+Output (nothing is written into the audited repo):
+  --resume                  Continue the newest existing bundle for this repo
+                            instead of starting a new one: directories that
+                            already have a report are skipped, and their
+                            findings are carried into the regenerated index.
+                            For picking a long audit back up after an
+                            interruption. Requires --output-parent-dir.
+  --output-parent-dir <dir> REQUIRED for a real run. An EXISTING directory to
+                            write the report bundle into. A new subdirectory is
+                            created per run, named <repo>-<YYYYMMDD>-<NN>, so
+                            runs never overwrite each other. Start at its
+                            _INDEX.md.
+                            Not required by --dry-run, --list-files,
+                            --list-batches or --json-only.
+  --json-out <file>         Also write the findings JSON to this exact path.
+  --md-out <file>           Also write the narrative report to this exact path.
+  --json-only               Print only the findings JSON to stdout; write no
+                            bundle.
+
+Getting set up:
+  --doctor                  Check everything this needs — bash, git, python3,
+                            the AI CLI, credentials, the endpoint, the output
+                            directory — and report what is missing. Runs no
+                            audit, calls no model, needs no git repo.
+
+Confirmation:
+  --yes / -y                Skip the "this will cost tokens" prompt. Also
+                            AI_AUDIT_ASSUME_YES=1. Required when stdin is not a
+                            TTY, so a scripted run cannot spend by accident.
+
+Cost control — check scope before spending:
+  --list-files              Print the files in scope and exit. No AI call.
+  --list-batches            Print the batch plan and exit. No AI call.
+  --dry-run / -n            Print the full plan and exit. No AI call.
+  --jobs <n>                Fan-out concurrency (default ${AI_REVIEW_JOBS:-4}).
+  --no-adjudicate           Force adjudication off. It is already off by
+                            default; use this to override AI_ADJUDICATION.
+
+Environment:
+  AI_REVIEW_TOOL            claude | codex | copilot   (required)
+  AI_REVIEW_PROFILE         same as --profile
+  AI_REVIEW_MODEL           model override
+  AI_ADJUDICATION           off (default) | self | independent
+  AI_REVIEW_CLI_NATIVE_AUTH set to 1 when the CLI is already logged in and no
+                            API key is in the environment (PUBLIC endpoint)
+  plus the provider variables documented in docs/private-endpoints.md
+
+This entrypoint never posts, never gates, and needs no SCM token.
+EOF
+}
+
+audit::parse_flags() {
+  while (($#)); do
+    case "$1" in
+      --__audit-one)
+        WORKER_MODE=1
+        shift
+        break
+        ;;
+      --profile)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--profile requires a value (e.g. base,cms-ars-5.1)."
+          exit 2
+        fi
+        AI_REVIEW_PROFILE="$2"
+        shift 2
+        ;;
+      --include)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--include requires a glob."
+          exit 2
+        fi
+        INCLUDE_GLOBS+=("$2")
+        shift 2
+        ;;
+      --exclude)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--exclude requires a glob."
+          exit 2
+        fi
+        EXCLUDE_GLOBS+=("$2")
+        shift 2
+        ;;
+      --max-file-bytes)
+        [[ $# -ge 2 ]] || {
+          ai_review::err "--max-file-bytes requires a value."
+          exit 2
+        }
+        [[ "$2" =~ ^[0-9]+$ ]] || {
+          ai_review::err "--max-file-bytes must be a number."
+          exit 2
+        }
+        MAX_FILE_BYTES="$2"
+        shift 2
+        ;;
+      --output-parent-dir)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--output-parent-dir requires an existing directory."
+          exit 2
+        fi
+        OUTPUT_PARENT="$2"
+        shift 2
+        ;;
+      --json-out)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--json-out requires a path."
+          exit 2
+        fi
+        JSON_OUT="$2"
+        shift 2
+        ;;
+      --md-out)
+        # `$# -ge 2` alone would accept a following FLAG as the value.
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          ai_review::err "--md-out requires a path."
+          exit 2
+        fi
+        MD_OUT="$2"
+        shift 2
+        ;;
+      --json-only)
+        JSON_ONLY=1
+        shift
+        ;;
+      --resume)
+        RESUME=1
+        shift
+        ;;
+      --doctor)
+        DOCTOR=1
+        shift
+        ;;
+      --yes | -y)
+        ASSUME_YES=1
+        shift
+        ;;
+      --list-files)
+        LIST_FILES=1
+        shift
+        ;;
+      -h | --help)
+        ai_review::print_help
+        exit 0
+        ;;
+      # Flags the shared library owns (--jobs, --list-batches, --dry-run,
+      # --no-adjudicate, --no-block).
+      --jobs | --list-batches | --dry-run | -n | --no-adjudicate | --no-block)
+        REMAINING_FOR_LIB+=("$1")
+        [[ "$1" == "--jobs" ]] && {
+          REMAINING_FOR_LIB+=("${2:-}")
+          shift
+        }
+        shift
+        ;;
+      # Flags the review has and the audit deliberately does not.
+      --gate | --post-comments | --pr | --against | --unpushed | --post-only | --json-in)
+        ai_review::err "$1 is not supported by the audit: it is a local, read-only,"
+        ai_review::err "  advisory tool — it never posts, never gates, and audits the working tree."
+        ai_review::err "  For PR-scoped review with those options, use ai-security-compliance-review."
+        exit 2
+        ;;
+      --)
+        shift
+        while (($#)); do
+          SCOPE_PATHS+=("$1")
+          shift
+        done
+        ;;
+      -*)
+        ai_review::err "Unknown flag: $1"
+        ai_review::log "  Run with --help for usage."
+        exit 2
+        ;;
+      *)
+        SCOPE_PATHS+=("$1")
+        shift
+        ;;
+    esac
+  done
+  WORKER_RECORD="${1:-}"
+}
+
+# ── Scope selection ─────────────────────────────────────────────────────────
+# git ls-files is the source of truth: tracked files only, so .gitignore is
+# honored for free and node_modules/vendor never appear. Working tree contents
+# are what get audited (a local tool audits what you have, not what you pushed).
+audit::scope_files() {
+  local -a args=(ls-files -z --cached)
+  if ((${#SCOPE_PATHS[@]} > 0)); then
+    args+=(--)
+    args+=("${SCOPE_PATHS[@]}")
+  fi
+  git "${args[@]}" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    [[ -f "${f}" ]] || continue # staged-deleted or replaced by a directory
+
+    if ((${#INCLUDE_GLOBS[@]} > 0)); then
+      local keep=0 g
+      for g in "${INCLUDE_GLOBS[@]}"; do
+        # shellcheck disable=SC2053  # glob match is intended
+        [[ "${f}" == $g ]] && keep=1 && break
+      done
+      ((keep)) || continue
+    fi
+    local g
+    for g in "${EXCLUDE_GLOBS[@]+"${EXCLUDE_GLOBS[@]}"}"; do
+      # shellcheck disable=SC2053
+      [[ "${f}" == $g ]] && continue 2
+    done
+
+    local size
+    size="$(wc -c <"${f}" 2>/dev/null | tr -d ' ')" || continue
+    if [[ -n "${size}" ]] && ((size > MAX_FILE_BYTES)); then
+      printf 'SKIP\t%s\tlarger than %s bytes\n' "${f}" "${MAX_FILE_BYTES}" >&2
+      continue
+    fi
+    # Binary sniff: a NUL byte in the first 8k. Compares the byte count with
+    # and without NULs rather than grepping for one — a NUL cannot be written
+    # as a grep pattern portably, and the naive attempt matches every file.
+    local head_bytes nul_stripped
+    head_bytes="$(LC_ALL=C head -c 8192 "${f}" | wc -c | tr -d ' ')"
+    nul_stripped="$(LC_ALL=C head -c 8192 "${f}" | tr -d '\000' | wc -c | tr -d ' ')"
+    if [[ "${head_bytes}" != "${nul_stripped}" ]]; then
+      printf 'SKIP\t%s\tbinary\n' "${f}" >&2
+      continue
+    fi
+    printf '%s\n' "${f}"
+  done
+}
+
+audit::scope_description() {
+  if ((${#SCOPE_PATHS[@]} > 0)); then
+    printf '%s' "$(
+      IFS=' '
+      echo "${SCOPE_PATHS[*]}"
+    )"
+  else
+    printf 'repository root'
+  fi
+}
+
+# ── Prompt ──────────────────────────────────────────────────────────────────
+audit::build_prompt() {
+  local scope_desc
+  scope_desc="$(audit::scope_description)"
+
+  local budget_block
+  budget_block="$(
+    cat <<BUDGET
+
+──────────────────────── CONTEXT BUDGET ────────────────────────
+Load at most ${AI_REVIEW_CONTEXT_BUDGET:-15} context file(s) from OUTSIDE the
+audit scope below. Files inside the scope are the audit subject and do not
+count against this ceiling. If accurate assessment would need more outside
+context, stop at the ceiling and note the limitation in the report.
+BUDGET
+  )"
+
+  # The file manifest IS the scope. A worker gets its batch; a single call gets
+  # everything selected.
+  local scope_block
+  scope_block="$(
+    cat <<SCOPE
+
+──────────────────────── AUDIT SCOPE ────────────────────────
+Audit exactly these files, in the current working directory. Report findings
+ONLY in these files; you may read others for context within the budget above.
+
+${AI_REVIEW_SCOPE_PATHS}
+SCOPE
+  )"
+
+  # Composed from the listed rubric sources in order (base first when listed).
+  local audit_block
+  audit_block="$(
+    cat <<AUDIT
+
+──────────────────── CODEBASE-AUDIT INSTRUCTIONS ────────────────────
+$(ai_review::rubric_block codebase-audit.md "CODEBASE-AUDIT INSTRUCTIONS")
+AUDIT
+  )"
+
+  # Compliance perspective when the scope contains IaC. Base always applies;
+  # each profile's copy is appended as an addition.
+  local compliance_block=""
+  if printf '%s\n' "${AI_REVIEW_SCOPE_PATHS}" |
+    grep -qE '\.(tf|tfvars|bicep|hcl)$|\.template\.(json|ya?ml)$|Pulumi\.ya?ml$|(^|/)(Chart|values)\.ya?ml$|(^|/)k8s/|(^|/)helm/'; then
+    compliance_block="$(
+      cat <<COMPLIANCE
+
+──────────────────── COMPLIANCE PERSPECTIVE ────────────────────
+$(ai_review::rubric_block iac-compliance.md "COMPLIANCE PERSPECTIVE")
+COMPLIANCE
+    )"
+  fi
+
+  local self_adjudication_block=""
+  if [[ "${AI_REVIEW_ADJUDICATION_MODE:-off}" == "self" ]]; then
+    self_adjudication_block="$(
+      cat <<SELFADJ
+
+──────────────────── SELF-ADJUDICATION ────────────────────
+$(ai_review::self_adjudication_instructions)
+SELFADJ
+    )"
+  fi
+
+  cat <<PROMPT
+You are performing an AI-assisted security and compliance audit of an existing
+codebase in the current working directory. Scope: ${scope_desc}. Compliance
+profile: ${AI_REVIEW_PROFILE}. This is NOT a review of a change — there is no
+diff. Your full instructions follow.
+${audit_block}
+
+──────────────────── SECURITY PERSPECTIVE ────────────────────
+$(ai_review::rubric_block code-security.md "SECURITY PERSPECTIVE")
+${compliance_block}
+${budget_block}
+${scope_block}
+${self_adjudication_block}
+PROMPT
+}
+
+# audit::require_json <output> <marker> — extract the findings JSON, or fail.
+audit::require_json() {
+  local output="$1" marker="$2" json
+  if ! json="$(ai_review::extract_review_json "${output}")" || [[ -z "${json}" ]]; then
+    return 1
+  fi
+  printf '%s' "${json}"
+}
+
+# ── One batch (fan-out worker) ──────────────────────────────────────────────
+audit::worker_main() {
+  local record="$1"
+  ai_review::resolve_tool >/dev/null
+
+  local key="${record%%$'\t'*}"
+  local files_pipe="${record#*$'\t'}"
+  local files_nl nfiles
+  files_nl="$(printf '%s' "${files_pipe}" | tr '|' '\n' | grep -v '^$' || true)"
+  nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
+
+  export AI_REVIEW_SCOPE_PATHS="${files_nl}"
+  export AI_REVIEW_CONTEXT_BUDGET
+  AI_REVIEW_CONTEXT_BUDGET="$(ai_review::context_budget "${nfiles}")"
+  AI_REVIEW_ADJUDICATION_MODE="$(ai_review::adjudication_mode)"
+  export AI_REVIEW_ADJUDICATION_MODE
+
+  ai_review::resolve_profiles
+  SKILL_PROMPT="$(audit::build_prompt)"
+
+  local output rc=0 marker="UNPARSEABLE" json_file="-"
+  output="$(ai_review::invoke_ai)" || rc=$?
+  if ((rc != 0)); then
+    ai_review::err "[${key}] AI invocation failed (rc=${rc})." >&2
+  else
+    marker="$(ai_review::parse_result "${output}")"
+    local json_block
+    if json_block="$(audit::require_json "${output}" "${marker}")"; then
+      json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX.json")"
+      printf '%s\n' "${json_block}" >"${json_file}"
+    else
+      ai_review::err "[${key}] AI response contained no parseable JSON block." >&2
+      marker="UNPARSEABLE"
+    fi
+  fi
+
+  {
+    printf '\n──────── [%s] (%s file(s)) ────────\n' "${key}" "${nfiles}"
+    printf '%s\n' "${output}"
+  } >&2
+
+  printf 'AI_REVIEW_BATCH_RESULT\t%s\t%s\t%s\n' "${key}" "${marker}" "${json_file}"
+}
+
+# ── Report bundle ───────────────────────────────────────────────────────────
+# audit::allocate_run_dir — echoes a fresh <parent>/<repo>-<YYYYMMDD>-<NN>.
+#
+# The parent must ALREADY EXIST and is never created: an audit is pointed at a
+# place someone chose to keep reports, and silently creating a deep path is how
+# a typo becomes a directory nobody looks in again.
+#
+# The run number is per-day and allocated by scanning the parent, so a second
+# audit of the same repo on the same day never overwrites the first. Reports get
+# attached to tickets and compared week to week; an overwritten one is worse
+# than a missing one because nobody notices.
+# audit::find_resume_dir <parent>
+# Echoes the newest existing <parent>/<repo>-* bundle, or nothing.
+#
+# Deliberately not restricted to today: an audit interrupted last night should
+# be resumable this morning, and the directory's date records when the audit
+# STARTED, which is the more useful fact about it.
+audit::find_resume_dir() {
+  local parent="$1" repo newest=""
+  repo="$(basename "$(git rev-parse --show-toplevel)")"
+  for candidate in "${parent}/${repo}-"*; do
+    [[ -d "${candidate}" && -f "${candidate}/_INDEX.md" ]] || continue
+    # Lexical order works: the names are <repo>-YYYYMMDD-NN, zero-padded.
+    [[ -z "${newest}" || "${candidate}" > "${newest}" ]] && newest="${candidate}"
+  done
+  printf '%s' "${newest}"
+}
+
+audit::allocate_run_dir() {
+  local parent="$1"
+  if [[ ! -d "${parent}" ]]; then
+    ai_review::err "--output-parent-dir '${parent}' does not exist."
+    ai_review::err "  It must be an existing directory; the audit will not create it."
+    exit 2
+  fi
+  if [[ ! -w "${parent}" ]]; then
+    ai_review::err "--output-parent-dir '${parent}' is not writable."
+    exit 2
+  fi
+
+  local repo date n next
+  repo="$(basename "$(git rev-parse --show-toplevel)")"
+  date="$(date +%Y%m%d)"
+  next=1
+  for existing in "${parent}/${repo}-${date}-"*; do
+    [[ -e "${existing}" ]] || continue
+    n="${existing##*-}"
+    [[ "${n}" =~ ^[0-9]+$ ]] || continue
+    ((10#${n} >= next)) && next=$((10#${n} + 1))
+  done
+  printf '%s/%s-%s-%02d' "${parent}" "${repo}" "${date}" "${next}"
+}
+
+# ── Preflight (--doctor) ────────────────────────────────────────────────────
+# One answer instead of four separate "it did not work" moments. Deliberately
+# non-fatal per check: it reports EVERYTHING wrong in one pass rather than
+# stopping at the first, because the common case on a fresh laptop is two or
+# three missing at once.
+#
+# Exits 0 when ready to audit, 1 when something is missing. Warnings (a public
+# endpoint, no output directory yet) do not fail it — they are choices, not
+# defects.
+AUDIT_DOCTOR_FAIL=0
+
+audit::doctor_row() { # <name> <status> <detail>
+  printf '  %-26s %-9s %s\n' "$1" "$2" "${3:-}" >&2
+}
+
+audit::doctor_missing() {
+  AUDIT_DOCTOR_FAIL=1
+  audit::doctor_row "$1" "MISSING" "$2"
+}
+
+audit::doctor() {
+  ai_review::info "Checking what this needs..."
+
+  # ── shell and tools ──
+  audit::doctor_row "bash" "ok" "${BASH_VERSION}"
+  if command -v git >/dev/null 2>&1; then
+    audit::doctor_row "git" "ok" "$(git --version | awk '{print $3}')"
+  else
+    audit::doctor_missing "git" "xcode-select --install (macOS), or your package manager"
+  fi
+  # python3 is the one macOS does not really ship: the stub prompts for Xcode.
+  if command -v python3 >/dev/null 2>&1; then
+    audit::doctor_row "python3" "ok" "$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo present)"
+  else
+    audit::doctor_missing "python3" "brew install python, or xcode-select --install"
+  fi
+
+  # ── the AI CLI ──
+  local tool="${AI_REVIEW_TOOL:-}"
+  if [[ -z "${tool}" ]]; then
+    audit::doctor_missing "AI_REVIEW_TOOL" "export AI_REVIEW_TOOL=claude   (or codex, or copilot)"
+  else
+    case "${tool}" in
+      claude | codex | copilot)
+        if command -v "${tool}" >/dev/null 2>&1; then
+          audit::doctor_row "${tool} CLI" "ok" "$(command -v "${tool}")"
+        else
+          # The hint has to name the tool the operator actually chose. A
+          # hardcoded Claude package told a copilot user to install Claude
+          # Code, which is the one thing doctor exists to not do.
+          local cli_hint
+          case "${tool}" in
+            claude) cli_hint="npm install -g @anthropic-ai/claude-code" ;;
+            codex) cli_hint="npm install -g @openai/codex" ;;
+            copilot) cli_hint="npm install -g @github/copilot" ;;
+            *) cli_hint="install the CLI for AI_REVIEW_TOOL=${tool}" ;;
+          esac
+          audit::doctor_missing "${tool} CLI" "${cli_hint}"
+        fi
+        ;;
+      *)
+        audit::doctor_missing "AI_REVIEW_TOOL" "'${tool}' is not one of: claude | codex | copilot"
+        ;;
+    esac
+  fi
+
+  # ── endpoint and credentials ──
+  # configure_endpoint validates the whole provider/credential matrix and exits
+  # on failure, so run it in a subshell and read the verdict rather than
+  # duplicating the matrix here — the duplicate would drift.
+  local provider="${AI_REVIEW_PROVIDER:-api}" endpoint_out endpoint_rc=0
+  if [[ -n "${AI_REVIEW_TOOL:-}" ]]; then
+    endpoint_out="$(ai_review::resolve_tool >/dev/null 2>&1 && ai_review::configure_endpoint 2>&1)" || endpoint_rc=$?
+    if ((endpoint_rc == 0)); then
+      if [[ "${provider}" == "api" ]]; then
+        # Name the credential source. "ok" against the public endpoint means
+        # something different when the key is in the environment than when it
+        # is the operator's own CLI login, and doctor exists to remove exactly
+        # that kind of guess.
+        if ai_review::cli_native_auth; then
+          audit::doctor_row "endpoint" "ok" "api — PUBLIC, via the ${AI_REVIEW_TOOL:-CLI} CLI login (AI_REVIEW_CLI_NATIVE_AUTH=1)"
+        else
+          audit::doctor_row "endpoint" "ok" "api — PUBLIC; set AI_REVIEW_PROVIDER for in-boundary"
+        fi
+      else
+        audit::doctor_row "endpoint" "ok" "${provider} — in your boundary"
+      fi
+      # configure_endpoint can succeed and still have something to say — most
+      # importantly for copilot, whose model auth is a GitHub token it never
+      # hard-fails on ("the copilot CLI must already be authenticated on this
+      # host"). Discarding that turned "ok" into a claim doctor could not
+      # back: no token at all still printed a clean row. Warnings are echoed
+      # under the row that earned them, indented like the FAILED path.
+      if [[ -n "${endpoint_out}" ]]; then
+        printf '%s\n' "${endpoint_out}" |
+          grep -v "^\[.*\] Endpoint: tool=" |
+          grep . |
+          sed 's/^/      /' >&2 || true
+      fi
+    else
+      AUDIT_DOCTOR_FAIL=1
+      audit::doctor_row "endpoint" "FAILED" "provider=${provider}"
+      printf '%s\n' "${endpoint_out}" | sed 's/^/      /' >&2
+    fi
+  else
+    audit::doctor_row "endpoint" "-" "set AI_REVIEW_TOOL first"
+  fi
+
+  # ── rubric ──
+  local profile_out profile_rc=0
+  profile_out="$(ai_review::resolve_profiles 2>&1)" || profile_rc=$?
+  if ((profile_rc == 0)); then
+    audit::doctor_row "profile" "ok" "${AI_REVIEW_PROFILE}"
+  else
+    AUDIT_DOCTOR_FAIL=1
+    audit::doctor_row "profile" "FAILED" "${AI_REVIEW_PROFILE}"
+    printf '%s\n' "${profile_out}" | sed 's/^/      /' >&2
+  fi
+
+  # ── where it would run, and where the report would go ──
+  if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    audit::doctor_row "repo" "ok" "$(git rev-parse --show-toplevel)"
+  else
+    # Not a defect: you can check your setup before cd-ing into a repo.
+    audit::doctor_row "repo" "-" "not inside a git repository (cd into one to audit)"
+  fi
+  if [[ -z "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_row "output dir" "-" "--output-parent-dir is required for a real run"
+  elif [[ ! -d "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' does not exist; mkdir -p it"
+  elif [[ ! -w "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' is not writable"
+  else
+    audit::doctor_row "output dir" "ok" "${OUTPUT_PARENT}"
+  fi
+
+  ai_review::log ""
+  if ((AUDIT_DOCTOR_FAIL == 1)); then
+    ai_review::err "Not ready — fix the MISSING/FAILED rows above."
+    exit 1
+  fi
+  ai_review::ok "Ready to audit."
+  ai_review::log "  Next:  --dry-run to see scope and cost, then drop it to run."
+  exit 0
+}
+
+# ── Main ────────────────────────────────────────────────────────────────────
+audit::run() {
+  ai_review::resolve_profiles
+  # codebase-audit.md carries the result marker and findings-JSON contract.
+  ai_review::require_rubric codebase-audit.md
+
+  if [[ -n "${CI:-}" ]]; then
+    ai_review::warn "CI is set. This is an ad-hoc local tool: a full-repo audit costs"
+    ai_review::warn "  roughly (files / batch size) model calls every run. For CI, use"
+    ai_review::warn "  ai-security-compliance-review, which is diff-scoped."
+  fi
+
+  git rev-parse --git-dir >/dev/null 2>&1 || {
+    ai_review::err "Not a git repository. Run this from the root of the repo to audit."
+    exit 2
+  }
+
+  # ── Scope ──────────────────────────────────────────────────────────────
+  local files_nl nfiles
+  files_nl="$(audit::scope_files)"
+  nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
+
+  if ((nfiles == 0)); then
+    ai_review::err "No files in scope ($(audit::scope_description))."
+    ai_review::log "  Tracked, non-binary files under the given paths are audited."
+    ai_review::log "  Check the paths, --include/--exclude, and --max-file-bytes."
+    exit 2
+  fi
+
+  if ((LIST_FILES == 1)); then
+    printf '%s\n' "${files_nl}"
+    ai_review::info "${nfiles} file(s) in scope ($(audit::scope_description))."
+    exit 0
+  fi
+
+  ai_review::resolve_tool
+
+  # Required for a real run. Checked here — after --list-files has had its
+  # chance to exit, before any model call — so inspecting scope needs no
+  # output directory but producing findings cannot happen without somewhere to
+  # put them.
+  if [[ -z "${OUTPUT_PARENT}" && ${JSON_ONLY} -eq 0 &&
+    ${AI_REVIEW_DRY_RUN} -eq 0 && ${AI_REVIEW_LIST_BATCHES} -eq 0 ]]; then
+    ai_review::err "--output-parent-dir is required."
+    ai_review::err "  An audit produces a report bundle; it needs an existing directory to"
+    ai_review::err "  write it into. A new subdirectory <repo>-<YYYYMMDD>-<NN> is created"
+    ai_review::err "  there per run."
+    ai_review::err ""
+    ai_review::err "    ai-security-compliance-audit --output-parent-dir ~/audits ${SCOPE_PATHS[*]:-}"
+    ai_review::err ""
+    ai_review::err "  Or --json-only to print findings to stdout and write nothing."
+    exit 2
+  fi
+
+  # ── Resume, if asked ───────────────────────────────────────────────────
+  # Resume works at DIRECTORY granularity, matching the earlier iteration: a
+  # directory whose report already exists is skipped. It deliberately does not
+  # work at batch granularity — packing coalesces directories into at most
+  # --jobs bins, so a batch is not a stable unit and "already done" would mean
+  # something different at --jobs 4 than at --jobs 8.
+  ALL_DIRECTORIES="$(printf '%s\n' "${files_nl}" | python3 -c '
+import posixpath, sys
+print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.strip()})))')"
+
+  if ((RESUME == 1)); then
+    if [[ -z "${OUTPUT_PARENT}" ]]; then
+      ai_review::err "--resume needs --output-parent-dir: it has to know which bundle to continue."
+      exit 2
+    fi
+    RESUME_DIR="$(audit::find_resume_dir "${OUTPUT_PARENT}")"
+    if [[ -z "${RESUME_DIR}" ]]; then
+      ai_review::warn "--resume: no existing bundle for this repo in ${OUTPUT_PARENT}; starting a new one."
+      RESUME=0
+    else
+      ai_review::info "Resuming ${RESUME_DIR}"
+      local kept="" skipped=0 slug
+      while IFS= read -r f; do
+        [[ -z "${f}" ]] && continue
+        slug="$(printf '%s' "$(dirname "${f}")" | sed 's|^\.$|_root|; s|/|__|g')"
+        if [[ -f "${RESUME_DIR}/${slug}.md" ]]; then
+          skipped=$((skipped + 1))
+          continue
+        fi
+        kept="${kept}${f}"$'\n'
+      done <<<"${files_nl}"
+      files_nl="${kept%$'\n'}"
+      nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
+      ai_review::info "  ${skipped} file(s) already covered by an existing report; ${nfiles} remaining."
+
+      if ((nfiles == 0)); then
+        # Nothing left to audit. Regenerate the index from what is already
+        # there rather than reporting success having done nothing — a resumed
+        # run that finds the work complete should still leave a current index.
+        ai_review::ok "Nothing left to audit; the bundle is already complete."
+        ai_review::log "  ${RESUME_DIR}/_INDEX.md"
+        exit 0
+      fi
+    fi
+  fi
+
+  # ── Batch plan ─────────────────────────────────────────────────────────
+  local -a _batch_records=()
+  local _rec
+  while IFS= read -r _rec; do
+    [[ -z "${_rec}" ]] && continue
+    _batch_records+=("${_rec}")
+  done < <(printf '%s\n' "${files_nl}" | ai_review::group_files_into_batches |
+    ai_review::pack_batches "${AI_REVIEW_JOBS}")
+  local _nbatches=${#_batch_records[@]}
+
+  if ((AI_REVIEW_LIST_BATCHES == 1)); then
+    ai_review::info "Batch plan (batch-by=${AI_REVIEW_BATCH_BY:-dir}): ${nfiles} file(s) in ${_nbatches} batch(es)"
+    for _rec in "${_batch_records[@]+"${_batch_records[@]}"}"; do
+      printf '  %s\n' "${_rec%%$'\t'*}"
+    done
+    exit 0
+  fi
+
+  if ((AI_REVIEW_DRY_RUN == 1)); then
+    ai_review::info "Plan (no AI call):"
+    ai_review::log "  Scope:          $(audit::scope_description)"
+    ai_review::log "  Files:          ${nfiles}"
+    ai_review::log "  Batches:        ${_nbatches} (concurrency ${AI_REVIEW_JOBS})"
+    ai_review::log "  Profile:        ${AI_REVIEW_PROFILE}"
+    ai_review::log "  Tool:           ${AI_REVIEW_TOOL_RESOLVED}"
+    # The audit sends the whole scope to the endpoint, not a diff, so WHERE it
+    # goes is the most consequential line in this plan. Shown here so it can be
+    # checked before any code leaves the machine — endpoint validation itself
+    # runs after the dry-run gate, so --dry-run needs no credentials.
+    ai_review::log "  Provider:       ${AI_REVIEW_PROVIDER:-api}$([[ -z "${AI_REVIEW_PROVIDER:-}" || "${AI_REVIEW_PROVIDER}" == "api" ]] && printf ' (PUBLIC endpoint — see docs/private-endpoints.md for in-boundary options)')"
+    ai_review::log "  Adjudication:   $(ai_review::adjudication_mode)"
+    ai_review::log "  Expected calls: ~${_nbatches} first-pass$([[ "$(ai_review::adjudication_mode)" == "independent" ]] && printf ' + 1 adjudication')"
+    exit 0
+  fi
+
+  # Validate and configure the LLM endpoint now that a real invocation will
+  # happen. Without this, AI_REVIEW_PROVIDER was silently ignored and an audit
+  # configured for Bedrock or Azure went to the public API instead — the whole
+  # scope, to the wrong place, with nothing reported.
+  ai_review::configure_endpoint
+
+  # ── Confirm before spending ────────────────────────────────────────────
+  # A full-repo audit reads every file in scope and is the most expensive thing
+  # in this repo by a wide margin — roughly one model call per batch, each
+  # carrying a large rubric plus the files it reviews. Someone who typed
+  # `audit` at the root of a monorepo expecting the speed of a lint run should
+  # find out before the bill, not after.
+  if ((ASSUME_YES == 0)); then
+    if [[ ! -t 0 ]]; then
+      ai_review::err "Refusing to start without confirmation: stdin is not a TTY."
+      ai_review::err "  This would audit ${nfiles} file(s) across ${_nbatches} batch(es) —"
+      ai_review::err "  roughly ${_nbatches} model call(s), each reading the files in its batch."
+      ai_review::err "  Pass --yes (or AI_AUDIT_ASSUME_YES=1) to run non-interactively."
+      exit 2
+    fi
+    ai_review::warn "This audit will send code to a model and consume tokens."
+    ai_review::log "  Scope:          $(audit::scope_description)"
+    ai_review::log "  Files:          ${nfiles}"
+    ai_review::log "  Batches:        ${_nbatches} (concurrency ${AI_REVIEW_JOBS})"
+    ai_review::log "  Expected calls: ~${_nbatches} first-pass$([[ "$(ai_review::adjudication_mode)" == "independent" ]] && printf ' + 1 adjudication')"
+    ai_review::log "  Endpoint:       ${AI_REVIEW_PROVIDER:-api}$([[ -z "${AI_REVIEW_PROVIDER:-}" || "${AI_REVIEW_PROVIDER}" == "api" ]] && printf ' (PUBLIC — the whole scope leaves your machine)')"
+    ai_review::log "  Report:         ${OUTPUT_PARENT:-(stdout only)}"
+    ai_review::log ""
+    ai_review::log "  --dry-run shows this plan without spending anything."
+    printf '  Proceed? [y/N] ' >&2
+    local reply=""
+    read -r reply || reply=""
+    case "${reply}" in
+      y | Y | yes | YES) ;;
+      *)
+        ai_review::log "Aborted; nothing was sent."
+        exit 0
+        ;;
+    esac
+  fi
+
+  # ── Audit ──────────────────────────────────────────────────────────────
+  local audit_json result human_output=""
+  if ai_review::should_batch "${nfiles}" "${_nbatches}"; then
+    ai_review::info "Auditing ${nfiles} file(s) under $(audit::scope_description) via ${AI_REVIEW_TOOL_RESOLVED} — ${_nbatches} batch(es)..."
+    ai_review::log "────────────────────────────────────────────────────────────"
+
+    AI_REVIEW_BATCH_DIR="$(mktemp -d)"
+    AI_REVIEW_SELF="${BASH_SOURCE[0]}"
+    export AI_REVIEW_SELF AI_REVIEW_PROFILE
+    trap 'rm -rf "${AI_REVIEW_BATCH_DIR}"' EXIT
+
+    AI_REVIEW_FAN_COMPLETE=0
+    AI_REVIEW_BATCH_SENTINELS=""
+    AI_REVIEW_WORKER_FLAG="--__audit-one"
+    export AI_REVIEW_WORKER_FLAG
+    ai_review::fan_out "${_batch_records[@]}"
+    ai_review::log "────────────────────────────────────────────────────────────"
+
+    if ((AI_REVIEW_FAN_COMPLETE != 1)); then
+      ai_review::err "Fan-out did not audit every batch; failing rather than reporting a partial audit."
+      exit 1
+    fi
+
+    local -a _json_files=()
+    local _line _jf
+    while IFS= read -r _line; do
+      [[ "${_line}" == AI_REVIEW_BATCH_RESULT* ]] || continue
+      _jf="$(printf '%s' "${_line}" | cut -f4)"
+      [[ -n "${_jf}" && "${_jf}" != "-" ]] && _json_files+=("${_jf}")
+    done <<<"${AI_REVIEW_BATCH_SENTINELS}"
+
+    audit_json="$(python3 "${AI_COMMON_HOME}/harness/fold_review_json.py" "${_json_files[@]}")"
+    result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+  else
+    export AI_REVIEW_SCOPE_PATHS="${files_nl}"
+    AI_REVIEW_ADJUDICATION_MODE="$(ai_review::adjudication_mode)"
+    export AI_REVIEW_ADJUDICATION_MODE
+    SKILL_PROMPT="$(audit::build_prompt)"
+
+    ai_review::info "Auditing ${nfiles} file(s) under $(audit::scope_description) via ${AI_REVIEW_TOOL_RESOLVED}..."
+    ai_review::log "────────────────────────────────────────────────────────────"
+
+    local invoke_rc=0
+    human_output="$(ai_review::invoke_ai)" || invoke_rc=$?
+
+    if ((JSON_ONLY == 0)); then
+      printf '%s\n' "${human_output}"
+      ai_review::log "────────────────────────────────────────────────────────────"
+    fi
+
+    if ((invoke_rc != 0)); then
+      ai_review::err "AI CLI (${AI_REVIEW_TOOL_RESOLVED}) exited with code ${invoke_rc}."
+      exit 1
+    fi
+
+    local marker
+    marker="$(ai_review::parse_result "${human_output}")"
+    if [[ "${marker}" == "UNPARSEABLE" ]]; then
+      ai_review::err "No ${AI_REVIEW_MARKER_VOCAB} result marker in the AI response."
+      exit 1
+    fi
+    if ! audit_json="$(audit::require_json "${human_output}" "${marker}")"; then
+      ai_review::err "No parseable findings JSON block in the AI response."
+      exit 1
+    fi
+    result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+  fi
+
+  # ── Independent adjudication, once, on the whole audit ──────────────────
+  if [[ "$(ai_review::adjudication_mode)" == "independent" && "${result}" != "APPROVE" ]]; then
+    local adj_output adj_rc=0
+    adj_output="$(ai_review::adjudicate "${audit_json}")" || adj_rc=$?
+    if ((adj_rc == 0)); then
+      local adj_json
+      if adj_json="$(ai_review::extract_review_json "${adj_output}")" && [[ -n "${adj_json}" ]]; then
+        audit_json="${adj_json}"
+        result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+        ((JSON_ONLY == 0)) && printf '%s\n' "${adj_output}"
+      else
+        ai_review::warn "Adjudication produced no parseable JSON; keeping the first-pass findings."
+      fi
+    else
+      ai_review::warn "Adjudication failed (rc=${adj_rc}); keeping the first-pass findings."
+    fi
+  fi
+
+  # ── Report bundle ───────────────────────────────────────────────────────
+  if [[ -n "${OUTPUT_PARENT}" ]]; then
+    local run_dir meta_file findings_file report_file
+    if ((RESUME == 1)) && [[ -n "${RESUME_DIR}" ]]; then
+      run_dir="${RESUME_DIR}"
+    else
+      run_dir="$(audit::allocate_run_dir "${OUTPUT_PARENT}")"
+    fi
+    meta_file="$(mktemp)"
+    findings_file="$(mktemp)"
+    report_file="$(mktemp)"
+    printf '%s\n' "${audit_json}" >"${findings_file}"
+
+    # On resume, carry the previous findings forward. Without this the
+    # regenerated index would list only this segment's findings and the
+    # already-written directory docs would be rewritten empty — a resumed run
+    # would quietly DELETE the results it was meant to preserve.
+    if ((RESUME == 1)) && [[ -f "${run_dir}/findings.json" ]]; then
+      python3 - "${run_dir}/findings.json" "${findings_file}" <<'MERGE'
+import json, sys
+prev = json.load(open(sys.argv[1])).get("comments") or []
+new = json.load(open(sys.argv[2]))
+seen = set()
+merged = []
+for f in prev + (new.get("comments") or []):
+    if not isinstance(f, dict):
+        continue
+    key = (f.get("path"), f.get("line"), str(f.get("perspective", "")).lower(), f.get("title"))
+    if key in seen:
+        continue
+    seen.add(key)
+    merged.append(f)
+new["comments"] = merged
+if merged and new.get("review_action") == "APPROVE":
+    # A clean segment must not downgrade a bundle that already has findings.
+    new["review_action"] = "COMMENT"
+json.dump(new, open(sys.argv[2], "w"))
+MERGE
+      ai_review::info "  merged with the findings already in the bundle"
+    fi
+
+    # The narrative covers only this segment, so append rather than replace.
+    if ((RESUME == 1)) && [[ -f "${run_dir}/report.md" ]]; then
+      {
+        cat "${run_dir}/report.md"
+        printf '\n\n---\n\n## Resumed segment (%s)\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        printf '%s\n' "${human_output}"
+      } >"${report_file}"
+    else
+      printf '%s\n' "${human_output}" >"${report_file}"
+    fi
+
+    # Every audited directory, so the index can say "audited and clean" rather
+    # than leaving it ambiguous with "not audited".
+    # Every directory in the ORIGINAL scope, so a resumed run's index still
+    # lists the directories it skipped rather than implying they were never
+    # audited.
+    local dirs_json
+    dirs_json="$(printf '%s\n' "${ALL_DIRECTORIES}" | python3 -c '
+import json, sys
+print(json.dumps(sorted({l.strip() for l in sys.stdin if l.strip()})))')"
+
+    python3 - "${meta_file}" "${dirs_json}" <<META
+import json, sys
+json.dump({
+    "repo": "$(basename "$(git rev-parse --show-toplevel)")",
+    "date": "$(date +%Y-%m-%d)",
+    "run": "$(basename "${run_dir}" | sed 's/.*-//')",
+    "scope": "$(audit::scope_description)",
+    "profile": "${AI_REVIEW_PROFILE}",
+    "tool": "${AI_REVIEW_TOOL_RESOLVED}",
+    "provider": "${AI_REVIEW_PROVIDER:-api}",
+    "adjudication": "$(ai_review::adjudication_mode)",
+    "files": ${nfiles},
+    "directories": json.loads(sys.argv[2]),
+}, open(sys.argv[1], "w"))
+META
+
+    local index
+    if index="$(python3 "${AI_COMMON_HOME}/harness/write_audit_report.py" \
+      "${run_dir}" "${findings_file}" "${meta_file}" "${report_file}")"; then
+      ai_review::ok "Report bundle written. Start here:"
+      ai_review::log "  ${index}"
+    else
+      ai_review::err "Could not write the report bundle to ${run_dir}."
+      rm -f "${meta_file}" "${findings_file}" "${report_file}"
+      exit 1
+    fi
+    rm -f "${meta_file}" "${findings_file}" "${report_file}"
+  fi
+
+  # ── Artifacts, only where asked ─────────────────────────────────────────
+  if [[ -n "${JSON_OUT}" ]]; then
+    printf '%s\n' "${audit_json}" >"${JSON_OUT}"
+    ai_review::info "Findings JSON written to ${JSON_OUT}"
+  fi
+  if [[ -n "${MD_OUT}" ]]; then
+    printf '%s\n' "${human_output}" >"${MD_OUT}"
+    ai_review::info "Report written to ${MD_OUT}"
+  fi
+  if ((JSON_ONLY == 1)); then
+    printf '%s\n' "${audit_json}"
+  fi
+
+  local nfindings
+  nfindings="$(printf '%s' "${audit_json}" |
+    python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("comments") or []))')"
+  ai_review::ok "Audit complete: ${nfindings} finding(s) across ${nfiles} file(s) (${result})."
+  exit 0
+}
+
+# ── Dispatch ────────────────────────────────────────────────────────────────
+audit::parse_flags "$@"
+
+if ((WORKER_MODE == 1)); then
+  [[ -n "${WORKER_RECORD}" && -n "${AI_REVIEW_BATCH_DIR:-}" ]] || {
+    ai_review::err "Internal error: --__audit-one requires a batch record and AI_REVIEW_BATCH_DIR."
+    exit 2
+  }
+  ai_review::parse_args
+  audit::worker_main "${WORKER_RECORD}"
+  exit 0
+fi
+
+ai_review::parse_args "${REMAINING_FOR_LIB[@]+"${REMAINING_FOR_LIB[@]}"}"
+
+# --doctor runs before anything that needs a git repo, a scope, or credentials.
+((DOCTOR == 1)) && audit::doctor
+
+audit::run

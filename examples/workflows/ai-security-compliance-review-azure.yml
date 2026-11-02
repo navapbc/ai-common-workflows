@@ -1,0 +1,49 @@
+# AI security & compliance review against Azure OpenAI — keep code and diffs inside your Azure boundary.
+#
+# Azure OpenAI serves OpenAI models, so this uses the `codex` tool (not `claude`).
+# `model` is the Azure *deployment* name; the engine derives the OpenAI-compatible
+# endpoint from azure-openai-endpoint + the deployment + the api-version.
+#
+# As with Bedrock, in-boundary only holds if the review compute is in-boundary too.
+# If the Azure resource is behind a Private Endpoint / firewall, run this on a
+# self-hosted runner that can reach it (change `runs-on`). See docs/private-endpoints.md.
+name: AI security & compliance review (Azure OpenAI)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# One review per PR. A new push supersedes an in-flight run rather than racing
+# it: each run is a real model call you pay for, and two of them would post
+# overlapping comments.
+concurrency:
+  group: ai-security-compliance-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest # ← consider a self-hosted runner that can reach your Azure resource
+    # A review of a large diff runs ~8 minutes; GitHub's default job
+    # timeout is six hours, which is a long time for a hung CLI to hold a
+    # runner.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Keep the token out of .git/config so the AI phase cannot reach a
+          # repo-write credential. The action posts in a separate step that
+          # holds the token. See docs/security.md.
+          persist-credentials: false
+
+      - uses: navapbc/ai-common-workflows/workflows/security-compliance-review@REPLACE_WITH_COMMIT_SHA # v1.0.0
+        with:
+          ai-tool: codex
+          provider: azure
+          azure-openai-endpoint: https://my-resource.openai.azure.com
+          azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          azure-openai-api-version: "2024-10-21"
+          model: my-gpt-deployment # the Azure deployment name

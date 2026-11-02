@@ -1,0 +1,184 @@
+# Keep this repo's AI-review Copilot instructions in sync with ai-common-workflows.
+#
+# PULL model: copy this file into your repo's .github/workflows/. It fetches the
+# ai-review-*.instructions.md files from ai-common-workflows and opens a PR that
+# updates .github/instructions/ai-review/. It uses only this repo's own
+# GITHUB_TOKEN — no central distributor, and ai-common-workflows needs no
+# knowledge of your repo.
+#
+# THE PR IS THE GATE. This workflow never pushes to your default branch. Every
+# change arrives as a reviewable PR on `ai-review/instructions-sync`, and the
+# diff is plain English your team reads before merging — so nothing from
+# upstream reaches your repository without a human agreeing to it.
+#
+# That is why ACW_REF tracks `main` rather than a commit SHA, unlike everything
+# else in this project. Nothing here executes: the job copies Markdown. Pinning
+# would add a second gate on a SHA nobody reads, in front of a gate on content
+# they do read — and it would make the schedule below pointless, because a
+# fixed ref never produces a diff. Actions used BY this workflow are still
+# SHA-pinned, because those do run code in your job.
+#
+# What gets synced: the BASE instruction set always, plus — if PROFILE names a
+# profile that has them — that profile's `*-additions` files layered on top. The
+# base is the review floor; a profile only ever adds to it. `baseline` has no
+# additions, so it syncs the base alone. Switching PROFILE later removes the
+# previous profile's additions automatically.
+#
+# Setup: set PROFILE below, then merge. ACW_REF tracks `main` by default.
+#
+# How the PR gets opened — pick one (the workflow supports all three):
+#
+# a. Default (no settings changed, no secrets): the workflow pushes the update
+#    branch and TRIES `gh pr create`. GitHub's "Allow GitHub Actions to create
+#    and approve pull requests" toggle is DISABLED by default, so creation is
+#    typically refused — the workflow then succeeds anyway and prints a
+#    compare URL; a human opens the PR with one click. Create-only,
+#    human-in-the-loop, zero configuration.
+#
+# b. Recommended for full automation WITHOUT granting workflows approve
+#    rights: add a `COPILOT_SYNC_TOKEN` repo secret — a fine-grained PAT
+#    scoped to THIS repo with pull-requests:write ONLY (this token never
+#    pushes: the branch is pushed by the built-in GITHUB_TOKEN that
+#    actions/checkout persisted, so granting contents is pure over-reach),
+#    issued from a
+#    dedicated MACHINE USER rather than a person's account, so sync PRs are
+#    not attributed to a colleague and the automation outlives any one
+#    individual's access. The workflow uses it automatically. The
+#    create-and-approve toggle stays OFF, no other workflow gains any new
+#    capability, GitHub still forbids any identity approving its own PR — and
+#    `pull_request` CI runs normally on the sync PR (GitHub suppresses CI on
+#    PRs created with the built-in GITHUB_TOKEN, but not on PRs created with a
+#    PAT/App token).
+#
+# c. Or enable "Allow GitHub Actions to create and approve pull requests"
+#    (Settings → Actions → General → Workflow permissions). Note this single
+#    toggle grants BOTH create and approve to every workflow's GITHUB_TOKEN in
+#    the repo, and CI on the sync PR will still be suppressed/held (see b).
+name: Sync AI-review Copilot instructions
+
+on:
+  schedule:
+    - cron: "0 12 * * 1" # weekly (Mon 12:00 UTC); adjust as you like
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # push the update branch
+  pull-requests: write # open the PR
+
+env:
+  # Compliance profile to track: baseline (default) | cms-ars-5.1 | <your profile>.
+  PROFILE: baseline
+  # Which ref to copy the instructions FROM. `main` by design — see the
+  # "the PR is the gate" note in the header above. This is the one place in
+  # this project that is NOT pinned to a commit SHA, and the reason is that
+  # nothing here executes: the job copies Markdown and opens a PR your team
+  # reviews. Pinning would also make the schedule below pointless, since a
+  # fixed ref never produces a diff.
+  #
+  # Pin to a 40-character commit SHA instead if your program requires it.
+  # Updates then arrive only when someone edits this line.
+  ACW_REPO: navapbc/ai-common-workflows
+  ACW_REF: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch instruction files from ai-common-workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.ACW_REPO }}
+          ref: ${{ env.ACW_REF }}
+          path: .acw-src
+          persist-credentials: false
+
+      - name: Copy the base instructions (+ any profile additions) into .github/instructions/ai-review/
+        run: |
+          set -euo pipefail
+          base=".acw-src/copilot-instructions/base/instructions"
+          profile_dir=".acw-src/copilot-instructions/profiles/${PROFILE}"
+          if [[ ! -d "${profile_dir}" ]]; then
+            echo "::error::profile '${PROFILE}' not found at ${profile_dir} in ${ACW_REPO}@${ACW_REF}"
+            exit 1
+          fi
+          # Everything this workflow owns lives in ONE subdirectory. Copilot
+          # code review reads subdirectories of .github/instructions, so this
+          # is purely organizational for the reader — but it means the sync
+          # only ever writes inside a directory it owns, and never has to
+          # prefix-match against instruction files you wrote yourself.
+          dest=".github/instructions/ai-review"
+          mkdir -p "${dest}"
+          # The base set always applies — it is the review floor.
+          cp "${base}"/ai-review-*.instructions.md "${dest}"/
+          # A profile contributes *-additions files layered on top of the base,
+          # never replacing it. 'baseline' has none, so it syncs the base alone.
+          if compgen -G "${profile_dir}/instructions/ai-review-*-additions.instructions.md" > /dev/null; then
+            cp "${profile_dir}"/instructions/ai-review-*-additions.instructions.md "${dest}"/
+          fi
+          # Drop additions from a previously-synced profile the repo no longer
+          # tracks, so switching PROFILE (e.g. cms-ars-5.1 -> baseline) removes the
+          # stale overlay instead of silently leaving it applied.
+          # Plain rm; the commit step stages deletions with `git add -A`.
+          for f in "${dest}"/ai-review-*-additions.instructions.md; do
+            [[ -e "${f}" ]] || continue
+            if [[ ! -e "${profile_dir}/instructions/$(basename "${f}")" ]]; then
+              echo "Removing stale overlay from a previous profile: ${f}"
+              rm -f "${f}"
+            fi
+          done
+          # Migration: earlier versions synced these files FLAT into
+          # .github/instructions/. Leaving them there would double every
+          # instruction (Copilot reads both locations) and would strand a stale
+          # overlay at the old path when PROFILE changes. Remove only the
+          # ai-review-* files we used to own — never anything you wrote.
+          for f in .github/instructions/ai-review-*.instructions.md; do
+            [[ -e "${f}" ]] || continue
+            echo "Migrating: removing legacy flat copy ${f} (now under ${dest}/)"
+            rm -f "${f}"
+          done
+          rm -rf .acw-src
+
+      - name: Open or update the sync PR
+        env:
+          # Prefers the optional COPILOT_SYNC_TOKEN secret (option b in the
+          # header); falls back to the built-in token (options a/c).
+          GH_TOKEN: ${{ secrets.COPILOT_SYNC_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          branch="ai-review/instructions-sync"
+          # Catches both modified and newly added instruction files.
+          if [[ -z "$(git status --porcelain -- .github/instructions)" ]]; then
+            echo "Copilot instructions already up to date; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${branch}"
+          # -A so a removed stale overlay (see the copy step) is staged too.
+          git add -A -- .github/instructions
+          git commit -q -m "Sync AI-review Copilot instructions (${PROFILE})"
+          # Pushing the branch is always permitted (contents: write); only PR
+          # creation is gated by the create-and-approve toggle.
+          git push -f -q origin "${branch}"
+          # Only an OPEN PR means "already tracked". `gh pr view <branch>`
+          # matches a CLOSED or MERGED PR on the same branch too, so using it
+          # here made every run after the first sync PR was closed/merged print
+          # "Existing sync PR updated" and skip `gh pr create` — the update sat
+          # on the branch with no PR and a green check. `gh pr list --state open`
+          # is the state-scoped lookup this needs.
+          if [[ -n "$(gh pr list --head "${branch}" --state open \
+                        --json number --jq '.[0].number' 2>/dev/null)" ]]; then
+            echo "Existing sync PR updated."
+          elif gh pr create --head "${branch}" \
+              --title "Sync AI-review Copilot instructions (${PROFILE})" \
+              --body "Automated sync of \`.github/instructions/ai-review-*.instructions.md\` from ${ACW_REPO}@\`${ACW_REF}\` (profile: \`${PROFILE}\`). Review and merge as usual."; then
+            echo "Sync PR opened."
+          else
+            # Typically: "GitHub Actions is not permitted to create or approve
+            # pull requests" (the default-off repo toggle). The branch IS
+            # pushed — surface a one-click link instead of failing the run.
+            echo "::notice::Could not auto-create the PR (see log). The branch '${branch}' is pushed — open the PR here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${branch}?expand=1 (or add a COPILOT_SYNC_TOKEN secret / enable PR creation for Actions; see this workflow's header)."
+          fi

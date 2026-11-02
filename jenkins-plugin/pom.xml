@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.jenkins-ci.plugins</groupId>
+    <artifactId>plugin</artifactId>
+    <version>6.2236.v12dd4c483242</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>io.jenkins.plugins</groupId>
+  <artifactId>ai-common-parent</artifactId>
+  <version>${revision}${changelist}</version>
+  <packaging>pom</packaging>
+
+  <name>AI Common Workflows (parent)</name>
+  <description>Shared core plus per-workflow Jenkins plugins for the ai-common-workflows engine.</description>
+  <url>https://github.com/navapbc/ai-common-workflows</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+
+  <modules>
+    <module>core</module>
+    <module>security-compliance-review</module>
+  </modules>
+
+  <properties>
+    <revision>0.1.0</revision>
+    <changelist>-SNAPSHOT</changelist>
+    <!-- First Java-17 LTS baseline; broad controller compatibility. -->
+    <jenkins.version>2.479.3</jenkins.version>
+    <maven.compiler.release>17</maven.compiler.release>
+    <spotbugs.skip>false</spotbugs.skip>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.jenkins.tools.bom</groupId>
+        <artifactId>bom-2.479.x</artifactId>
+        <version>5054.v620b_5d2b_d5e6</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <!-- Inter-module: the per-workflow plugins depend on the shared core
+           library plugin. Version pinned here so children omit it. -->
+      <dependency>
+        <groupId>io.jenkins.plugins</groupId>
+        <artifactId>ai-common-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <repositories>
+    <repository>
+      <id>repo.jenkins-ci.org</id>
+      <url>https://repo.jenkins-ci.org/public/</url>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>repo.jenkins-ci.org</id>
+      <url>https://repo.jenkins-ci.org/public/</url>
+    </pluginRepository>
+  </pluginRepositories>
+</project>
