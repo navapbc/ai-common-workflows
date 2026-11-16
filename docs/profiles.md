@@ -95,11 +95,16 @@ overlay.
 
 `AI_REVIEW_PROFILE` is resolved by the engine as:
 
-1. If it is an **existing directory path**, that directory is the profile
-   (bring-your-own).
-2. Else if the engine's `skills/profiles/<name>/` exists, that is the profile.
+1. If the entry **contains a slash** (`./my-profile`, an absolute path), it is
+   a bring-your-own profile directory and must exist.
+2. Else it must name a bundled profile: the engine's `skills/profiles/<name>/`.
 3. Else the run fails with a configuration error (exit 2) listing the bundled
    profiles.
+
+A bare name never resolves against the repo being reviewed. The engine runs
+with that repo as its working directory, so a name-first lookup there would
+let a PR add a directory named after a bundled profile and replace the rubric
+it is judged against.
 
 Every rubric file works the same way — there is exactly one rule:
 

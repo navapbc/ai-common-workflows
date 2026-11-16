@@ -6,6 +6,8 @@
 
 bats_require_minimum_version 1.5.0
 
+load 'helpers'
+
 setup() {
   REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
   ENGINE="${REPO_ROOT}/engines/security-compliance-review/harness/ai-security-compliance-review"
@@ -13,6 +15,9 @@ setup() {
   FIX="${REPO_ROOT}/tests/fixtures"
   export PATH="${STUBS}:${PATH}"
   export AI_REVIEW_TOOL=claude ANTHROPIC_API_KEY=test CI=true NO_COLOR=1
+  # Host/CI config must never leak into engine test behavior.
+  unset GITHUB_TOKEN GH_TOKEN AI_REVIEW_PROVIDER AI_REVIEW_MODEL || true
+  sanitize_endpoint_env
 
   WORK="$(mktemp -d)"
   cd "${WORK}"
