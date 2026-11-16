@@ -20,6 +20,23 @@ common_setup() {
   export STUB_CALLS="${BATS_TEST_TMPDIR}/stub-calls.log"
   # Ensure host/CI GitHub tokens never leak into engine test behavior.
   unset GITHUB_TOKEN GH_TOKEN AI_REVIEW_PROVIDER AI_REVIEW_MODEL || true
+  sanitize_endpoint_env
+}
+
+# Clears every endpoint variable endpoints.sh reads. A developer's shell often
+# carries AWS or OpenAI config (e.g. AWS_DEFAULT_REGION satisfies the bedrock
+# region check), which makes misconfiguration tests pass or fail based on the
+# host instead of the test.
+sanitize_endpoint_env() {
+  unset AWS_REGION AWS_DEFAULT_REGION AWS_PROFILE \
+    AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
+    AWS_WEB_IDENTITY_TOKEN_FILE \
+    AWS_CONTAINER_CREDENTIALS_RELATIVE_URI AWS_CONTAINER_CREDENTIALS_FULL_URI \
+    ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN \
+    OPENAI_API_KEY OPENAI_BASE_URL \
+    AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY AZURE_OPENAI_API_VERSION \
+    COPILOT_PROVIDER_BASE_URL COPILOT_PROVIDER_TYPE COPILOT_PROVIDER_API_KEY \
+    COPILOT_MODEL COPILOT_GITHUB_TOKEN AI_REVIEW_CLI_NATIVE_AUTH || true
 }
 
 # Creates a scratch repo with a 2-file diff (src/app.py + infra/rds.tf) and

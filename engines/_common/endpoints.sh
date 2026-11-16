@@ -38,7 +38,9 @@
 # point the CLIs at a custom endpoint.
 #
 # Secrets are never printed. The audit line names the tool, provider, region,
-# model, and whether a base-URL override is in effect — nothing more.
+# model, and whether a base-URL override is in effect — nothing more. A
+# caller-supplied base URL is redacted before printing (login info and the
+# query string are removed) in case it carries credentials.
 
 set -euo pipefail
 
@@ -87,6 +89,27 @@ ai_review::warn_cli_native_auth() {
   ai_review::warn "AI_REVIEW_CLI_NATIVE_AUTH=1 — no API key in the environment; using the ${AI_REVIEW_TOOL_RESOLVED} CLI's own login."
   ai_review::warn "  Traffic goes to the PUBLIC endpoint. If this run has to stay inside a boundary,"
   ai_review::warn "  unset it and set AI_REVIEW_PROVIDER=bedrock|vertex|azure instead."
+}
+
+# ai_review::redact_url <url>
+# Prints the URL with anything that could hold a credential removed: the
+# login part (user:pass@) and the query string. Gateway URLs sometimes carry
+# secrets there, and the audit line must never print one. Scheme, host, and
+# path are enough to audit where traffic goes.
+ai_review::redact_url() {
+  local url="$1"
+  if [[ "${url}" == *\?* ]]; then
+    url="${url%%\?*}?..."
+  fi
+  local rest="${url#*://}"
+  if [[ "${rest}" != "${url}" ]]; then
+    local scheme="${url%%://*}"
+    local host="${rest%%/*}"
+    if [[ "${host}" == *@* ]]; then
+      url="${scheme}://${host##*@}${rest:${#host}}"
+    fi
+  fi
+  printf '%s' "${url}"
 }
 
 # ai_review::configure_endpoint
@@ -166,7 +189,7 @@ ai_review::configure_endpoint() {
         -z "${AWS_WEB_IDENTITY_TOKEN_FILE:-}" &&
         -z "${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}" &&
         -z "${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}" ]]; then
-        ai_review::warn "No AWS credential source detected in the environment (env keys, profile, web identity, or container credentials). Bedrock calls will fail unless the host provides an instance role."
+        ai_review::warn "No AWS credential source detected in the environment (env keys, profile, web identity, or container credentials). Bedrock calls will fail unless the host provides an instance role or a default profile in ~/.aws/credentials."
       fi
       ;;
     vertex)
@@ -224,8 +247,8 @@ ai_review::configure_endpoint() {
       if [[ -z "${OPENAI_API_KEY:-}" ]]; then
         ai_review::warn "provider=azure with no AZURE_OPENAI_API_KEY/OPENAI_API_KEY — assuming the endpoint handles auth."
       fi
-      # The resource region is encoded in the endpoint host; the audit line's
-      # base_url (printed below for codex) already shows it and the api-version.
+      # The resource region is encoded in the endpoint host, which the audit
+      # line's base_url (printed below for codex) still shows after redaction.
       ;;
     api)
       # A CLI can hold its own login: `claude` and `codex` both authenticate
@@ -297,12 +320,13 @@ ai_review::configure_endpoint() {
       ;;
   esac
 
-  # Base-URL overrides pass through for any provider; report their presence
-  # (never the value's credentials, though a URL itself is not a secret).
+  # Base-URL overrides pass through for any provider. Report their presence,
+  # redacted: a caller-supplied URL may carry credentials in its login part
+  # or query string, and those must never reach the log.
   case "${AI_REVIEW_TOOL_RESOLVED}" in
-    claude) [[ -n "${ANTHROPIC_BASE_URL:-}" ]] && base_url="${ANTHROPIC_BASE_URL}" ;;
-    codex) [[ -n "${OPENAI_BASE_URL:-}" ]] && base_url="${OPENAI_BASE_URL}" ;;
-    copilot) [[ -n "${COPILOT_PROVIDER_BASE_URL:-}" ]] && base_url="${COPILOT_PROVIDER_BASE_URL}" ;;
+    claude) [[ -n "${ANTHROPIC_BASE_URL:-}" ]] && base_url="$(ai_review::redact_url "${ANTHROPIC_BASE_URL}")" ;;
+    codex) [[ -n "${OPENAI_BASE_URL:-}" ]] && base_url="$(ai_review::redact_url "${OPENAI_BASE_URL}")" ;;
+    copilot) [[ -n "${COPILOT_PROVIDER_BASE_URL:-}" ]] && base_url="$(ai_review::redact_url "${COPILOT_PROVIDER_BASE_URL}")" ;;
   esac
 
   ai_review::info "Endpoint: tool=${AI_REVIEW_TOOL_RESOLVED} provider=${provider} region=${region} model=${AI_REVIEW_MODEL:-"(tool default)"} base_url=${base_url}"

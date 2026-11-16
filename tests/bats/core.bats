@@ -3,6 +3,8 @@
 # extraction, batch
 # planning/packing/folding, and the endpoint matrix.
 
+load 'helpers'
+
 setup() {
   # ENGINE_HOME = the workflow engine; the shared runtime is its _common sibling.
   ENGINE_HOME="$(cd "${BATS_TEST_DIRNAME}/../../engines/security-compliance-review" && pwd)"
@@ -11,6 +13,7 @@ setup() {
   export ENGINE_HOME
   SKILL_NAME="test"
   CI=true
+  sanitize_endpoint_env
   # shellcheck disable=SC1091
   source "${AI_COMMON_HOME}/harness/core.sh"
   # shellcheck disable=SC1091

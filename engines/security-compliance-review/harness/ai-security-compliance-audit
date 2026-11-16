@@ -471,7 +471,9 @@ audit::worker_main() {
     marker="$(ai_review::parse_result "${output}")"
     local json_block
     if json_block="$(audit::require_json "${output}" "${marker}")"; then
-      json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX.json")"
+      # Trailing X's only: BSD/macOS mktemp cannot substitute X's followed by
+      # a suffix, and parallel workers would collide on the literal name.
+      json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX")"
       printf '%s\n' "${json_block}" >"${json_file}"
     else
       ai_review::err "[${key}] AI response contained no parseable JSON block." >&2
