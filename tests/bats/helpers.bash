@@ -26,7 +26,8 @@ common_setup() {
 # Clears every endpoint variable endpoints.sh reads. A developer's shell often
 # carries AWS or OpenAI config (e.g. AWS_DEFAULT_REGION satisfies the bedrock
 # region check), which makes misconfiguration tests pass or fail based on the
-# host instead of the test.
+# host instead of the test. Unset only removes those variables from the current 
+# process's environment, and each bats test runs in its own throwaway process.
 sanitize_endpoint_env() {
   unset AWS_REGION AWS_DEFAULT_REGION AWS_PROFILE \
     AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
