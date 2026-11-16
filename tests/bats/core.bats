@@ -402,9 +402,20 @@ report
   run ai_review::configure_endpoint
   [ "$status" -eq 0 ]
   [[ "$output" == *"provider=azure"* ]]
-  [[ "$output" == *"openai/deployments/gpt-review"* ]]
-  [[ "$output" == *"api-version=2024-10-21"* ]]
+  # The audit line redacts the query string ("?..."), so the api-version is
+  # not shown; the deployment path still is.
+  [[ "$output" == *"openai/deployments/gpt-review?..."* ]]
   [[ "$output" != *"azuresecret"* ]]
+}
+
+@test "endpoint: audit line redacts credentials in a caller-supplied base URL" {
+  export AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api
+  export ANTHROPIC_BASE_URL="https://user:sekret@gw.internal/v1?api-key=qsekret"
+  export ANTHROPIC_API_KEY=x
+  run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"base_url=https://gw.internal/v1?..."* ]]
+  [[ "$output" != *"sekret"* ]]
 }
 
 # ── rubric composition: base is an explicit list member ─────────────────────
