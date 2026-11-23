@@ -38,6 +38,20 @@ if [[ "${_AI_REVIEW_CORE_LOADED:-0}" == "1" ]]; then
 fi
 _AI_REVIEW_CORE_LOADED=1
 
+# ── Unexpected-failure trap ─────────────────────────────────────────────────
+# set -e exits on an unhandled failure without saying where. This trap names
+# the file, line, and command on the way out, so a crash is diagnosable from
+# the log. Intentional exits (ai_review::err + exit) do not fire it, and
+# handled failures (a command under if/||/&&) are exempt, same as set -e.
+# bats installs its own ERR trap for test failure detection, so never
+# replace it inside a bats process.
+if [[ -z "${BATS_VERSION:-}" ]]; then
+  set -E # functions, subshells, and substitutions inherit the trap
+  trap 'printf "[%s] ERROR: unexpected failure (rc=%s) at %s:%s: %s\n" \
+    "${SKILL_NAME:-ai-review}" "$?" "${BASH_SOURCE[0]:-?}" "${LINENO}" \
+    "${BASH_COMMAND}" >&2' ERR
+fi
+
 # ── Per-workflow parameterization ───────────────────────────────────────────
 # Each entrypoint sets these before (or instead of) relying on the defaults,
 # which preserve the security-compliance-review contract.

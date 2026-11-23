@@ -22,6 +22,19 @@ setup() {
 
 # ── parse_result: last marker wins (transcript-echo hazard) ─────────────────
 
+@test "core: an unhandled failure names its location via the ERR trap" {
+  # Forced outside bats (env -u): inside a bats process core.sh must leave
+  # bats' own ERR trap alone, which is also asserted below.
+  run env -u BATS_VERSION bash -c "SKILL_NAME=t source '${CORE_LIB}'; false"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpected failure"* ]]
+  [[ "$output" == *"false"* ]]
+}
+
+@test "core: sourcing under bats does not replace the bats ERR trap" {
+  [[ "$(trap -p ERR)" != *"unexpected failure"* ]]
+}
+
 @test "parse_result picks COMMENT" {
   run ai_review::parse_result "blah
 <<<AI_REVIEW_RESULT:COMMENT>>>"
