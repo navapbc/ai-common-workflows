@@ -38,6 +38,20 @@ if [[ "${_AI_REVIEW_CORE_LOADED:-0}" == "1" ]]; then
 fi
 _AI_REVIEW_CORE_LOADED=1
 
+# ── Unexpected-failure trap ─────────────────────────────────────────────────
+# set -e exits on an unhandled failure without saying where. This trap names
+# the file, line, and command on the way out, so a crash is diagnosable from
+# the log. Intentional exits (ai_review::err + exit) do not fire it, and
+# handled failures (a command under if/||/&&) are exempt, same as set -e.
+# bats installs its own ERR trap for test failure detection, so never
+# replace it inside a bats process.
+if [[ -z "${BATS_VERSION:-}" ]]; then
+  set -E # functions, subshells, and substitutions inherit the trap
+  trap 'printf "[%s] ERROR: unexpected failure (rc=%s) at %s:%s: %s\n" \
+    "${SKILL_NAME:-ai-review}" "$?" "${BASH_SOURCE[0]:-?}" "${LINENO}" \
+    "${BASH_COMMAND}" >&2' ERR
+fi
+
 # ── Per-workflow parameterization ───────────────────────────────────────────
 # Each entrypoint sets these before (or instead of) relying on the defaults,
 # which preserve the security-compliance-review contract.
@@ -821,14 +835,24 @@ ai_review::resolve_profiles() {
         ;;
     esac
 
-    if [[ -d "${name}" ]]; then
-      resolved="$(cd "${name}" && pwd)"
+    # A bare name resolves only to a bundled profile. The working directory is
+    # the repo under review, so matching bare names there would let a PR shadow
+    # a bundled profile and choose its own rubric. Bring-your-own profiles must
+    # be a path with a slash (./my-profile or absolute), an explicit choice.
+    if [[ "${name}" == */* ]]; then
+      if [[ -d "${name}" ]]; then
+        resolved="$(cd "${name}" && pwd)"
+      else
+        ai_review::err "profile path '${name}' is not an existing directory."
+        exit 2
+      fi
     elif [[ -d "${ENGINE_HOME}/skills/profiles/${name}" ]]; then
       resolved="${ENGINE_HOME}/skills/profiles/${name}"
     else
-      ai_review::err "profile '${name}' is not a known profile or an existing directory."
+      ai_review::err "profile '${name}' is not a known profile."
       ai_review::log "  Bundled profiles: $(find "${ENGINE_HOME}/skills/profiles" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ' ')"
-      ai_review::log "  Or pass a path to a custom profile directory."
+      ai_review::log "  Or pass a path to a custom profile directory. A path must contain a"
+      ai_review::log "  slash (e.g. ./my-profile); bare names never resolve to repo content."
       exit 2
     fi
     dirs="${dirs}${resolved}"$'\n'

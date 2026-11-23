@@ -3,6 +3,8 @@
 # extraction, batch
 # planning/packing/folding, and the endpoint matrix.
 
+load 'helpers'
+
 setup() {
   # ENGINE_HOME = the workflow engine; the shared runtime is its _common sibling.
   ENGINE_HOME="$(cd "${BATS_TEST_DIRNAME}/../../engines/security-compliance-review" && pwd)"
@@ -11,6 +13,7 @@ setup() {
   export ENGINE_HOME
   SKILL_NAME="test"
   CI=true
+  sanitize_endpoint_env
   # shellcheck disable=SC1091
   source "${AI_COMMON_HOME}/harness/core.sh"
   # shellcheck disable=SC1091
@@ -18,6 +21,19 @@ setup() {
 }
 
 # ── parse_result: last marker wins (transcript-echo hazard) ─────────────────
+
+@test "core: an unhandled failure names its location via the ERR trap" {
+  # Forced outside bats (env -u): inside a bats process core.sh must leave
+  # bats' own ERR trap alone, which is also asserted below.
+  run env -u BATS_VERSION bash -c "SKILL_NAME=t source '${CORE_LIB}'; false"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unexpected failure"* ]]
+  [[ "$output" == *"false"* ]]
+}
+
+@test "core: sourcing under bats does not replace the bats ERR trap" {
+  [[ "$(trap -p ERR)" != *"unexpected failure"* ]]
+}
 
 @test "parse_result picks COMMENT" {
   run ai_review::parse_result "blah
@@ -399,9 +415,21 @@ report
   run ai_review::configure_endpoint
   [ "$status" -eq 0 ]
   [[ "$output" == *"provider=azure"* ]]
-  [[ "$output" == *"openai/deployments/gpt-review"* ]]
-  [[ "$output" == *"api-version=2024-10-21"* ]]
+  # The audit line redacts the query string ("?..."), so the api-version is
+  # not shown; the deployment path still is.
+  [[ "$output" == *"openai/deployments/gpt-review?..."* ]]
   [[ "$output" != *"azuresecret"* ]]
+}
+
+@test "endpoint: audit line redacts credentials in a caller-supplied base URL" {
+  export AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api
+  export ANTHROPIC_BASE_URL="https://user:sekret@gw.internal:8443/v1?api-key=qsekret#frsekret"
+  export ANTHROPIC_API_KEY=x
+  run ai_review::configure_endpoint
+  [ "$status" -eq 0 ]
+  # Login, query, and fragment are dropped; scheme, host, port, path survive.
+  [[ "$output" == *"base_url=https://gw.internal:8443/v1?..."* ]]
+  [[ "$output" != *"sekret"* ]]
 }
 
 # ── rubric composition: base is an explicit list member ─────────────────────

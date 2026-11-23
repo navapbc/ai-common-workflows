@@ -17,9 +17,9 @@ Total in scope: **126 files** (138 tracked outside `jenkins-plugin/`, minus 12 e
 
 ### Shared runtime (`engines/_common/`)
 
-- [ ] engines/_common/CONTRACT.md
-- [ ] engines/_common/endpoints.sh
-- [ ] engines/_common/harness/core.sh
+- [X] engines/_common/CONTRACT.md
+- [X] engines/_common/endpoints.sh
+- [X] engines/_common/harness/core.sh
 - [ ] engines/_common/harness/fold_review_json.py
 - [ ] engines/_common/harness/gate_verdict.py
 - [ ] engines/_common/harness/write_audit_report.py
