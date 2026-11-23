@@ -246,22 +246,15 @@ PROMPT
 }
 
 # ── Findings JSON handling ──────────────────────────────────────────────────
-# pr_review::require_json <ai_output> <marker>
-# Extracts the JSON block from the AI's raw output. An APPROVE review with a
-# missing block is synthesized as an empty review (harmless); a
-# finding-bearing review without a block is an error — the findings cannot be
-# posted or merged, so pretending otherwise would silently drop them.
+# pr_review::require_json <ai_output>
+# Extracts the JSON block from the AI's raw output. Every review marker requires
+# a non-empty, parseable JSON block; a missing block is never an empty review.
 pr_review::require_json() {
-  local output="$1" marker="$2"
+  local output="$1"
   local json_block
   json_block="$(ai_review::extract_review_json "${output}")"
-  if [[ -z "${json_block}" ]]; then
-    if [[ "${marker}" == "APPROVE" ]]; then
-      json_block='{"review_action": "APPROVE", "summary": "AI-assisted PR review (security + compliance). No findings.", "comments": []}'
-    else
-      return 1
-    fi
-  fi
+  [[ -n "${json_block}" ]] || return 1
+  printf '%s' "${json_block}" | python3 -m json.tool >/dev/null 2>&1 || return 1
   printf '%s' "${json_block}"
 }
 
@@ -299,13 +292,13 @@ pr_review::worker_main() {
   else
     marker="$(ai_review::parse_result "${output}")"
     local json_block
-    if json_block="$(pr_review::require_json "${output}" "${marker}")"; then
+    if json_block="$(pr_review::require_json "${output}")"; then
       # Trailing X's only: BSD/macOS mktemp cannot substitute X's followed by
       # a suffix, and parallel workers would collide on the literal name.
       json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX")"
       printf '%s\n' "${json_block}" >"${json_file}"
     else
-      # Findings claimed but no JSON to merge — this batch is unusable.
+      # No JSON to merge — this batch is unusable.
       ai_review::err "[${key}] AI response contained no parseable JSON block." >&2
       marker="UNPARSEABLE"
     fi
@@ -660,7 +653,7 @@ pr_review::run() {
       exit 1
     fi
 
-    if ! review_json="$(pr_review::require_json "${review_output}" "${result}")"; then
+    if ! review_json="$(pr_review::require_json "${review_output}")"; then
       ai_review::err "AI response did not contain a parseable JSON block."
       ai_review::log "  Expected fenced block bounded by:"
       ai_review::log "      <!-- AI_REVIEW_JSON_BEGIN -->"
@@ -695,7 +688,7 @@ pr_review::run() {
       local adj_result adj_json
       adj_result="$(ai_review::parse_result "${adj_output}")"
       if [[ "${adj_result}" == "UNPARSEABLE" ]] ||
-        ! adj_json="$(pr_review::require_json "${adj_output}" "${adj_result}")"; then
+        ! adj_json="$(pr_review::require_json "${adj_output}")"; then
         ai_review::warn "Adjudication produced no parseable marker/JSON; keeping the first-pass result (${result})."
       else
         ai_review::info "Adjudicated result: ${result} → ${adj_result}."
