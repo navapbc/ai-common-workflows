@@ -33,6 +33,14 @@ rule is why an unrecognized severity counts as blocking below rather than being
 read as LOW: a finding nobody can classify is not a finding anybody should be
 allowed to merge past unseen.
 
+The same rule is why APPROVE is only honored when the comments array is empty.
+APPROVE means "no findings" in the output contract, so an APPROVE that carries
+findings is self-contradictory, and a model can emit one (including under a
+prompt injection in the diff that asks for the APPROVE marker). Trusting the
+self-reported action over the data it carries would let a CRITICAL finding
+sail past the gate, so a finding-bearing APPROVE is scanned by severity
+exactly like COMMENT, never short-circuited to PASS.
+
 The gate floor is HIGH, deliberately not configurable. Gating on everything
 fails merges on nits, and no consumer has needed a different line; if one ever
 does, that belongs in a separately named input rather than as a second kind of
@@ -61,14 +69,18 @@ def evaluate(data):
     if action not in ACTIONS:
         raise ValueError(f"unrecognized review_action: {action!r}")
 
-    if action == "APPROVE":
-        return action, "PASS", "no findings", [], []
     if action == "REQUEST_CHANGES":
         return action, "BLOCK", "review_action is REQUEST_CHANGES", [], []
 
     comments = data.get("comments") or []
     if not isinstance(comments, list):
         raise ValueError("comments is not a list")
+
+    # APPROVE is honored only when it is consistent with the data. A
+    # finding-bearing APPROVE falls through to the severity scan below,
+    # because trusting it would fail the gate open (see the module docstring).
+    if action == "APPROVE" and not comments:
+        return action, "PASS", "no findings", [], []
 
     unknown, blocking = [], []
     for c in comments:
@@ -84,7 +96,10 @@ def evaluate(data):
             blocking.append(title)
 
     if blocking:
-        return action, "BLOCK", f"{len(blocking)} HIGH or CRITICAL finding(s)", unknown, blocking
+        reason = f"{len(blocking)} HIGH or CRITICAL finding(s)"
+        if action == "APPROVE":
+            reason += " despite review_action APPROVE"
+        return action, "BLOCK", reason, unknown, blocking
     return action, "PASS", "nothing is HIGH or CRITICAL", unknown, blocking
 
 

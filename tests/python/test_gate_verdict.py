@@ -81,6 +81,39 @@ def test_missing_severity_blocks():
     assert unknown == ["<missing>"]
 
 
+def test_approve_carrying_high_or_critical_blocks():
+    # APPROVE means "no findings". An APPROVE that carries findings is
+    # self-contradictory model output (or a prompt injection asking for the
+    # APPROVE marker), and trusting it would fail the gate open. The data
+    # wins over the self-reported action.
+    _, verdict, reason, _, blocking = gv.evaluate(_findings("CRITICAL", action="APPROVE"))
+    assert verdict == "BLOCK"
+    assert blocking == ["finding CRITICAL"]
+    assert "APPROVE" in reason
+    assert _verdict("HIGH", action="APPROVE") == "BLOCK"
+
+
+def test_approve_carrying_low_findings_passes_like_comment():
+    # Below the gate floor, APPROVE-with-findings gets the same severity scan
+    # as COMMENT, so LOW or MEDIUM nits still pass.
+    assert _verdict("LOW", "MEDIUM", action="APPROVE") == "PASS"
+
+
+def test_approve_carrying_unrecognized_severity_blocks():
+    _, verdict, _, unknown, _ = gv.evaluate(_findings("SEV_BANANA", action="APPROVE"))
+    assert verdict == "BLOCK"
+    assert unknown == ["SEV_BANANA"]
+
+
+def test_approve_with_non_list_comments_raises():
+    try:
+        gv.evaluate({"review_action": "APPROVE", "comments": "oops"})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a non-list comments value must not be tolerated on APPROVE")
+
+
 def test_request_changes_blocks_without_consulting_severities():
     # A verdict from elsewhere is honored, not re-derived: the AI never emits
     # REQUEST_CHANGES, so if one appears something upstream decided it.

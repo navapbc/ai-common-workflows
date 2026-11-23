@@ -20,11 +20,12 @@ Total in scope: **126 files** (138 tracked outside `jenkins-plugin/`, minus 12 e
 - [X] engines/_common/CONTRACT.md
 - [X] engines/_common/endpoints.sh
 - [X] engines/_common/harness/core.sh
-- [ ] engines/_common/harness/fold_review_json.py
-- [ ] engines/_common/harness/gate_verdict.py
-- [ ] engines/_common/harness/write_audit_report.py
-- [ ] engines/_common/scm/github.sh
-- [ ] engines/_common/scm/github_payload.py
+- [X] engines/_common/harness/fold_review_json.py
+- [X] engines/_common/harness/gate_verdict.py
+- [X] engines/_common/harness/write_audit_report.py
+- [X] engines/_common/scm/github.sh
+- [X] engines/_common/scm/github_payload.py
+
 
 ### Review engine (`engines/security-compliance-review/`)
 
