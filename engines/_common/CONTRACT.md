@@ -37,7 +37,7 @@ sibling of the workflow engines.
 | Area | Functions | Notes |
 |---|---|---|
 | Logging | `ai_review::log/info/ok/warn/err` | All status output → stderr; stdout is reserved for artifacts |
-| Args | `ai_review::parse_args` | `--against/--unpushed/--dry-run/--no-block/--jobs/--list-batches/--no-adjudicate/--help/--`; sets `AI_REVIEW_*` globals. Replaces `AI_REVIEW_AGAINST` with its merge-base with HEAD (so the diff matches a PR's three-dot diff); the ref as given is kept in `AI_REVIEW_AGAINST_REF` |
+| Args | `ai_review::parse_args` | `--against/--unpushed/--dry-run/--no-block/--jobs/--list-batches/--no-adjudicate/--help/--`; sets `AI_REVIEW_*` globals. The `AI_REVIEW_AGAINST`/`--against` ref uses `<ref>...HEAD` (three-dot/merge-base diff) instead of `<ref>..HEAD`. |
 | Tool | `ai_review::resolve_tool`, `ai_review::require_cli` | `AI_REVIEW_TOOL` → `AI_REVIEW_TOOL_RESOLVED` |
 | Diff | `ai_review::require_against`, `has_changes`, `changed_files`, `diff_command_description`, `diff_has_iac` | base→HEAD, base→index (`--unpushed`), or staged-only when no base |
 | Invocation | `ai_review::invoke_ai` (uses `SKILL_PROMPT`), `ai_review::invoke_tool <prompt> [model]` | Read-only posture by default; `AI_RUN_SUITE=1` switches to the agentic posture (write grants, `AI_SUITE_MAX_TURNS` / `AI_SUITE_TIMEOUT_SECS`, streaming on local TTYs, `CI=true` exported to the suite) |
