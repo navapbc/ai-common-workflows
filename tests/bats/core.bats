@@ -423,11 +423,12 @@ report
 
 @test "endpoint: audit line redacts credentials in a caller-supplied base URL" {
   export AI_REVIEW_TOOL_RESOLVED=claude AI_REVIEW_PROVIDER=api
-  export ANTHROPIC_BASE_URL="https://user:sekret@gw.internal/v1?api-key=qsekret"
+  export ANTHROPIC_BASE_URL="https://user:sekret@gw.internal:8443/v1?api-key=qsekret#frsekret"
   export ANTHROPIC_API_KEY=x
   run ai_review::configure_endpoint
   [ "$status" -eq 0 ]
-  [[ "$output" == *"base_url=https://gw.internal/v1?..."* ]]
+  # Login, query, and fragment are dropped; scheme, host, port, path survive.
+  [[ "$output" == *"base_url=https://gw.internal:8443/v1?..."* ]]
   [[ "$output" != *"sekret"* ]]
 }
 

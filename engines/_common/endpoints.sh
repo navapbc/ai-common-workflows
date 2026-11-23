@@ -92,24 +92,31 @@ ai_review::warn_cli_native_auth() {
 }
 
 # ai_review::redact_url <url>
-# Prints the URL with anything that could hold a credential removed: the
-# login part (user:pass@) and the query string. Gateway URLs sometimes carry
-# secrets there, and the audit line must never print one. Scheme, host, and
-# path are enough to audit where traffic goes.
+# Prints only the parts of a URL that are safe to log: scheme, host, port,
+# and path. They are parsed out with an RFC 3986 parser (python urllib) and
+# reassembled, so nothing else can pass through. Login info, the query
+# string, and the fragment are never printed. "?..." marks a dropped query.
+# A value the parser rejects prints a placeholder, never the raw URL.
 ai_review::redact_url() {
-  local url="$1"
-  if [[ "${url}" == *\?* ]]; then
-    url="${url%%\?*}?..."
-  fi
-  local rest="${url#*://}"
-  if [[ "${rest}" != "${url}" ]]; then
-    local scheme="${url%%://*}"
-    local host="${rest%%/*}"
-    if [[ "${host}" == *@* ]]; then
-      url="${scheme}://${host##*@}${rest:${#host}}"
-    fi
-  fi
-  printf '%s' "${url}"
+  python3 - "$1" <<'PY' 2>/dev/null || printf '(unparseable url)'
+import sys
+from urllib.parse import urlsplit
+
+u = urlsplit(sys.argv[1])
+host = u.hostname or ""
+if ":" in host:  # IPv6 literal, re-bracket
+    host = "[" + host + "]"
+try:
+    port = u.port
+except ValueError:
+    port = None
+if port:
+    host += ":" + str(port)
+out = (u.scheme + "://" if u.scheme else "") + host + u.path
+if u.query or u.fragment:
+    out += "?..."
+sys.stdout.write(out)
+PY
 }
 
 # ai_review::configure_endpoint

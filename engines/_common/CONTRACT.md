@@ -76,6 +76,7 @@ own `gh` calls instead; the seam is for review-style inline posting.)
 - **No SCM token needed by the AI phase** — nothing in the invocation path
   reads `GITHUB_TOKEN`/`GH_TOKEN`; only posting does.
 - **bash ≥ 3.2** (no associative arrays / mapfile) plus git, awk, sed;
-  `python3` for gate verdicts, JSON folding, the audit report, and SCM
-  payloads. The gate runs `harness/gate_verdict.py`, so python3 is
-  required even without fan-out or posting.
+  `python3` for gate verdicts, JSON folding, the audit report, SCM
+  payloads, and URL redaction in the endpoint audit line. The gate runs
+  `harness/gate_verdict.py`, so python3 is required even without fan-out
+  or posting.
