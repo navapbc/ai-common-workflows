@@ -39,11 +39,13 @@ bash tests/lint_workflow_shell.sh || fail=1
 echo "==> bats: core + e2e + ci_shared + test_classifier + audit + release"
 # macOS stock bash 3.2 has a bug where a failing [[ ]] does not fire the ERR
 # trap bats relies on, so a failed assertion mid-test passes silently unless
-# it is the test's last line. Warn so a local green run is not over-trusted.
+# it is the test's last line. A green run under it is meaningless, so refuse
+# to run rather than report false passes.
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-  echo "WARNING: bash ${BASH_VERSION} cannot detect failing [[ ]] assertions" >&2
-  echo "  mid-test, so bats results may show false passes. CI is authoritative." >&2
-  echo "  Fix locally with:  brew install bash" >&2
+  echo "ERROR: bash ${BASH_VERSION} cannot detect failing [[ ]] assertions" >&2
+  echo "  mid-test, so bats would report false passes." >&2
+  echo "  Install a newer bash and re-run:  brew install bash" >&2
+  exit 1
 fi
 bats tests/bats/core.bats tests/bats/e2e.bats tests/bats/ci_shared.bats \
   tests/bats/test_classifier.bats tests/bats/audit.bats \
