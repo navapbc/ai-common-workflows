@@ -869,12 +869,16 @@ post_comment_to_github() {
   # works. We track the first file and the first test file as we stream the
   # diff, so we never index into the array (portable, and safe under set -u).
   local anchor_path="" first_file="" first_test=""
-  local f
+  local f changed
+  if ! changed="$(ai_review::changed_files)"; then
+    ai_review::err "Could not enumerate changed files for comment anchoring."
+    exit 1
+  fi
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
     [[ -z "$first_file" ]] && first_file="$f"
     if [[ -z "$first_test" && "$f" =~ (test|spec|__tests__) ]]; then first_test="$f"; fi
-  done < <(ai_review::changed_files)
+  done <<<"${changed}"
   if [[ -n "$first_test" ]]; then
     anchor_path="$first_test"
   elif [[ -n "$first_file" ]]; then

@@ -37,12 +37,14 @@ apply — note that in the report and move on.
 
 **Recognised IaC file patterns:**
 - Terraform: `.tf`, `.tfvars`, `.tf.json`
-- CloudFormation: `*.template.json`, `*.template.yaml`
+- CloudFormation: `*.template.json`, `*.template.yaml`, `*.template.yml`
 - Bicep: `*.bicep`, `*.bicepparam`
 - Pulumi: `Pulumi.yaml`, `Pulumi.*.yaml`
 - Ansible: `*.yml`/`*.yaml` under `roles/` or `playbooks/`
 - Kubernetes: any YAML containing both `apiVersion:` and `kind:`
-- Helm: `Chart.yaml`, `values.yaml`, `templates/`
+- YAML paths: `templates/`, `k8s/`, `helm/`
+- Helm: `Chart.yaml`, `values.yaml`
+- Kustomize: `kustomization.yaml`
 - CDK: `cdk.json`, `app.py`/`app.ts` when paired with `cdk.json`
 - Terragrunt / Packer: `*.hcl`
 

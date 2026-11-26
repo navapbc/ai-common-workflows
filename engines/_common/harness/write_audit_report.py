@@ -137,6 +137,9 @@ def index_doc(grouped, meta, has_report):
     total, unknown = counts(findings_all)
     with_findings = {d: i for d, i in grouped.items() if i}
     clean = sorted(d for d, i in grouped.items() if not i)
+    skipped_files = meta.get("skipped_files") or []
+    if not isinstance(skipped_files, list):
+        skipped_files = []
 
     lines = [
         f"# Codebase audit — {meta.get('repo', 'repo')}",
@@ -152,6 +155,8 @@ def index_doc(grouped, meta, has_report):
         f"**Files audited:** {meta.get('files', '?')} across "
         f"{len(grouped)} director{'y' if len(grouped) == 1 else 'ies'} "
         f"({len(with_findings)} with findings, {len(clean)} clean)",
+        "",
+        f"**Files skipped before audit:** {len(skipped_files)}",
         "",
         DISCLAIMER,
         "",
@@ -203,6 +208,25 @@ def index_doc(grouped, meta, has_report):
         ]
         lines += [f"- [`{d or '(root)'}`]({_slug(d)}.md)" for d in clean]
         lines += ["", "</details>", ""]
+
+    if skipped_files:
+        lines += [
+            "## Skipped files",
+            "",
+            "These files were in the requested scope but were intentionally skipped.",
+            "",
+            "| Path | Reason |",
+            "|---|---|",
+        ]
+        for row in skipped_files:
+            if not isinstance(row, dict):
+                continue
+            path = str(row.get("path") or "").strip()
+            reason = str(row.get("reason") or "").strip()
+            if not path:
+                continue
+            lines.append(f"| `{path}` | {reason or 'unspecified'} |")
+        lines += [""]
 
     lines += ["## Files in this bundle", ""]
     if has_report:
@@ -261,6 +285,7 @@ def main(argv):
         )
 
     shutil.copyfile(findings_path, run_dir / "findings.json")
+    shutil.copyfile(meta_path, run_dir / "_meta.json")
     has_report = False
     if report_path and report_path.exists() and report_path.stat().st_size:
         shutil.copyfile(report_path, run_dir / "report.md")

@@ -123,7 +123,7 @@ Three artifacts, in this order.
 
 #### `infra/rds.tf`
 
-- 🟠 **HIGH** | **compliance** | SC-12/SC-28 — RDS without encryption at rest (line 12)
+- 🟠 **HIGH** | **compliance** | Data protection — RDS without encryption at rest (line 12)
   Set `storage_encrypted = true` and specify a `kms_key_id`.
 
 ---

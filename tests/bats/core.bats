@@ -74,6 +74,45 @@ report
   [ -z "$output" ]
 }
 
+# ── diff_has_iac ────────────────────────────────────────────────────────────
+
+@test "diff_has_iac detects Pulumi stack files" {
+  AI_REVIEW_SCOPE_PATHS="infra/Pulumi.dev.yaml" run ai_review::diff_has_iac
+  [ "$status" -eq 0 ]
+}
+
+@test "diff_has_iac detects Ansible role yaml paths" {
+  AI_REVIEW_SCOPE_PATHS="ops/roles/web/tasks/main.yml" run ai_review::diff_has_iac
+  [ "$status" -eq 0 ]
+}
+
+@test "diff_has_iac detects Helm templates paths" {
+  AI_REVIEW_SCOPE_PATHS="helm/templates/service.yaml" run ai_review::diff_has_iac
+  [ "$status" -eq 0 ]
+}
+
+@test "diff_has_iac detects cdk app paired with cdk.json in scope" {
+  AI_REVIEW_SCOPE_PATHS=$'infra/app.ts\ninfra/cdk.json' run ai_review::diff_has_iac
+  [ "$status" -eq 0 ]
+}
+
+@test "diff_has_iac detects cdk.json in scope" {
+  AI_REVIEW_SCOPE_PATHS="infra/cdk.json" run ai_review::diff_has_iac
+  [ "$status" -eq 0 ]
+}
+
+@test "diff_has_iac does not treat app.ts alone as IaC" {
+  AI_REVIEW_SCOPE_PATHS="infra/app.ts" run ai_review::diff_has_iac
+  [ "$status" -eq 1 ]
+}
+
+@test "diff_has_iac returns 2 when file enumeration fails" {
+  unset AI_REVIEW_SCOPE_PATHS
+  ai_review::changed_files() { return 1; }
+  run ai_review::diff_has_iac
+  [ "$status" -eq 2 ]
+}
+
 # ── adjudication_mode ───────────────────────────────────────────────────────
 
 @test "adjudication_mode defaults to off" {
@@ -604,6 +643,18 @@ _a_bundled_profile() {
   run ai_review::build_adjudication_prompt '{"review_action":"COMMENT","comments":[]}'
   [ "$status" -eq 0 ]
   [[ "$output" == *"Finding Adjudication"* ]]
+}
+
+@test "rubric: audit adjudication prompt uses audit scope, not a PR-diff wrapper" {
+  AI_REVIEW_MARKER_VOCAB="AUDIT_CLEAN|AUDIT_FINDINGS"
+  AI_REVIEW_SCOPE_PATHS=$'src/app.py\nterraform/rds.tf'
+  run ai_review::build_adjudication_prompt '{"review_action":"COMMENT","comments":[]}'
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"codebase-audit scope (not a PR diff)"* ]]
+  [[ "$output" == *"Scope files for this audit run:"* ]]
+  [[ "$output" == *"src/app.py"* ]]
+  [[ "$output" == *"terraform/rds.tf"* ]]
+  [[ "$output" != *"The code under review is the PR diff:"* ]]
 }
 
 @test "rubric: no override path exists in either entrypoint" {

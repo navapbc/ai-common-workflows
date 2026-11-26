@@ -31,9 +31,9 @@ assume any earlier hook or scanner has already run on these changes.
 > Why every severity is `COMMENT` rather than `REQUEST_CHANGES`: this review
 > surfaces findings as inline comments and lets the human reviewer and PR
 > author decide. The dispatcher's `--gate` flag (used in CI) can convert any
-> non-`APPROVE` result into a failing build if the team wants that, but the
-> default is advisory — `REQUEST_CHANGES` is reserved for human reviewers
-> with full context.
+> review that includes HIGH/CRITICAL findings into a failing build (and also
+> blocks on `REQUEST_CHANGES` if one appears). The default is advisory —
+> `REQUEST_CHANGES` is reserved for human reviewers with full context.
 
 ---
 
@@ -76,8 +76,13 @@ later in this prompt:
 
 **IaC file detection** uses these patterns:
 `.tf`, `.tfvars`, `.tf.json`, `.bicep`, `.bicepparam`, `.hcl`,
-`*.template.json/yaml`, `Pulumi.yaml`, `Chart.yaml`, `values.yaml`,
-`cdk.json`, and any YAML containing both `apiVersion:` and `kind:`.
+`*.template.json`, `*.template.yaml`, `*.template.yml`,
+`Pulumi.yaml`, `Pulumi.*.yaml`,
+`Chart.yaml`, `values.yaml`, YAML under `roles/` or `playbooks/`,
+YAML under `templates/`, `k8s/` or `helm/`, `kustomization.yaml`,
+`cdk.json`, and `app.py`/`app.ts` when `cdk.json` is also in the
+same changed-file scope, plus any YAML containing both `apiVersion:` and
+`kind:`.
 
 If no IaC files are present, skip the compliance perspective entirely and
 note this at the top of the report.
@@ -85,7 +90,7 @@ note this at the top of the report.
 Apply each perspective's full check list against the PR diff. The two
 perspectives are complementary, not overlapping — secrets in a Terraform
 file are a security finding (Critical, secrets); a Terraform RDS instance
-without encryption-at-rest is a compliance finding (High, SC-12/SC-28). The
+without encryption-at-rest is a compliance finding (High, data protection). The
 same line can produce both kinds of findings, which is fine — emit one
 comment for each.
 
@@ -159,7 +164,7 @@ block clearly fenced so the dispatcher can extract it without ambiguity.
 
 #### `infra/rds.tf`
 
-- 🟠 **HIGH** | **compliance** | SC-12/SC-28 — RDS without encryption at rest (line 12)
+- 🟠 **HIGH** | **compliance** | Data protection — RDS without encryption at rest (line 12)
   Set `storage_encrypted = true` and specify a `kms_key_id`.
 
 ---
@@ -222,7 +227,7 @@ between the markers must be a single object with the schema below.
       "perspective": "compliance",
       "severity": "MEDIUM",
       "title": "GuardDuty not enabled",
-      "description": "Significant infrastructure is being added without a corresponding `aws_guardduty_detector` resource. NIST SI-4 (System Monitoring) recommends GuardDuty for threat detection across EC2, S3, and EKS workloads.",
+      "description": "Significant infrastructure is being added without a corresponding `aws_guardduty_detector` resource. Add detector coverage so new workloads have baseline threat-detection visibility.",
       "suggestion_kind": "reference",
       "suggestion_language": "hcl",
       "suggestion_body": "resource \"aws_guardduty_detector\" \"main\" {\n  enable = true\n}"
@@ -238,8 +243,8 @@ between the markers must be a single object with the schema below.
   - Always emit `COMMENT` if there are any findings.
   - Emit `APPROVE` only if there are zero findings of any severity.
   - Never emit `REQUEST_CHANGES` from the AI side. The dispatcher's `--gate`
-    flag converts any non-`APPROVE` result into a non-zero exit if the team
-    wants the PR build to fail; that is a dispatcher concern, not an AI one.
+    flag blocks on HIGH/CRITICAL findings (and on `REQUEST_CHANGES` if one
+    appears); that gate policy is a dispatcher concern, not an AI one.
 - `summary` — a short overall PR-level review body, posted as the review's
   top-level body (not attached to a line). The dispatcher appends the
   attribution line (`_Reviewed by AI, was this helpful? Please react with
@@ -330,8 +335,8 @@ The marker must match the `review_action` field in the JSON block:
 
 - `APPROVE` — no findings at any severity
 - `COMMENT` — any findings present (most reviews land here)
-- `REQUEST_CHANGES` — never emit from the AI side; reserved for the
-  dispatcher's `--gate` mode
+- `REQUEST_CHANGES` — never emit from the AI side; reserved for dispatcher-
+  controlled policy outcomes outside model output
 
 The marker must be on its own line with no surrounding text. Failure to emit
 a marker, or mismatch between the marker and the JSON, causes the dispatcher

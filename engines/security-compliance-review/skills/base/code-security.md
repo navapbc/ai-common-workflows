@@ -107,10 +107,10 @@ treat them with the same severity as SSNs):**
   - Positions 4, 7, 10, 11: `\d`
   - Compact form regex (no separators):
     `\b[1-9][AC-HJ-KM-NP-RT-Y][0-9AC-HJ-KM-NP-RT-Y]\d[AC-HJ-KM-NP-RT-Y][0-9AC-HJ-KM-NP-RT-Y]\d[AC-HJ-KM-NP-RT-Y]{2}\d{2}\b`
-  - Hyphenated forms (`1S0-A0-AA0-AA00`, `1S0A-A0AA-0AA00`, etc.) appear in
+  - Hyphenated forms (`1A00-A00-AA00`, `1EG4-TE5-MK73`, etc.) appear in
     display contexts — strip non-alphanumerics before matching, then apply
     the compact regex above.
-  - Examples (synthetic, illustrative only): `1S00A00AA00`, `1EG4-TE5-MK73`.
+  - Examples (synthetic, illustrative only): `1A00A00AA00`, `1EG4TE5MK73`.
 - **HICN — Health Insurance Claim Number** (legacy, pre-2018; still present
   in archived data, claims history, and crosswalk tables). Format is an
   SSN (9 digits) plus a 1- or 2-character Beneficiary Identification Code

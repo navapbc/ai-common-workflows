@@ -38,6 +38,16 @@ teardown() {
   rm -rf "${WORK}"
 }
 
+write_review_response() {
+  local target="$1" marker="$2" action="$3" comments="$4"
+  cat >"${target}" <<EOF
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"${action}","summary":"test response","comments":${comments}}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:${marker}>>>
+EOF
+}
+
 @test "single-call review prints report and exits 0 (advisory)" {
   STUB_RESPONSE_FILE="${FIX}/response-comment.txt" run bash "${ENGINE}" --against origin/main
   [ "$status" -eq 0 ]
@@ -66,6 +76,95 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
+@test "--help describes gate as HIGH/CRITICAL plus REQUEST_CHANGES blocking" {
+  run bash "${ENGINE}" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"HIGH/CRITICAL"* ]]
+  [[ "$output" == *"REQUEST_CHANGES"* ]]
+  [[ "$output" == *"Posting still requires"* ]]
+  [[ "$output" != *"still post but do not fail the build"* ]]
+}
+
+@test "single-call review rejects a marker that contradicts JSON" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" APPROVE COMMENT '[{"path":"src/app.py","line":3,"perspective":"security","severity":"HIGH","title":"Secret"}]'
+  STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"contract"* ]]
+}
+
+@test "single-call review rejects APPROVE with findings and COMMENT without findings" {
+  local response="${WORK}/response.txt" marker action comments
+  for marker in APPROVE COMMENT; do
+    if [[ "${marker}" == APPROVE ]]; then
+      action=APPROVE
+      comments='[{"path":"src/app.py","line":3,"severity":"HIGH","title":"Secret"}]'
+    else
+      action=COMMENT
+      comments='[]'
+    fi
+    write_review_response "${response}" "${marker}" "${action}" "${comments}"
+    STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"contract"* ]]
+  done
+}
+
+@test "single-call review rejects model-emitted REQUEST_CHANGES" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" REQUEST_CHANGES REQUEST_CHANGES '[{"path":"src/app.py","line":3,"severity":"HIGH","title":"Secret"}]'
+  STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"contract"* ]]
+}
+
+@test "single-call review rejects an invalid marker after a valid marker" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" APPROVE APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:INVALID>>>' >>"${response}"
+  STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Could not parse review result marker"* ]]
+}
+
+@test "single-call review rejects an unterminated trailing marker" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" APPROVE APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:COMMENT' >>"${response}"
+  STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Could not parse review result marker"* ]]
+}
+
+@test "single-call review rejects missing final marker after JSON" {
+  local response="${WORK}/response.txt"
+  cat >"${response}" <<'EOF'
+<<<AI_REVIEW_RESULT:COMMENT>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"s","comments":[{"path":"src/app.py","line":3,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Secret","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"parseable JSON block or violated the review contract"* ]]
+}
+
+@test "single-call review rejects marker after first JSON block only" {
+  local response="${WORK}/response.txt"
+  cat >"${response}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"first","comments":[{"path":"src/app.py","line":3,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"First","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:COMMENT>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"second","comments":[{"path":"src/app.py","line":4,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Second","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  STUB_RESPONSE_FILE="${response}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"parseable JSON block or violated the review contract"* ]]
+}
+
 @test "--dry-run makes no AI call" {
   local calls="${WORK}/calls.log"
   STUB_CALLS="${calls}" STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
@@ -73,6 +172,24 @@ teardown() {
   [ "$status" -eq 0 ]
   [ ! -f "${calls}" ]
   [[ "$output" == *"DRY-RUN"* ]]
+}
+
+@test "review: changed paths with reserved delimiters fail closed" {
+  printf 'print("x")\n' >"src/pipe|name.py"
+  git add "src/pipe|name.py" && git commit -qm pipe
+  run bash "${ENGINE}" --against origin/main --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Unsupported changed path contains a reserved delimiter character"* ]]
+}
+
+@test "review: reserved-delimiter paths fail closed on real runs too" {
+  local calls="${WORK}/calls.log"
+  printf 'print("x")\n' >"src/pipe|name.py"
+  git add "src/pipe|name.py" && git commit -qm pipe
+  STUB_CALLS="${calls}" run bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Unsupported changed path contains a reserved delimiter character"* ]]
+  [ ! -f "${calls}" ]
 }
 
 @test "profile: defaults to base" {
@@ -241,6 +358,66 @@ teardown() {
   echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert d["review_action"]=="COMMENT"; assert "diff batch(es)" in d["summary"]'
 }
 
+@test "fan-out review rejects a batch with a contradictory marker and JSON" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" APPROVE COMMENT '[{"path":"src/app.py","line":3,"severity":"HIGH","title":"Secret"}]'
+  AI_REVIEW_BATCH_MIN_FILES=1 STUB_RESPONSE_FILE="${response}" \
+    run bash "${ENGINE}" --against origin/main --jobs 2 --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not review every batch"* ]]
+}
+
+@test "fan-out review rejects a batch with an invalid trailing marker" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" APPROVE APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>' >>"${response}"
+  AI_REVIEW_BATCH_MIN_FILES=1 STUB_RESPONSE_FILE="${response}" \
+    run bash "${ENGINE}" --against origin/main --jobs 2 --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not review every batch"* ]]
+}
+
+@test "fan-out review rejects a batch with an unterminated trailing marker" {
+  local response="${WORK}/response.txt"
+  write_review_response "${response}" APPROVE APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:COMMENT' >>"${response}"
+  AI_REVIEW_BATCH_MIN_FILES=1 STUB_RESPONSE_FILE="${response}" \
+    run bash "${ENGINE}" --against origin/main --jobs 2 --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not review every batch"* ]]
+}
+
+@test "fan-out review rejects a batch with no final marker after JSON" {
+  local response="${WORK}/response.txt"
+  cat >"${response}" <<'EOF'
+<<<AI_REVIEW_RESULT:COMMENT>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"s","comments":[{"path":"src/app.py","line":3,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Secret","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  AI_REVIEW_BATCH_MIN_FILES=1 STUB_RESPONSE_FILE="${response}" \
+    run bash "${ENGINE}" --against origin/main --jobs 2 --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not review every batch"* ]]
+}
+
+@test "fan-out review rejects marker after first JSON block only" {
+  local response="${WORK}/response.txt"
+  cat >"${response}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"first","comments":[{"path":"src/app.py","line":3,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"First","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:COMMENT>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"second","comments":[{"path":"src/app.py","line":4,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Second","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  AI_REVIEW_BATCH_MIN_FILES=1 STUB_RESPONSE_FILE="${response}" \
+    run bash "${ENGINE}" --against origin/main --jobs 2 --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not review every batch"* ]]
+}
+
 @test "independent adjudication runs a second call and can clear findings" {
   local calls="${WORK}/calls.log"
   STUB_RESPONSE_FILE="${FIX}/response-comment.txt" \
@@ -250,6 +427,26 @@ teardown() {
   [ "$status" -eq 0 ]
   [ "$(wc -l < "${calls}")" -eq 2 ]  # first pass + adjudication
   echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert d["review_action"]=="APPROVE"; assert d["comments"]==[]'
+}
+
+@test "independent review adjudication cannot introduce a new finding" {
+  local adj="${WORK}/adjudicated.txt"
+  write_review_response "${adj}" COMMENT COMMENT '[{"path":"src/app.py","line":3,"side":"RIGHT","perspective":"security","severity":"LOW","title":"A new finding"}]'
+  STUB_RESPONSE_FILE="${FIX}/response-comment.txt" STUB_ADJ_RESPONSE_FILE="${adj}" \
+    AI_ADJUDICATION=independent run --separate-stderr bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"keeping the first-pass result"* ]]
+  echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert len(d["comments"])==2 and d["comments"][0]["title"]=="Hardcoded AWS access key"'
+}
+
+@test "independent review adjudication cannot raise a finding's severity" {
+  local adj="${WORK}/adjudicated.txt"
+  write_review_response "${adj}" COMMENT COMMENT '[{"path":"infra/rds.tf","line":2,"side":"RIGHT","perspective":"compliance","severity":"CRITICAL","title":"RDS instance without encryption at rest"}]'
+  STUB_RESPONSE_FILE="${FIX}/response-comment.txt" STUB_ADJ_RESPONSE_FILE="${adj}" \
+    AI_ADJUDICATION=independent run --separate-stderr bash "${ENGINE}" --against origin/main --json-only
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"keeping the first-pass result"* ]]
+  echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert len(d["comments"])==2 and d["comments"][1]["severity"]=="HIGH"'
 }
 
 @test "post-only mode posts without any AI call" {

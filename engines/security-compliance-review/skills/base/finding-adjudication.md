@@ -36,9 +36,13 @@ non-deterministic.
 - **The first-pass findings**, as the `comments` array of a review JSON
   block embedded in the prompt. Each finding carries a path, line,
   perspective, severity, title, description, and suggested fix.
-- **The code under review**: the PR diff,
-  `git diff "$AI_REVIEW_AGAINST" HEAD`. **Read the actual code yourself** —
-  do not adjudicate from the findings' prose alone.
+- **The code under review**:
+  - In PR-review mode: the PR diff, `git diff "$AI_REVIEW_AGAINST" HEAD`.
+  - In codebase-audit mode: there is no PR diff; inspect the current files
+    under the supplied scope (`AI_REVIEW_SCOPE_PATHS` when present, otherwise
+    the audited working tree).
+  **Read the actual code yourself** — do not adjudicate from the findings'
+  prose alone.
 
 ---
 
@@ -112,11 +116,12 @@ findings only:
    findings remain, `APPROVE` if none do; its `summary` reflects the
    adjudicated counts.
 
-3. **One result marker** on its own final line, matching the JSON:
+3. **One result marker** on its own final line, matching the JSON and using
+   the exact marker names provided by the caller for this run:
 
 ```
-<<<AI_REVIEW_RESULT:APPROVE>>>     no confirmed findings remain
-<<<AI_REVIEW_RESULT:COMMENT>>>     one or more confirmed findings remain
+<<<AI_REVIEW_RESULT:<clean marker>>>       no confirmed findings remain
+<<<AI_REVIEW_RESULT:<findings marker>>>    one or more confirmed findings remain
 ```
 
 Emit exactly one marker, with no surrounding text. If you emit no marker or

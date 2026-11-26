@@ -355,15 +355,30 @@ ai_review::has_changes() {
 }
 
 ai_review::changed_files() {
+  local -a git_args=()
   if [[ -n "${AI_REVIEW_AGAINST:-}" ]]; then
     if [[ "${AI_REVIEW_INCLUDE_STAGED:-0}" == "1" ]]; then
-      git diff --cached --name-only "${AI_REVIEW_AGAINST}" --
+      git_args=(diff --cached --name-only -z "${AI_REVIEW_AGAINST}" --)
     else
-      git diff --name-only "${AI_REVIEW_AGAINST}" HEAD --
+      git_args=(diff --name-only -z "${AI_REVIEW_AGAINST}" HEAD --)
     fi
   else
-    git diff --cached --name-only
+    git_args=(diff --cached --name-only -z)
   fi
+
+  local f
+  while IFS= read -r -d '' f; do
+    # Batch records use "|" separators and tab-delimited sentinels. Newlines,
+    # tabs, and pipes in file paths break scope accounting, so fail closed.
+    if [[ "${f}" == *$'\n'* ]] || [[ "${f}" == *$'\t'* ]] || [[ "${f}" == *'|'* ]]; then
+      local quoted
+      quoted="$(printf '%q' "${f}")"
+      ai_review::err "Unsupported changed path contains a reserved delimiter character: ${quoted}"
+      ai_review::err "  Rename the path to remove newline, tab, or '|' before running this workflow."
+      exit 1
+    fi
+    printf '%s\n' "${f}"
+  done < <(git "${git_args[@]}")
 }
 
 ai_review::diff_command_description() {
@@ -389,24 +404,42 @@ ai_review::diff_command_description() {
 # perspective is inlined into the prompt. The filename patterns mirror the
 # "Recognised IaC file patterns" list in the skill instructions; YAML files
 # additionally count when their content carries Kubernetes apiVersion+kind.
+# Return codes:
+#   0  IaC detected
+#   1  no IaC detected
+#   2  scope could not be enumerated safely
 ai_review::diff_has_iac() {
   local files f
   if [[ -n "${AI_REVIEW_SCOPE_PATHS:-}" ]]; then
     files="${AI_REVIEW_SCOPE_PATHS}"
   else
-    files="$(ai_review::changed_files)"
+    if ! files="$(ai_review::changed_files)"; then
+      return 2
+    fi
   fi
   while IFS= read -r f; do
     [[ -z "${f}" ]] && continue
     case "${f}" in
       *.tf | *.tfvars | *.tf.json | *.bicep | *.bicepparam | *.hcl | \
         *.template.json | *.template.yaml | *.template.yml | \
-        */Pulumi.yaml | Pulumi.yaml | */Chart.yaml | Chart.yaml | \
-        */values.yaml | values.yaml | */cdk.json | cdk.json | \
-        */kustomization.yaml | kustomization.yaml)
+        */Pulumi.yaml | Pulumi.yaml | */Pulumi.*.yaml | Pulumi.*.yaml | \
+        */Chart.yaml | Chart.yaml | */values.yaml | values.yaml | \
+          */kustomization.yaml | kustomization.yaml | \
+          */cdk.json | cdk.json)
         return 0
         ;;
+      */app.py | app.py | */app.ts | app.ts)
+          # CDK app files count only when cdk.json is also changed in scope.
+        ;;
       *.yaml | *.yml)
+        # Ansible, Helm, and common k8s/helm layout heuristics.
+        if [[ "${f}" == *"/roles/"* ]] || [[ "${f}" == roles/* ]] ||
+          [[ "${f}" == *"/playbooks/"* ]] || [[ "${f}" == playbooks/* ]] ||
+          [[ "${f}" == *"/templates/"* ]] || [[ "${f}" == templates/* ]] ||
+          [[ "${f}" == *"/k8s/"* ]] || [[ "${f}" == k8s/* ]] ||
+          [[ "${f}" == *"/helm/"* ]] || [[ "${f}" == helm/* ]]; then
+          return 0
+        fi
         # Kubernetes manifests: YAML with both apiVersion: and kind:.
         if [[ -f "${f}" ]] && grep -q '^apiVersion:' "${f}" 2>/dev/null &&
           grep -q '^kind:' "${f}" 2>/dev/null; then
@@ -723,21 +756,30 @@ ai_review::invoke_ai() {
 }
 
 # ── Result marker parsing ───────────────────────────────────────────────────
-# The canonical marker is:  <<<AI_REVIEW_RESULT:<word>>>>  where <word> is one
+# The canonical marker is: <<<AI_REVIEW_RESULT:<word>>> where <word> is one
 # of the workflow's AI_REVIEW_MARKER_VOCAB alternation. The AI emits its
-# verdict as the LAST marker in its response. We must take the last
-# occurrence, not the first match, because the captured output can contain
-# earlier *echoes* of the marker list: the prompt itself shows the markers, and
-# CLIs that stream the full agent transcript (e.g. `codex exec`) replay them.
-# A naive first-match grep would read the instructions, not the verdict.
+# verdict as the LAST marker in its response. Captured output can contain
+# earlier echoes of the marker list, so inspect the final marker prefix first.
+# A malformed or invalid final marker must fail closed rather than falling back
+# to an earlier valid marker.
 ai_review::parse_result() {
   local output="$1"
-  local marker
-  marker="$(grep -oE "<<<AI_REVIEW_RESULT:(${AI_REVIEW_MARKER_VOCAB})>>>" <<<"${output}" | tail -n 1)"
+  local after_last marker
+  after_last="${output##*<<<AI_REVIEW_RESULT:}"
+  if [[ "${after_last}" == "${output}" ]]; then
+    echo "UNPARSEABLE"
+    return 0
+  fi
 
-  if [[ -n "${marker}" ]]; then
-    marker="${marker#<<<AI_REVIEW_RESULT:}"
-    printf '%s\n' "${marker%>>>}"
+  marker="${after_last%%>>>*}"
+  # No closing token after the final marker prefix means malformed output.
+  if [[ "${marker}" == "${after_last}" ]]; then
+    echo "UNPARSEABLE"
+    return 0
+  fi
+
+  if [[ "${marker}" =~ ^(${AI_REVIEW_MARKER_VOCAB})$ ]]; then
+    printf '%s\n' "${marker}"
   else
     echo "UNPARSEABLE"
   fi
@@ -762,6 +804,52 @@ ai_review::extract_review_json() {
     capturing                         { block = block $0 "\n" }
     END                               { if (have) printf "%s", last }
   '
+}
+
+# ai_review::marker_follows_json <output> <marker>
+# True when the exact marker token appears after the final JSON_END marker.
+# This prevents accepting an echoed marker from instructions when the model
+# failed to emit a final verdict marker after the findings JSON.
+ai_review::marker_follows_json() {
+  local output="$1" marker="$2"
+  local after_json
+  after_json="$(
+    awk -v m="${AI_REVIEW_JSON_MARKER}" '
+      index($0, "<!-- " m "_END -->") { seen = 1; block = ""; next }
+      seen { block = block $0 "\n" }
+      END { printf "%s", block }
+    ' <<<"${output}"
+  )"
+  grep -qF "<<<AI_REVIEW_RESULT:${marker}>>>" <<<"${after_json}"
+}
+
+# Keep the adjudicator's output only if every surviving finding is an unchanged
+# first-pass finding at the same or a lower severity.
+ai_review::adjudication_is_safe() {
+  printf '[%s,%s]\n' "$1" "$2" |
+    python3 "${AI_COMMON_HOME}/harness/validate_review_json.py" adjudication
+}
+
+# ai_review::validate_result_contract <mode> <marker> <json>
+# Validates marker/JSON/action/cardinality consistency via
+# harness/validate_review_json.py.
+# mode: pr|audit
+ai_review::validate_result_contract() {
+  local mode="$1" marker="$2" json="$3"
+  local kind=""
+  case "${mode}" in
+    pr) kind="review" ;;
+    audit) kind="audit" ;;
+    *)
+      ai_review::err "unknown result-contract mode: ${mode}"
+      return 1
+      ;;
+  esac
+  if ! printf '%s' "${json}" |
+    python3 "${AI_COMMON_HOME}/harness/validate_review_json.py" "${kind}" "${marker}"; then
+    return 1
+  fi
+  return 0
 }
 
 # ── Rubric composition (profiles) ───────────────────────────────────────────
@@ -1057,26 +1145,56 @@ BLOCK
 }
 
 # ai_review::build_adjudication_prompt <first_pass_json>
-# Builds the independent-adjudication prompt for the PR path. The adjudicator
-# receives the first-pass findings as the machine-readable JSON block (every
-# finding carries path/line/severity/description) and must re-emit the same
-# artifacts the first pass emits: a human report, a revised JSON block, and a
-# result marker — all computed from the confirmed findings only.
+# Builds the independent-adjudication prompt for the current workflow mode.
+# The adjudicator receives the first-pass findings as the machine-readable JSON
+# block (every finding carries path/line/severity/description) and must re-emit
+# the same artifacts the first pass emits: a human report, a revised JSON
+# block, and a result marker — all computed from the confirmed findings only.
 ai_review::build_adjudication_prompt() {
   local first_pass_json="$1"
+  local clean_marker="APPROVE" findings_marker="COMMENT"
+  local review_kind="PR review"
+  local code_scope
+  local scope_listing
+  if [[ "${AI_REVIEW_MARKER_VOCAB}" == "AUDIT_CLEAN|AUDIT_FINDINGS" ]]; then
+    clean_marker="AUDIT_CLEAN"
+    findings_marker="AUDIT_FINDINGS"
+    review_kind="codebase audit"
+    if [[ -n "${AI_REVIEW_SCOPE_PATHS:-}" ]]; then
+      scope_listing="$(cat <<SCOPE
+Scope files for this audit run:
+${AI_REVIEW_SCOPE_PATHS}
+SCOPE
+)"
+    else
+      scope_listing="Scope files for this audit run are the audited working-tree files selected for this run."
+    fi
+    code_scope="$(cat <<'SCOPE'
+The code under review is a codebase-audit scope (not a PR diff).
+
+Inspect the current files under this scope:
+SCOPE
+)"
+    code_scope+=$'\n'"${scope_listing}"
+  else
+    code_scope="$(cat <<SCOPE
+The code under review is the PR diff:
+
+  git diff "${AI_REVIEW_AGAINST}" HEAD --unified=5
+SCOPE
+)"
+  fi
 
   cat <<PROMPT
 You are an INDEPENDENT second reviewer adjudicating the findings produced by a
-first-pass automated PR review. You did not perform the first pass and must
+first-pass automated ${review_kind}. You did not perform the first pass and must
 not assume it was correct. Your full instructions:
 
 ──────────────────── ADJUDICATION INSTRUCTIONS ────────────────────
 $(cat "${ENGINE_HOME}/skills/base/finding-adjudication.md")
 ────────────────────────────────────────────────────────────────────
 
-The code under review is the PR diff:
-
-  git diff "${AI_REVIEW_AGAINST}" HEAD --unified=5
+${code_scope}
 
 Inspect the actual code yourself before judging each finding — do not rely on
 the report's prose.
@@ -1104,8 +1222,10 @@ new findings. Then emit:
      any findings remain, or "APPROVE" if none do, and update "summary" to
      reflect the adjudicated counts.
   3. EXACTLY ONE result marker on its own final line, matching the JSON:
-       <<<AI_REVIEW_RESULT:APPROVE>>>     (no confirmed findings remain)
-       <<<AI_REVIEW_RESULT:COMMENT>>>     (confirmed findings remain)
+       <<<AI_REVIEW_RESULT:${clean_marker}>>>     (no confirmed findings remain)
+       <<<AI_REVIEW_RESULT:${findings_marker}>>>     (confirmed findings remain)
+     These are the required markers for this run, even if examples in the
+     shared adjudication instructions use a different workflow's markers.
 PROMPT
 }
 

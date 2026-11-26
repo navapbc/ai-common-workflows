@@ -9,7 +9,7 @@
 # Usage:
 #   ai-security-compliance-review --against origin/main                # review; print only
 #   ai-security-compliance-review --pr 1234 --post-comments            # review + post inline comments
-#   ai-security-compliance-review --against origin/main --gate         # exit 1 on non-APPROVE
+#   ai-security-compliance-review --against origin/main --gate         # exit 1 on blocking findings
 #   ai-security-compliance-review --against origin/main --json-out f   # also write findings JSON
 #   ai-security-compliance-review --post-only --pr 1234 --json-in f    # post previously produced JSON
 #   ai-security-compliance-review --dry-run --against origin/main      # show plan, no AI call
@@ -25,7 +25,7 @@
 #
 # Exit codes:
 #   0  APPROVE, or findings in advisory mode (or --dry-run / --no-block)
-#   1  --gate with non-APPROVE result, or unrecoverable runtime error
+#   1  --gate with blocking findings (HIGH/CRITICAL or REQUEST_CHANGES), or unrecoverable runtime error
 #   2  configuration error (AI_REVIEW_TOOL unset/invalid; bad flags)
 
 set -euo pipefail
@@ -84,8 +84,10 @@ Options:
                        discovered via the SCM CLI.
   --post-comments      Post the review with inline comments to the SCM
                        (default SCM: GitHub via the gh CLI).
-  --gate               Exit 1 on any non-APPROVE result (CI-blocking mode).
-                       Default is advisory: findings never fail the build.
+  --gate               Exit 1 on blocking findings (HIGH/CRITICAL, or any
+                       REQUEST_CHANGES action). Default is advisory: findings
+                       do not fail the build. Posting still requires
+                       --post-comments.
   --json-only          Print only the machine-readable JSON block.
   --json-out <file>    Also write the JSON block to <file> (lets a caller run
                        the AI phase and the post phase as separate processes).
@@ -160,7 +162,7 @@ Environment variables:
 
 Exit codes:
   0   APPROVE, or findings in advisory mode (or --dry-run / --no-block)
-  1   --gate with non-APPROVE result, or unrecoverable runtime error
+  1   --gate with blocking findings (HIGH/CRITICAL or REQUEST_CHANGES), or unrecoverable runtime error
   2   Configuration error (AI_REVIEW_TOOL unset/invalid; bad flags)
 EOF
 }
@@ -204,7 +206,9 @@ SCOPE
   fi
 
   local compliance_block=""
-  if ai_review::diff_has_iac; then
+  local iac_rc=0
+  ai_review::diff_has_iac || iac_rc=$?
+  if ((iac_rc == 0)); then
     # Composed from the listed rubric sources in order (base first when
     # listed); each later source is appended as an addition.
     compliance_block="$(
@@ -214,6 +218,9 @@ SCOPE
 $(ai_review::rubric_block iac-compliance.md "COMPLIANCE PERSPECTIVE")
 COMPLIANCE
     )"
+  elif ((iac_rc != 1)); then
+    ai_review::err "Could not determine whether the diff contains IaC files."
+    exit 1
   fi
 
   local self_adjudication_block=""
@@ -246,15 +253,16 @@ PROMPT
 }
 
 # ── Findings JSON handling ──────────────────────────────────────────────────
-# pr_review::require_json <ai_output>
-# Extracts the JSON block from the AI's raw output. Every review marker requires
-# a non-empty, parseable JSON block; a missing block is never an empty review.
+# pr_review::require_json <ai_output> <marker>
+# Extracts and checks the AI's JSON against its result marker.
 pr_review::require_json() {
-  local output="$1"
+  local output="$1" marker="$2"
   local json_block
   json_block="$(ai_review::extract_review_json "${output}")"
   [[ -n "${json_block}" ]] || return 1
-  printf '%s' "${json_block}" | python3 -m json.tool >/dev/null 2>&1 || return 1
+  ai_review::marker_follows_json "${output}" "${marker}" || return 1
+  printf '%s' "${json_block}" |
+    python3 "${AI_COMMON_HOME}/harness/validate_review_json.py" review "${marker}" || return 1
   printf '%s' "${json_block}"
 }
 
@@ -292,14 +300,14 @@ pr_review::worker_main() {
   else
     marker="$(ai_review::parse_result "${output}")"
     local json_block
-    if json_block="$(pr_review::require_json "${output}")"; then
+    if json_block="$(pr_review::require_json "${output}" "${marker}")"; then
       # Trailing X's only: BSD/macOS mktemp cannot substitute X's followed by
       # a suffix, and parallel workers would collide on the literal name.
       json_file="$(mktemp "${AI_REVIEW_BATCH_DIR}/batch.XXXXXX")"
       printf '%s\n' "${json_block}" >"${json_file}"
     else
       # No JSON to merge — this batch is unusable.
-      ai_review::err "[${key}] AI response contained no parseable JSON block." >&2
+      ai_review::err "[${key}] AI response has no valid marker/JSON contract." >&2
       marker="UNPARSEABLE"
     fi
   fi
@@ -486,11 +494,15 @@ pr_review::run() {
 
   # ── Plan the batches (consulted by --list-batches, --dry-run, executor) ──
   local -a _batch_records=()
-  local _rec
+  local _rec _batch_plan
+  if ! _batch_plan="$(ai_review::plan_diff_batches)"; then
+    ai_review::err "Could not build the diff batch plan."
+    exit 1
+  fi
   while IFS= read -r _rec; do
     [[ -z "${_rec}" ]] && continue
     _batch_records+=("${_rec}")
-  done < <(ai_review::plan_diff_batches)
+  done <<<"${_batch_plan}"
   local _nbatches=${#_batch_records[@]}
   local _nfiles=0 _fp _c
   for _rec in "${_batch_records[@]+"${_batch_records[@]}"}"; do
@@ -653,8 +665,8 @@ pr_review::run() {
       exit 1
     fi
 
-    if ! review_json="$(pr_review::require_json "${review_output}")"; then
-      ai_review::err "AI response did not contain a parseable JSON block."
+    if ! review_json="$(pr_review::require_json "${review_output}" "${result}")"; then
+      ai_review::err "AI response did not contain a parseable JSON block or violated the review contract."
       ai_review::log "  Expected fenced block bounded by:"
       ai_review::log "      <!-- AI_REVIEW_JSON_BEGIN -->"
       ai_review::log "      <!-- AI_REVIEW_JSON_END -->"
@@ -688,8 +700,10 @@ pr_review::run() {
       local adj_result adj_json
       adj_result="$(ai_review::parse_result "${adj_output}")"
       if [[ "${adj_result}" == "UNPARSEABLE" ]] ||
-        ! adj_json="$(pr_review::require_json "${adj_output}")"; then
-        ai_review::warn "Adjudication produced no parseable marker/JSON; keeping the first-pass result (${result})."
+        ! adj_json="$(pr_review::require_json "${adj_output}" "${adj_result}")"; then
+        ai_review::warn "Adjudication produced no valid marker/JSON contract; keeping the first-pass result (${result})."
+      elif ! ai_review::adjudication_is_safe "${review_json}" "${adj_json}"; then
+        ai_review::warn "Adjudication changed or escalated first-pass findings; keeping the first-pass result (${result})."
       else
         ai_review::info "Adjudicated result: ${result} → ${adj_result}."
         result="${adj_result}"

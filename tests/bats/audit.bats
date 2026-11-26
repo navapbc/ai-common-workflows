@@ -6,6 +6,8 @@
 # so most of these assert on what lands in scope and what is skipped, with the
 # AI stubbed out entirely.
 
+bats_require_minimum_version 1.5.0
+
 load 'helpers'
 
 AUDIT="${REPO_ROOT}/engines/security-compliance-review/harness/ai-security-compliance-audit"
@@ -41,6 +43,16 @@ setup() {
 <!-- AI_REVIEW_JSON_END -->
 
 <<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+}
+
+write_audit_response() {
+  local target="$1" marker="$2" action="$3" comments="$4"
+  cat >"${target}" <<EOF
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"${action}","summary":"test response","comments":${comments}}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:${marker}>>>
 EOF
 }
 
@@ -105,6 +117,25 @@ EOF
   run bash "${AUDIT}" --list-files
   [ "$status" -eq 0 ]
   [[ "$output" != *"ignored/thing.py"* ]]
+}
+
+@test "audit: tracked symlinks are skipped from scope" {
+  echo "outside" >"${BATS_TEST_TMPDIR}/outside.txt"
+  ln -s "${BATS_TEST_TMPDIR}/outside.txt" src/outside-link.py
+  git add src/outside-link.py && git commit -qm symlink
+  run bash "${AUDIT}" --list-files
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"src/outside-link.py"$'\n'* ]] || false
+  [[ "$output" == *"SKIP"*"src/outside-link.py"*"symlink"* ]]
+}
+
+@test "audit: tracked paths with reserved delimiters are skipped" {
+  echo "x" >"src/pipe|name.py"
+  git add "src/pipe|name.py" && git commit -qm pipe
+  run bash "${AUDIT}" --list-files
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"src/pipe|name.py"$'\n'* ]] || false
+  [[ "$output" == *"SKIP"*"src/pipe|name.py"*"unsupported path characters"* ]]
 }
 
 @test "audit: a binary file is skipped, and says so" {
@@ -245,8 +276,8 @@ EOF
 
 # ── resume ──────────────────────────────────────────────────────────────────
 # Picking a long audit back up. The failure that matters is a resumed run
-# DELETING the segment it was meant to preserve, so most of these assert that
-# prior results survive.
+# DELETING the segment it was meant to preserve or skipping changed files, so
+# most of these assert that prior results survive and changed files are re-run.
 
 _seg() { # $1 = path, $2 = severity, $3 = title
   cat >"${STUB_RESPONSE_FILE}" <<EOF
@@ -269,12 +300,75 @@ _bundle() { find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | head -1; }
   [ "$(find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 1 ]
 }
 
-@test "audit: --resume skips directories that already have a report" {
+@test "audit: --resume skips unchanged files from the prior segment" {
   _seg "src/app.py" CRITICAL "first"
   bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
   _seg "terraform/rds.tf" HIGH "second"
   run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
-  [[ "$output" == *"already covered by an existing report"* ]]
+  [[ "$output" == *"unchanged since the previous segment"* ]]
+}
+
+@test "audit: --resume re-audits a file that changed since the prior segment" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+  printf 'print("changed")\n' >>src/app.py
+  git add src/app.py && git commit -qm "change app"
+  _seg "src/app.py" HIGH "second"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"0 file(s) unchanged since the previous segment; 1 remaining."* ]]
+}
+
+@test "audit: --resume drops stale findings for files re-audited as clean" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+  printf 'print("changed again")\n' >>src/app.py
+  git add src/app.py && git commit -qm "change app to clear finding"
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"APPROVE","summary":"clean","comments":[]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>
+EOF
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  ! grep -q "first" "${dir}/findings.json"
+  echo "$(<"${dir}/findings.json")" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); s=d.get("summary",""); assert d.get("review_action")=="APPROVE"; assert "No findings" in s and "Cleared 1 prior finding" in s'
+  grep -q 'Cleared 1 prior finding' "${dir}/report.md"
+}
+
+@test "audit: --resume prefers current finding details for the same identity" {
+  _seg "src/app.py" LOW "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+  printf 'print("changed severity")\n' >>src/app.py
+  git add src/app.py && git commit -qm "change app severity"
+  _seg "src/app.py" HIGH "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  echo "$(<"${dir}/findings.json")" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); c=d["comments"]; assert len(c)==1 and c[0]["severity"]=="HIGH"'
+}
+
+@test "audit: bundle-write failure does not advance resume coverage" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  cp "${dir}/coverage.json" "${BATS_TEST_TMPDIR}/before-coverage.json"
+  cp "${dir}/findings.json" "${BATS_TEST_TMPDIR}/before-findings.json"
+
+  printf 'print("changed")\n' >>src/app.py
+  git add src/app.py && git commit -qm "change app for failed write"
+  _seg "src/app.py" HIGH "second"
+
+  rm -f "${dir}/report.md"
+  mkdir "${dir}/report.md"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Could not write the report bundle"* ]]
+
+  run cmp "${BATS_TEST_TMPDIR}/before-coverage.json" "${dir}/coverage.json"
+  [ "$status" -eq 0 ]
+  run cmp "${BATS_TEST_TMPDIR}/before-findings.json" "${dir}/findings.json"
+  [ "$status" -eq 0 ]
 }
 
 @test "audit: --resume does not delete the earlier segment's findings" {
@@ -299,6 +393,36 @@ _bundle() { find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | head -1; }
   grep -q 'terraform.md#findings' "${dir}/_INDEX.md"
 }
 
+@test "audit: --resume with narrower scope keeps previously indexed directories" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ terraform/ >/dev/null 2>&1
+  printf 'print("changed path")\n' >>src/app.py
+  git add src/app.py && git commit -qm "change scoped file only"
+  _seg "src/app.py" HIGH "second"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/ >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  grep -q 'src.md' "${dir}/_INDEX.md"
+  grep -q 'terraform.md' "${dir}/_INDEX.md"
+}
+
+@test "audit: --resume path matching preserves trailing spaces in filenames" {
+  printf 'print(\"spacey\")\n' >"src/spacey.py "
+  git add "src/spacey.py " && git commit -qm "spacey file"
+  _seg "src/spacey.py " CRITICAL "spacey finding"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" "src/spacey.py " >/dev/null 2>&1
+  printf 'print(\"changed\")\n' >>"src/spacey.py "
+  git add "src/spacey.py " && git commit -qm "spacey change"
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"APPROVE","summary":"clean","comments":[]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>
+EOF
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume "src/spacey.py " >/dev/null 2>&1
+  local dir; dir="$(_bundle)"
+  ! grep -q "spacey finding" "${dir}/findings.json"
+}
+
 @test "audit: a clean resumed segment does not downgrade the bundle to APPROVE" {
   _seg "src/app.py" CRITICAL "first"
   bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
@@ -308,9 +432,12 @@ _bundle() { find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | head -1; }
 <!-- AI_REVIEW_JSON_END -->
 <<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>
 EOF
-  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume >/dev/null 2>&1
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"(COMMENT)"* ]]
   local dir; dir="$(_bundle)"
-  grep -q '"review_action": *"COMMENT"' "${dir}/findings.json"
+  echo "$(<"${dir}/findings.json")" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); s=d.get("summary","").lower(); assert d.get("review_action")=="COMMENT"; assert "clean" not in s; assert "1 finding" in s'
+  grep -q '1 finding(s)' "${dir}/report.md"
 }
 
 @test "audit: --resume appends the new narrative rather than replacing it" {
@@ -319,6 +446,32 @@ EOF
   _seg "terraform/rds.tf" HIGH "second"
   bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume >/dev/null 2>&1
   grep -q 'Resumed segment' "$(_bundle)/report.md"
+  grep -q 'supersedes findings for files re-audited' "$(_bundle)/report.md"
+}
+
+@test "audit: --resume preserves adjudicated narrative when merge leaves findings unchanged" {
+  _seg "src/app.py" CRITICAL "same finding"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+
+  printf 'print("changed content")\n' >>src/app.py
+  git add src/app.py && git commit -qm "change app for resume adjudication"
+  _seg "src/app.py" HIGH "same finding"
+
+  local adj="${BATS_TEST_TMPDIR}/resume-adj.txt"
+  cat >"${adj}" <<'EOF'
+## Adjudicated Resume Narrative
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"same finding","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py >/dev/null 2>&1
+
+  local report; report="$(_bundle)/report.md"
+  grep -q 'adjudicated summary' "${report}"
+  ! grep -q 'Current merged findings status' "${report}"
 }
 
 @test "audit: --resume with nothing left says so and exits 0" {
@@ -329,11 +482,90 @@ EOF
   [[ "$output" == *"already complete"* ]]
 }
 
+@test "audit: --resume with nothing left still writes --md-out from persisted findings" {
+  local md="${BATS_TEST_TMPDIR}/resume-nothing-left.md"
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py --md-out "${md}"
+  [ "$status" -eq 0 ]
+  [ -s "${md}" ]
+  grep -q "Codebase Audit Report" "${md}"
+  grep -q "first" "${md}"
+}
+
+@test "audit: --resume --json-only emits existing findings when nothing is left" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/app.py >/dev/null 2>&1
+
+  run --separate-stderr bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py --json-only
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert d["review_action"]=="COMMENT"; assert any(c.get("title")=="first" for c in d["comments"])'
+}
+
+@test "audit: --resume --json-only merges prior findings with the current segment" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"APPROVE","summary":"clean","comments":[]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>
+EOF
+
+  run --separate-stderr bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume --json-only
+  [ "$status" -eq 0 ]
+  echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert d["review_action"]=="COMMENT"; assert any(c.get("title")=="first" for c in d["comments"])'
+}
+
+@test "audit: --resume --json-only with --md-out writes merged narrative" {
+  local md="${BATS_TEST_TMPDIR}/resume-json-only.md"
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"APPROVE","summary":"clean","comments":[]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_CLEAN>>>
+EOF
+  run --separate-stderr bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume --json-only --md-out "${md}"
+  [ "$status" -eq 0 ]
+  [ -s "${md}" ]
+  grep -q "Codebase Audit Report" "${md}"
+  grep -q "first" "${md}"
+}
+
 @test "audit: --resume with no existing bundle starts a new one and says so" {
   run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume
   [ "$status" -eq 0 ]
   [[ "$output" == *"no existing bundle"* ]]
   [ "$(find "${OUT_PARENT}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "audit: resumed coverage drops stale skipped entries once a file is audited" {
+  _seg "terraform/rds.tf" HIGH "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --exclude src/app.py >/dev/null 2>&1
+
+  _seg "src/app.py" HIGH "second"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume src/app.py >/dev/null 2>&1
+
+  local dir; dir="$(_bundle)"
+  echo "$(<"${dir}/coverage.json")" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert not any(r.get("path")=="src/app.py" for r in d.get("skipped_files", []))'
+}
+
+@test "audit: resumed _meta files count reflects cumulative audited files" {
+  _seg "src/app.py" CRITICAL "first"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" src/ >/dev/null 2>&1
+  _seg "terraform/rds.tf" HIGH "second"
+  bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" --resume terraform/ >/dev/null 2>&1
+
+  local dir; dir="$(_bundle)"
+  python3 - "${dir}/_meta.json" "${dir}/coverage.json" <<'PY'
+import json, sys
+meta = json.load(open(sys.argv[1], encoding="utf-8"))
+cov = json.load(open(sys.argv[2], encoding="utf-8"))
+assert meta["files"] == len(cov.get("audited_files", []))
+assert meta["files"] >= 2
+PY
 }
 
 @test "audit: --resume without an output parent is a config error" {
@@ -430,6 +662,16 @@ EOF
   [[ "$output" == *"does not exist"* ]]
 }
 
+@test "audit: --doctor fails on a non-readable output directory" {
+  local parent="${BATS_TEST_TMPDIR}/no-read-doctor"
+  mkdir -p "${parent}"
+  chmod 300 "${parent}"
+  run bash "${AUDIT}" --doctor --output-parent-dir "${parent}"
+  chmod 700 "${parent}"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"readable, writable and searchable"* ]]
+}
+
 @test "audit: --doctor reports every problem in one pass, not just the first" {
   unset AI_REVIEW_TOOL
   run bash "${AUDIT}" --doctor --output-parent-dir "${BATS_TEST_TMPDIR}/nope"
@@ -509,6 +751,59 @@ EOF
   [ "$status" -eq 2 ]
   [[ "$output" == *"does not exist"* ]]
   [ ! -d "${parent}" ]
+  [ ! -s "${STUB_CALLS}" ]
+}
+
+@test "audit: a non-writable parent directory is rejected before any AI call" {
+  local parent="${BATS_TEST_TMPDIR}/readonly"
+  mkdir -p "${parent}"
+  chmod 555 "${parent}"
+  run bash "${AUDIT}" --output-parent-dir "${parent}" terraform/
+  chmod 755 "${parent}"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"writable and searchable"* ]]
+  [ ! -s "${STUB_CALLS}" ]
+}
+
+@test "audit: --json-only still rejects a missing provided output parent before any AI call" {
+  local parent="${BATS_TEST_TMPDIR}/nope/deeper"
+  run bash "${AUDIT}" --json-only --output-parent-dir "${parent}" terraform/
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"does not exist"* ]]
+  [ ! -s "${STUB_CALLS}" ]
+}
+
+@test "audit: --json-only still rejects a non-writable provided output parent before any AI call" {
+  local parent="${BATS_TEST_TMPDIR}/readonly-json"
+  mkdir -p "${parent}"
+  chmod 555 "${parent}"
+  run bash "${AUDIT}" --json-only --output-parent-dir "${parent}" terraform/
+  chmod 755 "${parent}"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"writable and searchable"* ]]
+  [ ! -s "${STUB_CALLS}" ]
+}
+
+@test "audit: a non-searchable parent directory is rejected before any AI call" {
+  local parent="${BATS_TEST_TMPDIR}/write-only"
+  mkdir -p "${parent}"
+  chmod 200 "${parent}"
+  run bash "${AUDIT}" --output-parent-dir "${parent}" terraform/
+  chmod 700 "${parent}"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"writable and searchable"* ]]
+  [ ! -s "${STUB_CALLS}" ]
+}
+
+@test "audit: a non-readable parent directory is rejected before any AI call" {
+  local parent="${BATS_TEST_TMPDIR}/no-read"
+  mkdir -p "${parent}"
+  chmod 300 "${parent}"
+  run bash "${AUDIT}" --output-parent-dir "${parent}" terraform/
+  chmod 700 "${parent}"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"readable, writable and searchable"* ]]
+  [ ! -s "${STUB_CALLS}" ]
 }
 
 @test "audit: --output-parent-dir with no value does not swallow the next flag" {
@@ -542,6 +837,7 @@ EOF
   [ -f "${dir}/_INDEX.md" ]
   [ -f "${dir}/findings.json" ]
   [ -f "${dir}/report.md" ]
+  [ -f "${dir}/coverage.json" ]
 }
 
 @test "audit: the run number increments rather than overwriting" {
@@ -551,6 +847,232 @@ EOF
   bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
   [ "$(find "${parent}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 2 ]
   [ -d "${parent}/$(basename "$(git rev-parse --show-toplevel)")-$(date +%Y%m%d)-02" ]
+}
+
+@test "audit: fan-out runs still persist a non-empty report narrative" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --output-parent-dir "${parent}" --jobs 2
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  [ -s "${dir}/report.md" ]
+  grep -q "Codebase Audit Report" "${dir}/report.md"
+}
+
+@test "audit: fan-out normalizes folded summary to audit wording" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --output-parent-dir "${parent}" --jobs 2
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  echo "$(<"${dir}/findings.json")" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); s=d.get("summary",""); assert s.startswith("Audited scope summary:"); assert "AI-assisted PR review" not in s'
+}
+
+@test "audit: accepted independent adjudication updates the persisted narrative" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated.txt"
+  cat >"${adj}" <<'EOF'
+## Adjudicated Report
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"CRITICAL","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Codebase Audit Report" "${dir}/report.md"
+  grep -q "adjudicated summary" "${dir}/report.md"
+}
+
+@test "audit: json-and-marker-only adjudication still persists a synthesized narrative" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-json-only.txt"
+  cat >"${adj}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"CRITICAL","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Codebase Audit Report" "${dir}/report.md"
+  grep -q "adjudicated summary" "${dir}/report.md"
+}
+
+@test "audit: adjudication narrative drops stale preface text before the report section" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-preface.txt"
+  cat >"${adj}" <<'EOF'
+stale preface text that should not persist
+
+## Adjudicated Report
+Final adjudication narrative.
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"CRITICAL","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Adjudicated Report" "${dir}/report.md"
+  grep -q "Final adjudication narrative" "${dir}/report.md"
+  ! grep -q "stale preface text" "${dir}/report.md"
+}
+
+@test "audit: adjudication heading variants still drop stale preface text" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-heading-variant.txt"
+  cat >"${adj}" <<'EOF'
+stale preface text that should not persist
+
+## Adjudicated Findings
+Final adjudication narrative.
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"CRITICAL","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Adjudicated Findings" "${dir}/report.md"
+  grep -q "Final adjudication narrative" "${dir}/report.md"
+  ! grep -q "stale preface text" "${dir}/report.md"
+}
+
+@test "audit: adjudication narrative keeps content before trailing adjudication headings" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-trailing-heading.txt"
+  cat >"${adj}" <<'EOF'
+preface text that should be dropped
+
+## Adjudicated Report
+Keep this posture text.
+
+### Findings
+- [HIGH] src/app.py:1 — Hardcoded key
+
+### Dismissed / Downgraded by adjudication
+- [LOW] src/other.py:2 — informational
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Adjudicated Report" "${dir}/report.md"
+  grep -q "Keep this posture text." "${dir}/report.md"
+  grep -q "Dismissed / Downgraded by adjudication" "${dir}/report.md"
+  ! grep -q "preface text that should be dropped" "${dir}/report.md"
+}
+
+@test "audit: narrative extraction keeps report context before top-level adjudication sections" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-top-level-trailing.txt"
+  cat >"${adj}" <<'EOF'
+## Adjudicated Report
+Keep this posture text.
+
+## Dismissed by adjudication
+- [LOW] src/other.py:2 — informational
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Keep this posture text." "${dir}/report.md"
+  grep -q "Dismissed by adjudication" "${dir}/report.md"
+}
+
+@test "audit: narrative extraction falls back to first top-level heading when no report heading exists" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-no-report-heading.txt"
+  cat >"${adj}" <<'EOF'
+preface text that should be dropped
+
+## Findings
+- [HIGH] src/app.py:1 — Hardcoded key
+
+## Dismissed by adjudication
+- [LOW] src/other.py:2 — informational
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "## Findings" "${dir}/report.md"
+  grep -q "Dismissed by adjudication" "${dir}/report.md"
+  ! grep -q "preface text that should be dropped" "${dir}/report.md"
+}
+
+@test "audit: narrative extraction prefers the final top-level report section" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  local adj="${BATS_TEST_TMPDIR}/adjudicated-multi-report.txt"
+  cat >"${adj}" <<'EOF'
+## Adjudicated Report
+stale earlier report
+
+## Adjudicated Report
+final report narrative
+
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"adjudicated summary","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  AI_ADJUDICATION=independent STUB_ADJ_RESPONSE_FILE="${adj}" \
+    run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "final report narrative" "${dir}/report.md"
+  ! grep -q "stale earlier report" "${dir}/report.md"
+}
+
+@test "audit: narrative fallback keeps non-PR summaries containing 'different'" {
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"Different controls apply in this audit scope.","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Hardcoded key","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+EOF
+  run bash "${AUDIT}" --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q "Different controls apply in this audit scope." "${dir}/report.md"
 }
 
 @test "audit: a two-digit run number is parsed as base 10, not octal" {
@@ -589,6 +1111,18 @@ EOF
   local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
   grep -q "Advisory, not exhaustive" "${dir}/_INDEX.md"
   grep -q "control IDs" "${dir}/_INDEX.md"
+}
+
+@test "audit: skipped-file reasons persist in coverage and index outputs" {
+  printf 'head\x00\x01tail' >src/blob.bin
+  git add src/blob.bin && git commit -qm blob
+  local parent="${BATS_TEST_TMPDIR}/audits"
+  mkdir -p "${parent}"
+  bash "${AUDIT}" --output-parent-dir "${parent}" >/dev/null 2>&1
+  local dir; dir="$(find "${parent}" -maxdepth 1 -mindepth 1 -type d)"
+  grep -q '"path": "src/blob.bin"' "${dir}/coverage.json"
+  grep -q '"reason": "binary"' "${dir}/coverage.json"
+  grep -q '| `src/blob.bin` | binary |' "${dir}/_INDEX.md"
 }
 
 @test "audit: nothing is written into the audited repo when a bundle is produced" {
@@ -670,6 +1204,15 @@ EOF
   [[ "$output" != *"Codebase Audit Report"* ]]
 }
 
+@test "audit: --json-only with output parent writes no report bundle" {
+  local parent="${BATS_TEST_TMPDIR}/audits-json-only"
+  mkdir -p "${parent}"
+  run bash "${AUDIT}" --json-only --output-parent-dir "${parent}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"review_action"'* ]]
+  [ "$(find "${parent}" -maxdepth 1 -mindepth 1 -type d | wc -l | tr -d ' ')" -eq 0 ]
+}
+
 @test "audit: writes nothing into the audited repo" {
   local before after
   before="$(git status --porcelain; git ls-files)"
@@ -695,6 +1238,123 @@ EOF
 EOF
   run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}"
   [ "$status" -eq 1 ]
+}
+
+@test "audit: rejects a marker that contradicts the JSON action" {
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_CLEAN COMMENT '[{"path":"src/app.py","line":1,"severity":"HIGH","title":"Secret"}]'
+  run bash "${AUDIT}" --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"contract"* ]]
+}
+
+@test "audit: rejects clean with findings and findings with no comments" {
+  local marker action comments
+  for marker in AUDIT_CLEAN AUDIT_FINDINGS; do
+    if [[ "${marker}" == AUDIT_CLEAN ]]; then
+      action=APPROVE
+      comments='[{"path":"src/app.py","line":1,"severity":"HIGH","title":"Secret"}]'
+    else
+      action=COMMENT
+      comments='[]'
+    fi
+    write_audit_response "${STUB_RESPONSE_FILE}" "${marker}" "${action}" "${comments}"
+    run bash "${AUDIT}" --json-only
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"contract"* ]]
+  done
+}
+
+@test "audit: single-call rejects an invalid marker after a valid marker" {
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_CLEAN APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:INVALID>>>' >>"${STUB_RESPONSE_FILE}"
+  run bash "${AUDIT}" --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"No AUDIT_CLEAN|AUDIT_FINDINGS result marker"* ]]
+}
+
+@test "audit: single-call rejects an unterminated trailing marker" {
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_CLEAN APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:AUDIT_FINDINGS' >>"${STUB_RESPONSE_FILE}"
+  run bash "${AUDIT}" --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"No AUDIT_CLEAN|AUDIT_FINDINGS result marker"* ]]
+}
+
+@test "audit: single-call rejects missing final marker after JSON" {
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"s","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Secret","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  run bash "${AUDIT}" --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"parseable findings JSON block in the AI response, or it violated the output contract"* ]]
+}
+
+@test "audit: single-call rejects marker after first JSON block only" {
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"first","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"First","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"second","comments":[{"path":"src/app.py","line":2,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Second","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  run bash "${AUDIT}" --json-only
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"parseable findings JSON block in the AI response, or it violated the output contract"* ]]
+}
+
+@test "audit: fan-out rejects a batch with contradictory marker and JSON" {
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_CLEAN COMMENT '[{"path":"src/app.py","line":1,"severity":"HIGH","title":"Secret"}]'
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --json-only --jobs 2
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not audit every batch"* ]]
+}
+
+@test "audit: fan-out rejects a batch with an invalid trailing marker" {
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_CLEAN APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:INVALID>VALUE>>>' >>"${STUB_RESPONSE_FILE}"
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --json-only --jobs 2
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not audit every batch"* ]]
+}
+
+@test "audit: fan-out rejects a batch with an unterminated trailing marker" {
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_CLEAN APPROVE '[]'
+  printf '%s\n' '<<<AI_REVIEW_RESULT:AUDIT_FINDINGS' >>"${STUB_RESPONSE_FILE}"
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --json-only --jobs 2
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not audit every batch"* ]]
+}
+
+@test "audit: fan-out rejects a batch with no final marker after JSON" {
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"s","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Secret","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --json-only --jobs 2
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not audit every batch"* ]]
+}
+
+@test "audit: fan-out rejects marker after first JSON block only" {
+  cat >"${STUB_RESPONSE_FILE}" <<'EOF'
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"first","comments":[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"First","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+<<<AI_REVIEW_RESULT:AUDIT_FINDINGS>>>
+<!-- AI_REVIEW_JSON_BEGIN -->
+{"review_action":"COMMENT","summary":"second","comments":[{"path":"src/app.py","line":2,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Second","description":"d","suggestion_kind":"reference","suggestion_language":"python","suggestion_body":"x"}]}
+<!-- AI_REVIEW_JSON_END -->
+EOF
+  AI_REVIEW_BATCH_MIN_FILES=1 run bash "${AUDIT}" --json-only --jobs 2
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Fan-out did not audit every batch"* ]]
 }
 
 @test "audit: an AI CLI failure is a runtime error" {
@@ -732,6 +1392,38 @@ EOF
   AI_ADJUDICATION=independent run bash "${AUDIT}" --dry-run --no-adjudicate
   [[ "$output" == *"Adjudication:   off"* ]]
   [[ "$output" != *"+ 1 adjudication"* ]]
+}
+
+@test "audit: independent adjudication cannot introduce a new finding" {
+  local adj="${BATS_TEST_TMPDIR}/adjudicated.txt"
+  write_audit_response "${adj}" AUDIT_FINDINGS COMMENT '[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"LOW","title":"New finding"}]'
+  STUB_ADJ_RESPONSE_FILE="${adj}" AI_ADJUDICATION=independent \
+    run --separate-stderr bash "${AUDIT}" --json-only
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"keeping the first-pass findings"* ]]
+  echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert len(d["comments"])==1 and d["comments"][0]["title"]=="Hardcoded key"'
+}
+
+@test "audit: independent adjudication cannot raise a finding's severity" {
+  local adj="${BATS_TEST_TMPDIR}/adjudicated.txt"
+  write_audit_response "${STUB_RESPONSE_FILE}" AUDIT_FINDINGS COMMENT '[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"LOW","title":"Hardcoded key"}]'
+  write_audit_response "${adj}" AUDIT_FINDINGS COMMENT '[{"path":"src/app.py","line":1,"side":"RIGHT","perspective":"security","severity":"HIGH","title":"Hardcoded key"}]'
+  STUB_ADJ_RESPONSE_FILE="${adj}" AI_ADJUDICATION=independent \
+    run --separate-stderr bash "${AUDIT}" --json-only
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"keeping the first-pass findings"* ]]
+  echo "$output" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert len(d["comments"])==1 and d["comments"][0]["severity"]=="LOW"'
+}
+
+@test "audit: fan-out independent adjudication includes the parent scope file list" {
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  AI_REVIEW_BATCH_MIN_FILES=1 AI_ADJUDICATION=independent \
+    run bash "${AUDIT}" --json-only --jobs 2
+  [ "$status" -eq 0 ]
+  grep -q "codebase-audit scope (not a PR diff)" "${STUB_PROMPT_LOG}"
+  grep -q "Scope files for this audit run:" "${STUB_PROMPT_LOG}"
+  grep -q "src/app.py" "${STUB_PROMPT_LOG}"
+  grep -q "terraform/rds.tf" "${STUB_PROMPT_LOG}"
 }
 
 # ── doctor: the AI CLI row and endpoint warnings ────────────────────────────
@@ -793,6 +1485,65 @@ EOF
 @test "audit: the compliance perspective is included when IaC is in scope" {
   export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
   run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" terraform/
+  [ "$status" -eq 0 ]
+  grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
+}
+
+@test "audit: the compliance perspective is included for tf.json scope" {
+  printf '{ "resource": { "aws_s3_bucket": { "x": {} } } }\n' >terraform/stack.tf.json
+  git add terraform/stack.tf.json && git commit -qm tfjson
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" terraform/stack.tf.json
+  [ "$status" -eq 0 ]
+  grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
+}
+
+@test "audit: the compliance perspective is included for Pulumi stack files" {
+  printf 'name: stack\nruntime: python\n' >terraform/Pulumi.dev.yaml
+  git add terraform/Pulumi.dev.yaml && git commit -qm pulumi
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" terraform/Pulumi.dev.yaml
+  [ "$status" -eq 0 ]
+  grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
+}
+
+@test "audit: the compliance perspective is included for Ansible role yaml" {
+  mkdir -p ops/roles/web/tasks
+  printf -- '- name: test\n  debug:\n    msg: ok\n' >ops/roles/web/tasks/main.yml
+  git add ops/roles/web/tasks/main.yml && git commit -qm ansible
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" ops/roles/web/tasks/main.yml
+  [ "$status" -eq 0 ]
+  grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
+}
+
+@test "audit: the compliance perspective is included for Helm templates path" {
+  mkdir -p helm/templates
+  printf '# template\n' >helm/templates/service.yaml
+  git add helm/templates/service.yaml && git commit -qm helm
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" helm/templates/service.yaml
+  [ "$status" -eq 0 ]
+  grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
+}
+
+@test "audit: the compliance perspective is included for cdk app paired with cdk.json" {
+  mkdir -p infra
+  printf '{\"app\":\"npx cdk synth\"}\n' >infra/cdk.json
+  printf 'console.log(\"cdk\");\n' >infra/app.ts
+  git add infra/cdk.json infra/app.ts && git commit -qm cdk
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" infra/cdk.json infra/app.ts
+  [ "$status" -eq 0 ]
+  grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
+}
+
+@test "audit: the compliance perspective is included for cdk.json alone" {
+  mkdir -p infra
+  printf '{\"app\":\"npx cdk synth\"}\n' >infra/cdk.json
+  git add infra/cdk.json && git commit -qm cdk-json
+  export STUB_PROMPT_LOG="${BATS_TEST_TMPDIR}/prompt.log"
+  run bash "${AUDIT}" --output-parent-dir "${OUT_PARENT}" infra/cdk.json
   [ "$status" -eq 0 ]
   grep -q "COMPLIANCE PERSPECTIVE" "${STUB_PROMPT_LOG}"
 }

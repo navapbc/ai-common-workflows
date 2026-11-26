@@ -109,9 +109,9 @@ Rubric:
 
 Output (nothing is written into the audited repo):
   --resume                  Continue the newest existing bundle for this repo
-                            instead of starting a new one: directories that
-                            already have a report are skipped, and their
-                            findings are carried into the regenerated index.
+                            instead of starting a new one: files already
+                            covered with the same content fingerprint are
+                            skipped, while new or changed files are re-audited.
                             For picking a long audit back up after an
                             interruption. Requires --output-parent-dir.
   --output-parent-dir <dir> REQUIRED for a real run. An EXISTING directory to
@@ -297,14 +297,38 @@ audit::parse_flags() {
 # git ls-files is the source of truth: tracked files only, so .gitignore is
 # honored for free and node_modules/vendor never appear. Working tree contents
 # are what get audited (a local tool audits what you have, not what you pushed).
+audit::record_skip() {
+  local path="$1" reason="$2"
+  printf 'SKIP\t%s\t%s\n' "${path}" "${reason}" >&2
+  if [[ -n "${AI_AUDIT_SKIP_LOG:-}" ]]; then
+    printf '%s\t%s\n' "${path}" "${reason}" >>"${AI_AUDIT_SKIP_LOG}"
+  fi
+}
+
 audit::scope_files() {
   local -a args=(ls-files -z --cached)
   if ((${#SCOPE_PATHS[@]} > 0)); then
     args+=(--)
     args+=("${SCOPE_PATHS[@]}")
   fi
-  git "${args[@]}" 2>/dev/null | tr '\0' '\n' | while IFS= read -r f; do
+
+  local f
+  while IFS= read -r -d '' f; do
     [[ -z "${f}" ]] && continue
+    # Batch records and worker sentinels reserve tab/newline/pipe delimiters.
+    # A path containing one would corrupt scope accounting, so skip it loudly.
+    if [[ "${f}" == *$'\n'* ]] || [[ "${f}" == *$'\t'* ]] || [[ "${f}" == *'|'* ]]; then
+      audit::record_skip "${f}" "unsupported path characters (newline, tab, or '|')"
+      continue
+    fi
+
+    # A tracked symlink can target content outside the repository. The audit
+    # must only ingest regular in-repo files.
+    if [[ -L "${f}" ]]; then
+      audit::record_skip "${f}" "symlink (not audited)"
+      continue
+    fi
+
     [[ -f "${f}" ]] || continue # staged-deleted or replaced by a directory
 
     if ((${#INCLUDE_GLOBS[@]} > 0)); then
@@ -324,7 +348,7 @@ audit::scope_files() {
     local size
     size="$(wc -c <"${f}" 2>/dev/null | tr -d ' ')" || continue
     if [[ -n "${size}" ]] && ((size > MAX_FILE_BYTES)); then
-      printf 'SKIP\t%s\tlarger than %s bytes\n' "${f}" "${MAX_FILE_BYTES}" >&2
+      audit::record_skip "${f}" "larger than ${MAX_FILE_BYTES} bytes"
       continue
     fi
     # Binary sniff: a NUL byte in the first 8k. Compares the byte count with
@@ -334,11 +358,11 @@ audit::scope_files() {
     head_bytes="$(LC_ALL=C head -c 8192 "${f}" | wc -c | tr -d ' ')"
     nul_stripped="$(LC_ALL=C head -c 8192 "${f}" | tr -d '\000' | wc -c | tr -d ' ')"
     if [[ "${head_bytes}" != "${nul_stripped}" ]]; then
-      printf 'SKIP\t%s\tbinary\n' "${f}" >&2
+      audit::record_skip "${f}" "binary"
       continue
     fi
     printf '%s\n' "${f}"
-  done
+  done < <(git "${args[@]}" 2>/dev/null)
 }
 
 audit::scope_description() {
@@ -396,8 +420,9 @@ AUDIT
   # Compliance perspective when the scope contains IaC. Base always applies;
   # each profile's copy is appended as an addition.
   local compliance_block=""
-  if printf '%s\n' "${AI_REVIEW_SCOPE_PATHS}" |
-    grep -qE '\.(tf|tfvars|bicep|hcl)$|\.template\.(json|ya?ml)$|Pulumi\.ya?ml$|(^|/)(Chart|values)\.ya?ml$|(^|/)k8s/|(^|/)helm/'; then
+  local iac_rc=0
+  ai_review::diff_has_iac || iac_rc=$?
+  if ((iac_rc == 0)); then
     compliance_block="$(
       cat <<COMPLIANCE
 
@@ -405,6 +430,9 @@ AUDIT
 $(ai_review::rubric_block iac-compliance.md "COMPLIANCE PERSPECTIVE")
 COMPLIANCE
     )"
+  elif ((iac_rc != 1)); then
+    ai_review::err "Could not determine whether the audit scope contains IaC files."
+    exit 1
   fi
 
   local self_adjudication_block=""
@@ -434,12 +462,14 @@ ${self_adjudication_block}
 PROMPT
 }
 
-# audit::require_json <output> <marker> — extract the findings JSON, or fail.
+# audit::require_json <output> <marker> — extract and validate findings JSON.
 audit::require_json() {
   local output="$1" marker="$2" json
   if ! json="$(ai_review::extract_review_json "${output}")" || [[ -z "${json}" ]]; then
     return 1
   fi
+  ai_review::marker_follows_json "${output}" "${marker}" || return 1
+  ai_review::validate_result_contract "audit" "${marker}" "${json}" || return 1
   printf '%s' "${json}"
 }
 
@@ -524,8 +554,8 @@ audit::allocate_run_dir() {
     ai_review::err "  It must be an existing directory; the audit will not create it."
     exit 2
   fi
-  if [[ ! -w "${parent}" ]]; then
-    ai_review::err "--output-parent-dir '${parent}' is not writable."
+  if [[ ! -r "${parent}" || ! -w "${parent}" || ! -x "${parent}" ]]; then
+    ai_review::err "--output-parent-dir '${parent}' must be readable, writable and searchable."
     exit 2
   fi
 
@@ -540,6 +570,430 @@ audit::allocate_run_dir() {
     ((10#${n} >= next)) && next=$((10#${n} + 1))
   done
   printf '%s/%s-%s-%02d' "${parent}" "${repo}" "${date}" "${next}"
+}
+
+# audit::filter_resume_scope <files_nl> <coverage_json> <skip_log>
+# Prints only files that are new or changed since the previous segment.
+audit::filter_resume_scope() {
+  local files_nl="$1" coverage_json="$2" skip_log="$3"
+  AUDIT_FILES_NL="${files_nl}" python3 - "${coverage_json}" "${skip_log}" <<'PY'
+import hashlib, json, os, sys
+
+coverage_path, skip_log = sys.argv[1], sys.argv[2]
+previous = {}
+if os.path.exists(coverage_path):
+    try:
+        data = json.load(open(coverage_path, encoding="utf-8"))
+    except Exception:
+        data = {}
+    records = data.get("audited_files", []) if isinstance(data, dict) else []
+    if isinstance(records, list):
+        for row in records:
+            if not isinstance(row, dict):
+                continue
+            path = row.get("path")
+            digest = row.get("sha256")
+            if isinstance(path, str) and isinstance(digest, str) and path:
+                previous[path] = digest
+
+def sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+with open(skip_log, "a", encoding="utf-8") as skips:
+    for raw in os.environ.get("AUDIT_FILES_NL", "").split("\n"):
+        path = raw.rstrip("\n")
+        if not path:
+            continue
+        try:
+            digest = sha256(path)
+        except Exception:
+            # A file that changed shape between scope planning and hashing must
+            # be audited rather than assumed unchanged.
+            print(path)
+            continue
+        if previous.get(path) == digest:
+            skips.write(f"{path}\tunchanged since previous segment\n")
+            continue
+        print(path)
+PY
+}
+
+# audit::snapshot_file_hashes <audited_files_nl> <out_json>
+# Captures file hashes before any model call so resume coverage reflects the
+# content that was actually reviewed.
+audit::snapshot_file_hashes() {
+  local audited_files_nl="$1" out_json="$2"
+  AUDIT_FILES_NL="${audited_files_nl}" python3 - "${out_json}" <<'PY'
+import hashlib, json, os, sys
+
+out = sys.argv[1]
+rows = []
+for raw in os.environ.get("AUDIT_FILES_NL", "").splitlines():
+    path = raw.rstrip("\n")
+    if not path:
+        continue
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+    except Exception as exc:
+        print(f"could not hash {path}: {exc}", file=sys.stderr)
+        raise
+    rows.append({"path": path, "sha256": h.hexdigest()})
+
+json.dump(rows, open(out, "w", encoding="utf-8"))
+PY
+}
+
+# audit::write_coverage <existing_coverage_json> <audited_files_nl> <skip_log> <out_json>
+# Builds per-file fingerprints and skip reasons for resume/index coverage.
+audit::write_coverage() {
+  local existing_coverage="$1" audited_files_nl="$2" skip_log="$3" out_coverage="$4" snapshot_json="${5:-}"
+  local segment_cov
+  segment_cov="$(mktemp)"
+  if [[ -n "${snapshot_json}" && -f "${snapshot_json}" ]]; then
+    cp "${snapshot_json}" "${segment_cov}"
+  else
+    AUDIT_FILES_NL="${audited_files_nl}" python3 - "${segment_cov}" <<'PY'
+import hashlib, json, sys
+import os
+
+out = sys.argv[1]
+rows = []
+for raw in os.environ.get("AUDIT_FILES_NL", "").split("\n"):
+    path = raw.rstrip("\n")
+    if not path:
+        continue
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    rows.append({"path": path, "sha256": h.hexdigest()})
+
+json.dump(rows, open(out, "w", encoding="utf-8"))
+PY
+  fi
+
+  python3 - "${existing_coverage}" "${segment_cov}" "${skip_log}" "${out_coverage}" <<'PY'
+import json, os, sys
+
+coverage_path, segment_path, skip_log, out_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+audited = {}
+skipped = []
+seen_skips = set()
+
+if os.path.exists(coverage_path):
+    try:
+        prev = json.load(open(coverage_path, encoding="utf-8"))
+    except Exception:
+        prev = {}
+    for row in (prev.get("audited_files", []) if isinstance(prev, dict) else []):
+        if not isinstance(row, dict):
+            continue
+        path = row.get("path")
+        digest = row.get("sha256")
+        if isinstance(path, str) and isinstance(digest, str) and path:
+            audited[path] = digest
+    for row in (prev.get("skipped_files", []) if isinstance(prev, dict) else []):
+        if not isinstance(row, dict):
+            continue
+        path = row.get("path")
+        reason = row.get("reason")
+        key = (path, reason)
+        if isinstance(path, str) and isinstance(reason, str) and key not in seen_skips:
+            skipped.append({"path": path, "reason": reason})
+            seen_skips.add(key)
+
+try:
+    segment = json.load(open(segment_path, encoding="utf-8"))
+except Exception:
+    segment = []
+if isinstance(segment, list):
+    for row in segment:
+        if not isinstance(row, dict):
+            continue
+        path = row.get("path")
+        digest = row.get("sha256")
+        if isinstance(path, str) and isinstance(digest, str) and path:
+            audited[path] = digest
+
+# Any file that is now audited should not remain in skipped_files.
+if skipped:
+    skipped = [row for row in skipped if row.get("path") not in audited]
+    seen_skips = {
+        (row.get("path"), row.get("reason"))
+        for row in skipped
+        if isinstance(row.get("path"), str) and isinstance(row.get("reason"), str)
+    }
+
+if os.path.exists(skip_log):
+    with open(skip_log, encoding="utf-8") as fh:
+        for raw in fh:
+            raw = raw.rstrip("\n")
+            if not raw:
+                continue
+            path, _, reason = raw.partition("\t")
+            if not path or not reason:
+                continue
+            if path in audited:
+                continue
+            key = (path, reason)
+            if key in seen_skips:
+                continue
+            skipped.append({"path": path, "reason": reason})
+            seen_skips.add(key)
+
+out = {
+    "version": 1,
+    "audited_files": [{"path": p, "sha256": audited[p]} for p in sorted(audited)],
+    "skipped_files": skipped,
+}
+json.dump(out, open(out_path, "w", encoding="utf-8"))
+PY
+
+  rm -f "${segment_cov}"
+}
+
+# audit::merge_resume_findings <previous_findings_json> <current_findings_json> <audited_files_nl>
+# Merges findings from prior segments into the current findings JSON. The
+# current file is updated in place.
+audit::merge_resume_findings() {
+  local previous_findings="$1" current_findings="$2" audited_files_nl="${3:-}"
+  AUDIT_RESUME_FILES_NL="${audited_files_nl}" python3 - "${previous_findings}" "${current_findings}" <<'PY'
+import json, os, sys
+
+prev = json.load(open(sys.argv[1], encoding="utf-8")).get("comments") or []
+new = json.load(open(sys.argv[2], encoding="utf-8"))
+original_comments = [f for f in (new.get("comments") or []) if isinstance(f, dict)]
+audited_paths = {
+    p.rstrip("\n")
+    for p in os.environ.get("AUDIT_RESUME_FILES_NL", "").splitlines()
+    if p.rstrip("\n")
+}
+
+def key(f):
+    return (f.get("path"), f.get("line"), str(f.get("perspective", "")).lower(), f.get("title"))
+
+carried = []
+re_audited_previous = []
+for f in prev:
+    if not isinstance(f, dict):
+        continue
+    path = str(f.get("path") or "")
+    if path and path in audited_paths:
+        re_audited_previous.append(f)
+        continue
+    carried.append(f)
+
+seen = set()
+merged = []
+for f in original_comments + carried:
+    ident = key(f)
+    if ident in seen:
+        continue
+    seen.add(ident)
+    merged.append(f)
+
+new["comments"] = merged
+new["review_action"] = "COMMENT" if merged else "APPROVE"
+merge_changed = merged != original_comments
+cleared = sum(1 for f in re_audited_previous if key(f) not in seen)
+if merge_changed or cleared:
+    paths = sorted({
+        str(f.get("path"))
+        for f in merged
+        if isinstance(f, dict) and f.get("path")
+    })
+    if merged:
+        summary = f"Audited scope summary: {len(merged)} finding(s) across {len(paths)} file(s) with findings."
+    else:
+        summary = "Audited scope summary: No findings."
+    if cleared:
+        noun = "finding" if cleared == 1 else "findings"
+        summary += f" Cleared {cleared} prior {noun} on re-audited file(s)."
+    new["summary"] = summary
+
+json.dump(new, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+}
+
+# audit::normalize_findings_for_audit <findings_json>
+# Rewrites folded review JSON to audit-specific summary wording and markers.
+audit::normalize_findings_for_audit() {
+  local findings_json="$1"
+  AUDIT_FINDINGS_JSON="${findings_json}" python3 - <<'PY'
+import json, os
+
+data = json.loads(os.environ.get("AUDIT_FINDINGS_JSON", "{}"))
+comments = data.get("comments")
+if not isinstance(comments, list):
+    comments = []
+comments = [c for c in comments if isinstance(c, dict)]
+paths = sorted({
+    str(c.get("path"))
+    for c in comments
+    if c.get("path")
+})
+if comments:
+    data["summary"] = f"Audited scope summary: {len(comments)} finding(s) across {len(paths)} file(s) with findings."
+else:
+    data["summary"] = "Audited scope summary: No findings."
+
+action = str(data.get("review_action", "COMMENT")).upper()
+if comments and action == "APPROVE":
+    action = "COMMENT"
+if not comments:
+    action = "APPROVE"
+data["review_action"] = action
+print(json.dumps(data))
+PY
+}
+
+# audit::narrative_from_ai_output <model_output>
+# Returns only the human-readable narrative outside the JSON block/result
+# marker. Heading-only stubs are treated as empty so callers can fall back to a
+# synthesized narrative from the parsed JSON.
+audit::narrative_from_ai_output() {
+  local model_output="$1"
+  AI_REVIEW_RAW_OUTPUT="${model_output}" python3 - <<'PY'
+import os, re
+
+text = os.environ.get("AI_REVIEW_RAW_OUTPUT", "")
+inside_json = False
+lines = []
+
+for raw in text.splitlines():
+    line = raw.rstrip("\n")
+    stripped = line.strip()
+    if stripped == "<!-- AI_REVIEW_JSON_BEGIN -->":
+        inside_json = True
+        continue
+    if stripped == "<!-- AI_REVIEW_JSON_END -->":
+        inside_json = False
+        continue
+    if inside_json:
+        continue
+    if re.fullmatch(r"<<<AI_REVIEW_RESULT:[A-Z_]+>>>", stripped):
+        continue
+    lines.append(line)
+
+while lines and not lines[0].strip():
+    lines.pop(0)
+while lines and not lines[-1].strip():
+    lines.pop()
+
+# Prefer the final top-level report heading when present. If none are present,
+# fall back to adjudication-style headings.
+anchor = None
+report_anchor = None
+for idx, line in enumerate(lines):
+    stripped = line.strip()
+    heading = re.fullmatch(r"(#{1,6})\s+\S.*", stripped)
+    if not heading or len(heading.group(1)) > 2:
+        continue
+    if re.search(r"\b(audit|report)\b", stripped, flags=re.IGNORECASE):
+        report_anchor = idx
+        continue
+    if re.search(r"\badjudicat\w*\b", stripped, flags=re.IGNORECASE):
+        if re.search(r"\b(dismiss(ed|al)?|downgrad(ed|e)?)\b", stripped, flags=re.IGNORECASE):
+            continue
+        anchor = idx
+if report_anchor is not None:
+    anchor = report_anchor
+elif anchor is None:
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        heading = re.fullmatch(r"(#{1,6})\s+\S.*", stripped)
+        if heading and len(heading.group(1)) <= 2:
+            anchor = idx
+            break
+if anchor is not None:
+    lines = lines[anchor:]
+
+non_heading = [
+    ln for ln in lines
+    if ln.strip() and not re.fullmatch(r"#{1,6}\s+\S.*", ln.strip())
+]
+if non_heading:
+    print("\n".join(lines))
+PY
+}
+
+# audit::render_narrative_from_json <findings_json>
+# Builds a deterministic human-readable report when no raw model narrative is
+# available (for example, fan-out mode where worker narratives stream to stderr).
+audit::render_narrative_from_json() {
+  local findings_json="$1"
+  AUDIT_FINDINGS_JSON="${findings_json}" python3 - <<'PY'
+import json, os, re
+
+data = json.loads(os.environ.get("AUDIT_FINDINGS_JSON", "{}"))
+summary = str(data.get("summary") or "").strip()
+comments = data.get("comments") or []
+summary_lc = summary.lower()
+pr_summary = (
+    ("base ref" in summary_lc)
+    or ("inline comments" in summary_lc)
+    or bool(re.search(r"\bpr\b", summary_lc))
+    or bool(re.search(r"\bdiff(s|ed|ing)?\b", summary_lc))
+)
+if summary and pr_summary:
+    summary = ""
+sev_order = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+sev_counts = {k: 0 for k in sev_order}
+for c in comments:
+    if not isinstance(c, dict):
+        continue
+    sev = str(c.get("severity", "")).upper()
+    if sev in sev_counts:
+        sev_counts[sev] += 1
+paths = sorted({
+    str(c.get("path"))
+    for c in comments
+    if isinstance(c, dict) and c.get("path")
+})
+
+print("## Codebase Audit Report")
+print("")
+if summary:
+    print(summary)
+else:
+    print(f"Audited scope summary: {len(comments)} finding(s) across {len(paths)} file(s) with findings.")
+
+print("")
+if comments:
+    print("## Posture")
+    print("Findings are present in the audited scope. Review and remediation are required before relying on this result.")
+else:
+    print("## Posture")
+    print("No findings were reported in the audited scope.")
+
+if comments:
+    print("")
+    print(
+        "Severity totals: "
+        + ", ".join(f"{k}={sev_counts[k]}" for k in sev_order if sev_counts[k] > 0)
+    )
+
+if comments:
+    print("")
+    print("## Findings")
+    for c in comments:
+        if not isinstance(c, dict):
+            continue
+        sev = str(c.get("severity", "LOW")).upper()
+        title = str(c.get("title", "Finding"))
+        path = str(c.get("path", "(no path)"))
+        line = c.get("line")
+        loc = f"{path}:{line}" if line is not None else path
+        perspective = str(c.get("perspective", "security")).lower()
+        print(f"- [{sev}] {loc} ({perspective}) — {title}")
+PY
 }
 
 # ── Preflight (--doctor) ────────────────────────────────────────────────────
@@ -672,8 +1126,8 @@ audit::doctor() {
     audit::doctor_row "output dir" "-" "--output-parent-dir is required for a real run"
   elif [[ ! -d "${OUTPUT_PARENT}" ]]; then
     audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' does not exist; mkdir -p it"
-  elif [[ ! -w "${OUTPUT_PARENT}" ]]; then
-    audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' is not writable"
+  elif [[ ! -r "${OUTPUT_PARENT}" || ! -w "${OUTPUT_PARENT}" || ! -x "${OUTPUT_PARENT}" ]]; then
+    audit::doctor_missing "output dir" "'${OUTPUT_PARENT}' must be readable, writable and searchable"
   else
     audit::doctor_row "output dir" "ok" "${OUTPUT_PARENT}"
   fi
@@ -706,7 +1160,11 @@ audit::run() {
   }
 
   # ── Scope ──────────────────────────────────────────────────────────────
-  local files_nl nfiles
+  local files_nl nfiles skip_log
+  skip_log="$(mktemp)"
+  export AI_AUDIT_SKIP_LOG="${skip_log}"
+  export AI_AUDIT_COVERAGE_SNAPSHOT=""
+  trap 'rm -f "${AI_AUDIT_SKIP_LOG:-}" "${AI_AUDIT_COVERAGE_SNAPSHOT:-}"; [[ -n "${AI_REVIEW_BATCH_DIR:-}" ]] && rm -rf "${AI_REVIEW_BATCH_DIR}"' EXIT
   files_nl="$(audit::scope_files)"
   nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
 
@@ -741,16 +1199,31 @@ audit::run() {
     ai_review::err "  Or --json-only to print findings to stdout and write nothing."
     exit 2
   fi
+  if [[ -n "${OUTPUT_PARENT}" && ${AI_REVIEW_DRY_RUN} -eq 0 &&
+    ${AI_REVIEW_LIST_BATCHES} -eq 0 ]]; then
+    if [[ ! -d "${OUTPUT_PARENT}" ]]; then
+      ai_review::err "--output-parent-dir '${OUTPUT_PARENT}' does not exist."
+      ai_review::err "  It must be an existing directory; the audit will not create it."
+      exit 2
+    fi
+    if [[ ! -r "${OUTPUT_PARENT}" || ! -w "${OUTPUT_PARENT}" || ! -x "${OUTPUT_PARENT}" ]]; then
+      ai_review::err "--output-parent-dir '${OUTPUT_PARENT}' must be readable, writable and searchable."
+      exit 2
+    fi
+  fi
 
   # ── Resume, if asked ───────────────────────────────────────────────────
-  # Resume works at DIRECTORY granularity, matching the earlier iteration: a
-  # directory whose report already exists is skipped. It deliberately does not
-  # work at batch granularity — packing coalesces directories into at most
-  # --jobs bins, so a batch is not a stable unit and "already done" would mean
-  # something different at --jobs 4 than at --jobs 8.
+  # Resume is per-file and fingerprint-based: unchanged files are skipped, and
+  # new or changed files are always re-audited.
   ALL_DIRECTORIES="$(printf '%s\n' "${files_nl}" | python3 -c '
 import posixpath, sys
-print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.strip()})))')"
+dirs = set()
+for raw in sys.stdin:
+    path = raw.rstrip("\n")
+    if not path:
+        continue
+    dirs.add(posixpath.dirname(path))
+print("\n".join(sorted(dirs)))')"
 
   if ((RESUME == 1)); then
     if [[ -z "${OUTPUT_PARENT}" ]]; then
@@ -763,19 +1236,11 @@ print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.str
       RESUME=0
     else
       ai_review::info "Resuming ${RESUME_DIR}"
-      local kept="" skipped=0 slug
-      while IFS= read -r f; do
-        [[ -z "${f}" ]] && continue
-        slug="$(printf '%s' "$(dirname "${f}")" | sed 's|^\.$|_root|; s|/|__|g')"
-        if [[ -f "${RESUME_DIR}/${slug}.md" ]]; then
-          skipped=$((skipped + 1))
-          continue
-        fi
-        kept="${kept}${f}"$'\n'
-      done <<<"${files_nl}"
-      files_nl="${kept%$'\n'}"
+      local before_count="${nfiles}"
+      files_nl="$(audit::filter_resume_scope "${files_nl}" "${RESUME_DIR}/coverage.json" "${skip_log}")"
       nfiles="$(printf '%s\n' "${files_nl}" | grep -cv '^$' || true)"
-      ai_review::info "  ${skipped} file(s) already covered by an existing report; ${nfiles} remaining."
+      local skipped=$((before_count - nfiles))
+      ai_review::info "  ${skipped} file(s) unchanged since the previous segment; ${nfiles} remaining."
 
       if ((nfiles == 0)); then
         # Nothing left to audit. Regenerate the index from what is already
@@ -783,6 +1248,25 @@ print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.str
         # run that finds the work complete should still leave a current index.
         ai_review::ok "Nothing left to audit; the bundle is already complete."
         ai_review::log "  ${RESUME_DIR}/_INDEX.md"
+        if ((JSON_ONLY == 1)) || [[ -n "${JSON_OUT}" || -n "${MD_OUT}" ]]; then
+          local resumed_json
+          if [[ ! -f "${RESUME_DIR}/findings.json" ]]; then
+            ai_review::err "Resume bundle ${RESUME_DIR} has no findings.json to emit."
+            exit 1
+          fi
+          resumed_json="$(cat "${RESUME_DIR}/findings.json")"
+          if [[ -n "${JSON_OUT}" ]]; then
+            printf '%s\n' "${resumed_json}" >"${JSON_OUT}"
+            ai_review::info "Findings JSON written to ${JSON_OUT}"
+          fi
+          if [[ -n "${MD_OUT}" ]]; then
+            printf '%s\n' "$(audit::render_narrative_from_json "${resumed_json}")" >"${MD_OUT}"
+            ai_review::info "Report written to ${MD_OUT}"
+          fi
+          if ((JSON_ONLY == 1)); then
+            printf '%s\n' "${resumed_json}"
+          fi
+        fi
         exit 0
       fi
     fi
@@ -864,8 +1348,16 @@ print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.str
     esac
   fi
 
+  if [[ -n "${OUTPUT_PARENT}" && ${JSON_ONLY} -eq 0 ]]; then
+    AI_AUDIT_COVERAGE_SNAPSHOT="$(mktemp)"
+    if ! audit::snapshot_file_hashes "${files_nl}" "${AI_AUDIT_COVERAGE_SNAPSHOT}"; then
+      ai_review::err "Could not snapshot file hashes for resume coverage."
+      exit 1
+    fi
+  fi
+
   # ── Audit ──────────────────────────────────────────────────────────────
-  local audit_json result human_output=""
+  local audit_json result human_output="" bundle_output=""
   if ai_review::should_batch "${nfiles}" "${_nbatches}"; then
     ai_review::info "Auditing ${nfiles} file(s) under $(audit::scope_description) via ${AI_REVIEW_TOOL_RESOLVED} — ${_nbatches} batch(es)..."
     ai_review::log "────────────────────────────────────────────────────────────"
@@ -873,7 +1365,6 @@ print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.str
     AI_REVIEW_BATCH_DIR="$(mktemp -d)"
     AI_REVIEW_SELF="${BASH_SOURCE[0]}"
     export AI_REVIEW_SELF AI_REVIEW_PROFILE
-    trap 'rm -rf "${AI_REVIEW_BATCH_DIR}"' EXIT
 
     AI_REVIEW_FAN_COMPLETE=0
     AI_REVIEW_BATCH_SENTINELS=""
@@ -896,7 +1387,10 @@ print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.str
     done <<<"${AI_REVIEW_BATCH_SENTINELS}"
 
     audit_json="$(python3 "${AI_COMMON_HOME}/harness/fold_review_json.py" "${_json_files[@]}")"
+    audit_json="$(audit::normalize_findings_for_audit "${audit_json}")"
     result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+    human_output="$(audit::render_narrative_from_json "${audit_json}")"
+    bundle_output="${human_output}"
   else
     export AI_REVIEW_SCOPE_PATHS="${files_nl}"
     AI_REVIEW_ADJUDICATION_MODE="$(ai_review::adjudication_mode)"
@@ -926,93 +1420,196 @@ print("\n".join(sorted({posixpath.dirname(l.strip()) for l in sys.stdin if l.str
       exit 1
     fi
     if ! audit_json="$(audit::require_json "${human_output}" "${marker}")"; then
-      ai_review::err "No parseable findings JSON block in the AI response."
+      ai_review::err "No parseable findings JSON block in the AI response, or it violated the output contract."
       exit 1
     fi
     result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+    bundle_output="$(audit::narrative_from_ai_output "${human_output}")"
   fi
+
+  # Independent adjudication runs in the parent process after fan-out fold.
+  # Always provide the concrete audit scope list there.
+  export AI_REVIEW_SCOPE_PATHS="${files_nl}"
 
   # ── Independent adjudication, once, on the whole audit ──────────────────
   if [[ "$(ai_review::adjudication_mode)" == "independent" && "${result}" != "APPROVE" ]]; then
     local adj_output adj_rc=0
     adj_output="$(ai_review::adjudicate "${audit_json}")" || adj_rc=$?
     if ((adj_rc == 0)); then
-      local adj_json
-      if adj_json="$(ai_review::extract_review_json "${adj_output}")" && [[ -n "${adj_json}" ]]; then
+      local adj_marker adj_json
+      adj_marker="$(ai_review::parse_result "${adj_output}")"
+      if [[ "${adj_marker}" == "UNPARSEABLE" ]] ||
+        ! adj_json="$(audit::require_json "${adj_output}" "${adj_marker}")"; then
+        ai_review::warn "Adjudication produced no parseable marker/JSON; keeping the first-pass findings."
+      elif ! ai_review::adjudication_is_safe "${audit_json}" "${adj_json}"; then
+        ai_review::warn "Adjudication changed findings outside allowed bounds; keeping the first-pass findings."
+      else
         audit_json="${adj_json}"
         result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+        human_output="${adj_output}"
+        bundle_output="$(audit::narrative_from_ai_output "${adj_output}")"
         ((JSON_ONLY == 0)) && printf '%s\n' "${adj_output}"
-      else
-        ai_review::warn "Adjudication produced no parseable JSON; keeping the first-pass findings."
       fi
     else
       ai_review::warn "Adjudication failed (rc=${adj_rc}); keeping the first-pass findings."
     fi
   fi
 
+  # --json-only skips bundle generation, so merge resumed findings here.
+  if ((RESUME == 1)) && ((JSON_ONLY == 1)) && [[ -n "${RESUME_DIR}" && -f "${RESUME_DIR}/findings.json" ]]; then
+    local resume_merged_file
+    resume_merged_file="$(mktemp)"
+    printf '%s\n' "${audit_json}" >"${resume_merged_file}"
+    audit::merge_resume_findings "${RESUME_DIR}/findings.json" "${resume_merged_file}" "${files_nl}"
+    audit_json="$(cat "${resume_merged_file}")"
+    bundle_output="$(audit::render_narrative_from_json "${audit_json}")"
+    result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+    rm -f "${resume_merged_file}"
+  fi
+
   # ── Report bundle ───────────────────────────────────────────────────────
-  if [[ -n "${OUTPUT_PARENT}" ]]; then
-    local run_dir meta_file findings_file report_file
+  if [[ -n "${OUTPUT_PARENT}" && ${JSON_ONLY} -eq 0 ]]; then
+    if [[ -z "${bundle_output//[[:space:]]/}" ]]; then
+      bundle_output="$(audit::render_narrative_from_json "${audit_json}")"
+    fi
+    local run_dir meta_file findings_file segment_findings_file report_file coverage_file stage_dir backup_dir
+    local run_parent run_name
     if ((RESUME == 1)) && [[ -n "${RESUME_DIR}" ]]; then
       run_dir="${RESUME_DIR}"
+      [[ -d "${run_dir}" ]] || {
+        ai_review::err "Resume bundle not found: ${run_dir}"
+        exit 1
+      }
     else
       run_dir="$(audit::allocate_run_dir "${OUTPUT_PARENT}")"
+      if ! mkdir "${run_dir}" >/dev/null 2>&1; then
+        ai_review::err "Could not allocate a new report bundle directory at ${run_dir}."
+        ai_review::err "  Another run may have created it first; retry the audit."
+        exit 1
+      fi
     fi
+    run_parent="$(dirname "${run_dir}")"
+    run_name="$(basename "${run_dir}")"
+    stage_dir="${run_parent}/.${run_name}.staging.$$"
+    backup_dir="${run_parent}/.${run_name}.backup.$$"
+    rm -rf "${stage_dir}" "${backup_dir}"
+    mkdir -p "${stage_dir}"
+    coverage_file="$(mktemp)"
     meta_file="$(mktemp)"
     findings_file="$(mktemp)"
+    segment_findings_file="$(mktemp)"
     report_file="$(mktemp)"
     printf '%s\n' "${audit_json}" >"${findings_file}"
+    cp "${findings_file}" "${segment_findings_file}"
 
     # On resume, carry the previous findings forward. Without this the
     # regenerated index would list only this segment's findings and the
     # already-written directory docs would be rewritten empty — a resumed run
     # would quietly DELETE the results it was meant to preserve.
     if ((RESUME == 1)) && [[ -f "${run_dir}/findings.json" ]]; then
-      python3 - "${run_dir}/findings.json" "${findings_file}" <<'MERGE'
-import json, sys
-prev = json.load(open(sys.argv[1])).get("comments") or []
-new = json.load(open(sys.argv[2]))
-seen = set()
-merged = []
-for f in prev + (new.get("comments") or []):
-    if not isinstance(f, dict):
-        continue
-    key = (f.get("path"), f.get("line"), str(f.get("perspective", "")).lower(), f.get("title"))
-    if key in seen:
-        continue
-    seen.add(key)
-    merged.append(f)
-new["comments"] = merged
-if merged and new.get("review_action") == "APPROVE":
-    # A clean segment must not downgrade a bundle that already has findings.
-    new["review_action"] = "COMMENT"
-json.dump(new, open(sys.argv[2], "w"))
-MERGE
+      audit::merge_resume_findings "${run_dir}/findings.json" "${findings_file}" "${files_nl}"
       ai_review::info "  merged with the findings already in the bundle"
     fi
+    if ((RESUME == 1)); then
+      if ! python3 - "${segment_findings_file}" "${findings_file}" <<'PY'
+import json, sys
+before = json.load(open(sys.argv[1], encoding="utf-8"))
+after = json.load(open(sys.argv[2], encoding="utf-8"))
+raise SystemExit(0 if before == after else 1)
+PY
+      then
+        local merged_summary
+        merged_summary="$(python3 - "${findings_file}" <<'PY'
+import json, sys
+try:
+    summary = str(json.load(open(sys.argv[1], encoding="utf-8")).get("summary") or "").strip()
+except Exception:
+    summary = ""
+if summary:
+    print(summary)
+PY
+)"
+        if [[ -n "${bundle_output//[[:space:]]/}" && -n "${merged_summary//[[:space:]]/}" ]]; then
+          bundle_output="${bundle_output}"$'\n\n---\n\n## Current merged findings status\n\n'"${merged_summary}"
+        else
+          bundle_output="$(audit::render_narrative_from_json "$(cat "${findings_file}")")"
+        fi
+      fi
+    fi
 
-    # The narrative covers only this segment, so append rather than replace.
+    # Keep prior segment narratives for history, but mark this section as the
+    # source of truth for files re-audited in this segment.
+    if ((RESUME == 1)) && [[ -e "${run_dir}/report.md" && ! -f "${run_dir}/report.md" ]]; then
+      ai_review::err "Could not write the report bundle to ${run_dir}."
+      rm -rf "${stage_dir}" "${backup_dir}"
+      rm -f "${coverage_file}" "${meta_file}" "${findings_file}" "${segment_findings_file}" "${report_file}"
+      exit 1
+    fi
     if ((RESUME == 1)) && [[ -f "${run_dir}/report.md" ]]; then
       {
         cat "${run_dir}/report.md"
         printf '\n\n---\n\n## Resumed segment (%s)\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        printf '%s\n' "${human_output}"
+        printf '> This segment supersedes findings for files re-audited in this run. Prior sections are historical snapshots and may include findings now cleared.\n\n'
+        printf '%s\n' "${bundle_output}"
       } >"${report_file}"
     else
-      printf '%s\n' "${human_output}" >"${report_file}"
+      printf '%s\n' "${bundle_output}" >"${report_file}"
     fi
+
+    audit::write_coverage "${run_dir}/coverage.json" "${files_nl}" "${skip_log}" "${coverage_file}" "${AI_AUDIT_COVERAGE_SNAPSHOT:-}"
+
+    local files_in_bundle
+    files_in_bundle="$(python3 - "${coverage_file}" "${nfiles}" <<'PY'
+import json, sys
+default = int(sys.argv[2])
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    print(default)
+    raise SystemExit(0)
+rows = data.get("audited_files", []) if isinstance(data, dict) else []
+count = sum(1 for row in rows if isinstance(row, dict) and isinstance(row.get("path"), str) and row.get("path"))
+print(count)
+PY
+)"
 
     # Every audited directory, so the index can say "audited and clean" rather
     # than leaving it ambiguous with "not audited".
     # Every directory in the ORIGINAL scope, so a resumed run's index still
     # lists the directories it skipped rather than implying they were never
     # audited.
-    local dirs_json
-    dirs_json="$(printf '%s\n' "${ALL_DIRECTORIES}" | python3 -c '
-import json, sys
-print(json.dumps(sorted({l.strip() for l in sys.stdin if l.strip()})))')"
+    local dirs_json skipped_json
+    dirs_json="$(
+      AUDIT_DIRS_NL="${ALL_DIRECTORIES}" python3 - "${run_dir}/_meta.json" "${RESUME}" <<'PY'
+import json, os, sys
 
-    python3 - "${meta_file}" "${dirs_json}" <<META
+dirs = {d.rstrip("\n") for d in os.environ.get("AUDIT_DIRS_NL", "").splitlines() if d.rstrip("\n")}
+meta_path = sys.argv[1]
+resume = sys.argv[2] == "1"
+if resume:
+    try:
+        prev_meta = json.load(open(meta_path, encoding="utf-8"))
+    except Exception:
+        prev_meta = {}
+    if isinstance(prev_meta, dict):
+        for d in prev_meta.get("directories", []):
+            if isinstance(d, str) and d:
+                dirs.add(d)
+print(json.dumps(sorted(dirs)))
+PY
+    )"
+    skipped_json="$(python3 - "${coverage_file}" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    data = {}
+rows = data.get("skipped_files", []) if isinstance(data, dict) else []
+print(json.dumps(rows if isinstance(rows, list) else []))
+PY
+)"
+
+    python3 - "${meta_file}" "${dirs_json}" "${skipped_json}" <<META
 import json, sys
 json.dump({
     "repo": "$(basename "$(git rev-parse --show-toplevel)")",
@@ -1023,22 +1620,50 @@ json.dump({
     "tool": "${AI_REVIEW_TOOL_RESOLVED}",
     "provider": "${AI_REVIEW_PROVIDER:-api}",
     "adjudication": "$(ai_review::adjudication_mode)",
-    "files": ${nfiles},
+    "files": ${files_in_bundle},
     "directories": json.loads(sys.argv[2]),
+    "skipped_files": json.loads(sys.argv[3]),
 }, open(sys.argv[1], "w"))
 META
 
-    local index
-    if index="$(python3 "${AI_COMMON_HOME}/harness/write_audit_report.py" \
-      "${run_dir}" "${findings_file}" "${meta_file}" "${report_file}")"; then
+    audit_json="$(cat "${findings_file}")"
+    result="$(printf '%s' "${audit_json}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_action"])')"
+
+    if python3 "${AI_COMMON_HOME}/harness/write_audit_report.py" \
+      "${stage_dir}" "${findings_file}" "${meta_file}" "${report_file}" >/dev/null; then
+      if ! mv "${coverage_file}" "${stage_dir}/coverage.json"; then
+        ai_review::err "Report bundle was generated, but coverage metadata could not be staged."
+        rm -rf "${stage_dir}" "${backup_dir}"
+        rm -f "${coverage_file}" "${meta_file}" "${findings_file}" "${segment_findings_file}" "${report_file}"
+        exit 1
+      fi
+      if ! mv "${run_dir}" "${backup_dir}"; then
+        ai_review::err "Could not prepare the existing report bundle for update (${run_dir})."
+        rm -rf "${stage_dir}" "${backup_dir}"
+        rm -f "${meta_file}" "${findings_file}" "${segment_findings_file}" "${report_file}"
+        exit 1
+      fi
+      if ! mv "${stage_dir}" "${run_dir}"; then
+        ai_review::err "Could not finalize the updated report bundle (${run_dir})."
+        if ! mv "${backup_dir}" "${run_dir}" >/dev/null 2>&1; then
+          ai_review::err "Rollback failed; preserving backup bundle at ${backup_dir}."
+        else
+          rm -rf "${backup_dir}"
+        fi
+        rm -rf "${stage_dir}"
+        rm -f "${meta_file}" "${findings_file}" "${segment_findings_file}" "${report_file}"
+        exit 1
+      fi
+      rm -rf "${backup_dir}"
       ai_review::ok "Report bundle written. Start here:"
-      ai_review::log "  ${index}"
+      ai_review::log "  ${run_dir}/_INDEX.md"
     else
       ai_review::err "Could not write the report bundle to ${run_dir}."
-      rm -f "${meta_file}" "${findings_file}" "${report_file}"
+      rm -rf "${stage_dir}" "${backup_dir}"
+      rm -f "${coverage_file}" "${meta_file}" "${findings_file}" "${segment_findings_file}" "${report_file}"
       exit 1
     fi
-    rm -f "${meta_file}" "${findings_file}" "${report_file}"
+    rm -f "${meta_file}" "${findings_file}" "${segment_findings_file}" "${report_file}"
   fi
 
   # ── Artifacts, only where asked ─────────────────────────────────────────
@@ -1047,7 +1672,15 @@ META
     ai_review::info "Findings JSON written to ${JSON_OUT}"
   fi
   if [[ -n "${MD_OUT}" ]]; then
-    printf '%s\n' "${human_output}" >"${MD_OUT}"
+    local md_output
+    md_output="${bundle_output}"
+    if [[ -z "${md_output//[[:space:]]/}" ]]; then
+      md_output="$(audit::narrative_from_ai_output "${human_output}")"
+    fi
+    if [[ -z "${md_output//[[:space:]]/}" ]]; then
+      md_output="$(audit::render_narrative_from_json "${audit_json}")"
+    fi
+    printf '%s\n' "${md_output}" >"${MD_OUT}"
     ai_review::info "Report written to ${MD_OUT}"
   fi
   if ((JSON_ONLY == 1)); then
